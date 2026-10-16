@@ -64,7 +64,10 @@ def chat_response(decision):
 
 def manifest(quote="Mice α."):
     source = SourceSnapshotV1.model_validate(FIXTURE["snapshot"])
-    call = InvocationV1.model_validate(FIXTURE["invocations"][4]["envelope"])
+    search_id = "00000000-0000-0000-0000-000000000077"
+    call_payload = copy.deepcopy(FIXTURE["invocations"][4]["envelope"])
+    call_payload["search_id"] = search_id
+    call = InvocationV1.model_validate(call_payload)
     response = ResponseCapture(
         origin="driver_raw",
         raw_availability="retained",
@@ -89,6 +92,7 @@ def manifest(quote="Mice α."):
                 "id": str(uuid.UUID("00000000-0000-0000-0000-000000000099")),
                 "project_id": str(source.project_id),
                 "article_id": str(source.article_id),
+                "search_id": search_id,
                 "capture_state": "captured",
                 "source_snapshot_ref": str(source.id),
                 "invocation_ref": str(call.id),
@@ -284,6 +288,17 @@ def test_exact_legacy_chat_quote_list_emission_is_verified():
             },
             ensure_ascii=False,
         ).encode("utf-8"),
+        chat_response({"evidence_quotes": ["Mice α."]}).replace(
+            b'{"choices":', b'{"overflow":1e999,"choices":', 1
+        ),
+        json.dumps(
+            {
+                "choices": [
+                    {"message": {"content": '{"evidence_quotes":["Mice α."],"overflow":1e999}'}}
+                ]
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
     ],
     ids=[
         "input_quote_absent_from_response",
@@ -292,6 +307,8 @@ def test_exact_legacy_chat_quote_list_emission_is_verified():
         "invalid_decision_json",
         "structured_content_uncovered",
         "duplicate_decision_key",
+        "outer_overflow_number",
+        "nested_decision_overflow_number",
     ],
 )
 def test_unmatched_or_uncovered_chat_response_stays_unverified(response):
@@ -331,6 +348,7 @@ def test_chat_shaped_response_cannot_verify_scorer_emission():
         values.pop(key)
     values.update(
         call_kind="onnx",
+        search_id=actual["results"][0]["search_id"],
         quotation_producer="not_produced",
         source_view_ids=[],
         input_spans=[],
@@ -359,6 +377,25 @@ def test_emitted_quote_cannot_verify_cross_scope_result():
     actual["results"][0]["article_id"] = "00000000-0000-0000-0000-0000000000ff"
     with pytest.raises(ReplayError, match="scope mismatch"):
         validate_manifest(actual)
+
+
+def test_emitted_quote_cannot_verify_cross_search_result():
+    actual = manifest()
+    replace_raw_response(actual, chat_response({"evidence_quotes": ["Mice α."]}))
+    actual["results"][0]["search_id"] = "00000000-0000-0000-0000-0000000000ff"
+    with pytest.raises(ReplayError, match="search scope mismatch"):
+        validate_manifest(actual)
+
+
+@pytest.mark.parametrize("search_id", [None, "absent"])
+def test_emission_requires_explicit_nonnull_result_search(search_id):
+    actual = manifest()
+    replace_raw_response(actual, chat_response({"evidence_quotes": ["Mice α."]}))
+    if search_id == "absent":
+        actual["results"][0].pop("search_id")
+    else:
+        actual["results"][0]["search_id"] = None
+    assert validate_manifest(actual)["quotation_emission"] == "unverified"
 
 
 def test_aggregate_stays_unverified_when_another_result_is_legacy():

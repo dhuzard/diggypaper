@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dhuzard/diggypaper/blob/seip/portable-replay/docs/schemas/seip-portable-replay-v1.schema.json",
   "title": "SEIP portable replay manifest v1",
-  "description": "Unsigned offline artifact and quote occurrence replay manifest. The quotation_field is caller-supplied; emission can be verified only by parsing a scoped retained raw legacy OpenAI-compatible chat response and exact quote-list equality. Nested canonical envelopes and quote checks require semantic replay by app.portable_replay; this schema alone does not validate origins, hashes, occurrences, or emission.",
+  "description": "Unsigned offline artifact and quote occurrence replay manifest. The quotation_field is caller-supplied; emission can be verified only by parsing a retained raw legacy OpenAI-compatible chat response, matching non-null result/invocation search scope, and exact quote-list equality. Nested canonical envelopes and quote checks require semantic replay by app.portable_replay; this schema alone does not validate origins, hashes, occurrences, or emission.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "canonical_encoding", "sources", "invocations", "results"],
@@ -47,6 +47,10 @@
         "id": {"$ref": "#/$defs/uuid"},
         "project_id": {"$ref": "#/$defs/uuid"},
         "article_id": {"$ref": "#/$defs/uuid"},
+        "search_id": {
+          "description": "Optional result search scope. A non-null exact match to the invocation search is required for verified quote emission; absent or null remains unverified.",
+          "anyOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]
+        },
         "capture_state": {"enum": ["captured", "legacy_unversioned", "source_unavailable"]},
         "source_snapshot_ref": {"anyOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
         "invocation_ref": {"anyOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},

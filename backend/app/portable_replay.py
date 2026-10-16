@@ -13,6 +13,7 @@ import base64
 import binascii
 import hashlib
 import json
+import math
 import re
 import sys
 import uuid
@@ -220,7 +221,17 @@ def _emitted_quotes(response: dict | None) -> list[str] | None:
         def reject_constant(value):
             raise ValueError(f"nonfinite response JSON value: {value}")
 
-        options = {"object_pairs_hook": unique_pairs, "parse_constant": reject_constant}
+        def finite_float(value):
+            number = float(value)
+            if not math.isfinite(number):
+                raise ValueError("nonfinite response JSON number")
+            return number
+
+        options = {
+            "object_pairs_hook": unique_pairs,
+            "parse_constant": reject_constant,
+            "parse_float": finite_float,
+        }
         body = json.loads(raw, **options)
         if not isinstance(body, dict):
             return None
@@ -262,6 +273,7 @@ def _results(entries, sources, calls) -> tuple[int, dict[str, str]]:
                 "quote_checks",
                 "quote_checks_sha256",
             },
+            {"search_id"},
         )
         result_id = _id(entry["id"], "result id")
         _require(result_id not in seen, "duplicate result ID")
@@ -269,6 +281,9 @@ def _results(entries, sources, calls) -> tuple[int, dict[str, str]]:
         emission[str(result_id)] = "unverified"
         project_id = _id(entry["project_id"], "result project")
         article_id = _id(entry["article_id"], "result article")
+        search_id = (
+            _id(entry["search_id"], "result search") if entry.get("search_id") is not None else None
+        )
         state = entry["capture_state"]
         _require(
             state in {"captured", "legacy_unversioned", "source_unavailable"},
@@ -321,6 +336,8 @@ def _results(entries, sources, calls) -> tuple[int, dict[str, str]]:
             (project_id, article_id) == (call.project_id, call.article_id),
             "result invocation scope mismatch",
         )
+        if search_id is not None:
+            _require(search_id == call.search_id, "result search scope mismatch")
         quote_state = entry["quote_state"]
         if call.quotation_producer == "not_produced":
             _require(entry["quote_reason"] is None, "non-producer needs no quote reason")
@@ -370,6 +387,8 @@ def _results(entries, sources, calls) -> tuple[int, dict[str, str]]:
             if (
                 call.call_kind == "chat"
                 and call.quotation_producer == "may_produce"
+                and search_id is not None
+                and search_id == call.search_id
                 and field["present"]
                 and isinstance(field["value"], list)
                 and all(type(q) is str for q in field["value"])
