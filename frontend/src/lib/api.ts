@@ -103,8 +103,61 @@ export interface ArticlePrediction {
   confidence_score: number | null;
   evidence_quotes: string[] | null;
   quote_checks: QuoteChecks | null;
+  evidence_graph?: EvidenceGraph | null;
   status: "AUTO_ACCEPTED" | "AUTO_REJECTED" | "NEEDS_HUMAN_REVIEW";
   created_at: string | null;
+}
+
+export interface EvidenceGraph {
+  envelope: {
+    schema_version: string;
+    state: string;
+    scope: {
+      project_ref: string;
+      article_ref: string;
+      record_kind: string;
+      record_ref: string;
+      revision_ref: string;
+    };
+    field_definition_ref: string | null;
+    answers: Array<{ answer_ref: string; field_key: string; value: unknown }>;
+    evidence: Array<{
+      evidence_ref: string;
+      quote: string;
+      origin: string;
+      source_binding_ref: string | null;
+      quote_match_ref: string | null;
+    }>;
+    links: Array<{ answer_ref: string; evidence_ref: string }>;
+  };
+  field_definition: {
+    schema_version: string;
+    fields: Array<{ key: string; label: string }>;
+  } | null;
+}
+
+export type SupportStatus =
+  | "supports" | "contradicts" | "insufficient" | "unclear" | "not_assessed";
+
+export interface SupportAssessment {
+  id: string;
+  prediction_id: string;
+  graph_revision_ref: string;
+  answer_ref: string;
+  evidence_ref: string;
+  actor_ref: string;
+  status: SupportStatus;
+  rationale: string;
+  protocol_version: string;
+  created_at: string;
+}
+
+export interface SupportAssessmentHistory {
+  prediction_id: string;
+  graph_revision_ref: string | null;
+  current: boolean;
+  state: "assessed" | "not_assessed";
+  assessments: SupportAssessment[];
 }
 
 export interface QuoteChecks {
@@ -557,6 +610,25 @@ export async function getPrediction(
 ): Promise<ArticlePrediction | null> {
   return request<ArticlePrediction | null>(
     `/projects/${projectId}/articles/${articleId}/prediction${qs({ search: searchId })}`
+  );
+}
+
+export async function getSupportAssessments(
+  projectId: string, articleId: string, predictionId: string, searchId?: string
+): Promise<SupportAssessmentHistory> {
+  return request<SupportAssessmentHistory>(
+    `/projects/${projectId}/articles/${articleId}/predictions/${predictionId}/support-assessments${qs({ search: searchId })}`
+  );
+}
+
+export async function createSupportAssessment(
+  projectId: string, articleId: string, predictionId: string,
+  input: Pick<SupportAssessment, "graph_revision_ref" | "answer_ref" | "evidence_ref" | "status" | "rationale">,
+  searchId?: string
+): Promise<SupportAssessment> {
+  return request<SupportAssessment>(
+    `/projects/${projectId}/articles/${articleId}/predictions/${predictionId}/support-assessments${qs({ search: searchId })}`,
+    { method: "POST", body: JSON.stringify(input) }
   );
 }
 

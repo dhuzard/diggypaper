@@ -8,6 +8,7 @@ import { ArticleLinks, biblioLine } from "@/components/Certainty";
 import { AnnotationForm, Annotation } from "@/components/AnnotationForm";
 import { EvidenceHighlighter } from "@/components/EvidenceHighlighter";
 import { QuoteOccurrencePanel } from "@/components/QuoteOccurrencePanel";
+import { SupportAssessmentPanel } from "@/components/SupportAssessmentPanel";
 import { SwipeableCard } from "@/components/SwipeableCard";
 import { Button } from "@/components/ui/Button";
 import { articlesStoreKey, withSearch } from "@/lib/search";
@@ -430,6 +431,16 @@ export default function AnnotatePage() {
             onSubmit={handleSubmit}
             initial={initialAnnotation}
           />
+          {shownPrediction && (
+            <SupportAssessmentPanel
+              key={shownPrediction.id}
+              prediction={shownPrediction}
+              projectId={projectId}
+              articleId={articleId}
+              searchId={searchId}
+              isBlind={isBlind}
+            />
+          )}
         </section>
       </main>
 
