@@ -257,13 +257,13 @@ def test_evidence_authenticity_attribution_linkage_and_support_are_independent()
     assert metric(result, "false_existence_verification_normalized")["value"] == 0
     assert metric(result, "known_negative_false_acceptance")["value"] == 1
     assert metric(result, "negation_conflict_challenge_error")["value"] == 1
-    assert metric(result, "false_unique_attribution")["value"] is None
+    assert metric(result, "false_unique_attribution")["value"] == 1
     assert metric(result, "unverifiable_quote_rate")["value"] == 4 / 6
     counts = result["overall"]["counts"]
     assert counts["eligible_answers_zero_links"] == 1
     assert counts["eligible_answers_correct_link"] == 1
     assert counts["support_unclear"] == counts["support_not_assessed"] == 1
-    assert counts["unique_claim_ambiguous_excluded"] == 1
+    assert counts["unique_claims"] == counts["unique_claim_false"] == 1
 
 
 def test_unverifiable_quote_reasons_do_not_double_count_and_missing_evidence_is_unknown():
@@ -313,6 +313,87 @@ def test_unassessed_claims_cannot_dilute_error_rates_or_become_successful_checks
     assert metric(result, "unique_claim_assessment_coverage")["value"] == 0.5
     assert metric(result, "false_existence_verification_normalized")["value"] is None
     assert metric(result, "present_claim_normalized_assessment_coverage")["value"] == 0
+
+
+def test_independent_ambiguity_refutes_claimed_uniqueness_without_excluding_its_denominator():
+    m = manifest(["x"])
+    judgments = EvidenceJudgments(
+        quotes=(
+            QuoteJudgment(
+                "false_unique", "exact", "ambiguous", claimed_unique=True, unique_correct=False
+            ),
+            QuoteJudgment("existence_only", "exact", "ambiguous"),
+        )
+    )
+    result = score_pilot(m, {}, {}, {"x": judgments})
+    assert metric(result, "false_unique_attribution") == {
+        "numerator": 1,
+        "denominator": 1,
+        "value": 1,
+    }
+    assert metric(result, "false_unique_attribution_all_labelled_lower_bound")["value"] == 1
+    assert metric(result, "unique_claim_assessment_coverage")["value"] == 1
+    counts = result["overall"]["counts"]
+    assert counts["attribution_ambiguous"] == 2
+    assert counts["ambiguous_existence_without_unique_claim"] == 1
+
+
+@pytest.mark.parametrize(
+    "existence, claim, passes",
+    [
+        ("absent", "exact", True),
+        ("absent", "normalized", True),
+        ("normalized_only", "exact", True),
+        ("normalized_only", "normalized", False),
+        ("exact", "exact", False),
+        ("exact", "normalized", False),
+        ("malformed", "exact", True),
+        ("empty", "normalized", True),
+        ("source_unavailable", "exact", True),
+        ("source_unavailable", "normalized", False),
+    ],
+)
+def test_contradictory_independent_existence_and_claim_checks_fail_closed(existence, claim, passes):
+    q = QuoteJudgment(
+        "q",
+        existence,
+        emitted_nonempty=existence != "empty",
+        claimed_present=claim,
+        claim_passes=passes,
+    )
+    with pytest.raises(ValueError, match="Independent existence|Unavailable sources"):
+        score_pilot(manifest(["x"]), {}, {}, {"x": EvidenceJudgments(quotes=(q,))})
+
+
+def test_producer_claim_disagreement_with_consistent_independent_judgments_is_retained():
+    judgments = EvidenceJudgments(
+        quotes=(
+            QuoteJudgment("absent", "absent", claimed_present="exact", claim_passes=False),
+            QuoteJudgment(
+                "normalized", "normalized_only", claimed_present="exact", claim_passes=False
+            ),
+            QuoteJudgment(
+                "normalized_pass",
+                "normalized_only",
+                claimed_present="normalized",
+                claim_passes=True,
+            ),
+        )
+    )
+    result = score_pilot(manifest(["x"]), {}, {}, {"x": judgments})
+    assert metric(result, "false_existence_verification_exact") == {
+        "numerator": 2,
+        "denominator": 2,
+        "value": 1,
+    }
+    assert metric(result, "false_existence_verification_normalized")["value"] == 0
+    assert metric(result, "present_claim_exact_assessment_coverage")["value"] == 1
+
+
+def test_independently_ambiguous_attribution_cannot_have_a_successful_unique_check():
+    q = QuoteJudgment("q", "exact", "ambiguous", claimed_unique=True, unique_correct=True)
+    with pytest.raises(ValueError, match="Independent attribution"):
+        score_pilot(manifest(["x"]), {}, {}, {"x": EvidenceJudgments(quotes=(q,))})
 
 
 def test_stale_and_wrong_scope_links_never_credit_the_current_scoped_answer():

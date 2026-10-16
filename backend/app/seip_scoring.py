@@ -289,6 +289,27 @@ def _validate(manifest, references, outputs, evidence):
                 quote.claimed_unique or quote.unique_correct is None,
                 "Unique test requires a unique claim",
             )
+            if quote.claim_passes is not None:
+                _require(
+                    quote.existence != "source_unavailable",
+                    "Unavailable sources cannot have an assessed existence claim check",
+                )
+                expected = {
+                    "exact": True,
+                    "normalized_only": quote.claimed_present == "normalized",
+                    "absent": False,
+                    "malformed": False,
+                    "empty": False,
+                }.get(quote.existence)
+                _require(
+                    expected is None or quote.claim_passes is expected,
+                    "Independent existence and claim check judgments contradict",
+                )
+            _require(
+                quote.unique_correct is not True
+                or quote.attribution not in {"ambiguous", "incorrect", "unavailable"},
+                "Independent attribution and unique claim check judgments contradict",
+            )
         for link in judgments.links:
             _require(
                 type(link.negation_conflict_challenge) is bool
@@ -449,13 +470,12 @@ def _score_evidence(judgments, covered_fields):
             counts[f"{prefix}_false"] += quote.claim_passes is False
             counts[f"{prefix}_unassessed"] += quote.claim_passes is None
         if quote.claimed_unique:
-            # Ambiguous existence locations are excluded, even if a producer claimed uniqueness.
-            if quote.attribution == "ambiguous":
-                counts["unique_claim_ambiguous_excluded"] += 1
-            else:
-                counts["unique_claims"] += 1
-                counts["unique_claim_false"] += quote.unique_correct is False
-                counts["unique_claim_unassessed"] += quote.unique_correct is None
+            # Independent ambiguity can refute the producer's uniqueness assertion.
+            counts["unique_claims"] += 1
+            counts["unique_claim_false"] += quote.unique_correct is False
+            counts["unique_claim_unassessed"] += quote.unique_correct is None
+        elif quote.attribution == "ambiguous":
+            counts["ambiguous_existence_without_unique_claim"] += 1
         if quote.known_negative_challenge:
             counts["known_negative_quotes"] += 1
             counts["known_negative_false_acceptances"] += bool(quote.claimed_present)
