@@ -15,6 +15,7 @@ import resource
 import threading
 import time
 import uuid
+from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -46,6 +47,9 @@ from app.inference import (
 )
 from app.inference.onnx_driver import unload as onnx_unload
 from app.inference.scoring import is_scorer, score_prediction
+from app.provenance_capture import capture_article_source
+from app.provenance_chat import PersistedChatTrace
+from app.provenance_render import render_chat
 from app.schema import project_fields
 from app.searches import ScopedProject, get_search, gold_condition, lot_condition
 
@@ -55,6 +59,15 @@ logger = logging.getLogger(__name__)
 _session_factory_override: async_sessionmaker[AsyncSession] | None = None
 
 DEFAULT_USER_PROMPT = "Article text:\n{article_text}"
+
+
+@dataclass(frozen=True)
+class _PromptVariant:
+    name: str
+    system: str
+    user: str
+    template_id: uuid.UUID | None = None
+    template_version: str | None = None
 
 
 def _make_session_factory():
@@ -133,8 +146,8 @@ async def _run_benchmark(
             await engine.dispose()
 
 
-async def _prompts(session: AsyncSession, run: BenchmarkRun) -> list[tuple[str, str, str]]:
-    """Variantes résolues : [(nom, prompt système, schéma du prompt utilisateur)]."""
+async def _prompts(session: AsyncSession, run: BenchmarkRun) -> list[_PromptVariant]:
+    """Freeze the resolved variant text and any real template identity."""
     out = []
     for v in run.variants or [{}]:
         pid = v.get("prompt_template_id") or (
@@ -146,11 +159,13 @@ async def _prompts(session: AsyncSession, run: BenchmarkRun) -> list[tuple[str, 
                 raise LookupError(f"prompt template not found: {pid}")
             system, user = pt.system_prompt or "", pt.user_prompt_schema or DEFAULT_USER_PROMPT
             name = v.get("name") or pt.title or pt.version_number
+            template_id, template_version = pt.id, pt.version_number
         else:
             system = v.get("system_prompt") or ""
             user = v.get("user_prompt_schema") or DEFAULT_USER_PROMPT
             name = v.get("name") or f"variante {len(out) + 1}"
-        out.append((name, system, user))
+            template_id, template_version = None, None
+        out.append(_PromptVariant(name, system, user, template_id, template_version))
     return out
 
 
@@ -219,12 +234,14 @@ async def _do_benchmark(
     done_steps = 0
     results_payload = []
     ram_mb = 0.0
+    frozen_sources = {}
     for model in models:
         scorer = is_scorer(model)  # un scoreur ignore le prompt : une seule « variante »
         todo = variants[:1] if scorer else variants
         by_variant: dict[str, dict] = {}
         pending: list[BenchmarkResult] = []
-        for vname, system, user_schema in todo:
+        for variant in todo:
+            vname, system, user_schema = variant.name, variant.system, variant.user
             preds: dict = {}
             total_time = 0.0
             for article in lot:
@@ -232,16 +249,66 @@ async def _do_benchmark(
                     return {"cancelled": True, "models": len(results_payload)}
                 start = time.monotonic()
                 error = None
+                trace = None
                 try:
                     if scorer:
                         prediction = await score_prediction(model, project, article, light=False)
                     else:
+                        # Real chat drivers can retain an exact, committed source
+                        # view and request. Injected test doubles retain legacy
+                        # behavior unless they implement the actual trace path.
+                        if isinstance(inference, OpenAICompatibleService):
+                            if article.id not in frozen_sources:
+                                frozen_sources[article.id] = await capture_article_source(
+                                    session,
+                                    project_id=run.project_id,
+                                    article_id=article.id,
+                                    text_sections=project.text_sections,
+                                )
+                                await session.commit()
+                            snapshot, view_id = frozen_sources[article.id]
+                            rendered = render_chat(
+                                snapshot,
+                                view_id,
+                                system,
+                                user_schema,
+                                examples=shots,
+                                example_ref=f"benchmark:{run.id}:gold_examples" if shots else None,
+                            )
+                            trace = PersistedChatTrace(
+                                session,
+                                snapshot=snapshot,
+                                rendered=rendered,
+                                job=run,
+                                prompt=None,
+                                model=model,
+                                field_schema=fields,
+                                group_id=uuid.uuid4(),
+                                stage="main",
+                                sequence=0,
+                                benchmark_run=run,
+                                benchmark_variant=vname,
+                                benchmark_system_template=system,
+                                benchmark_user_template=user_schema,
+                                benchmark_template_id=variant.template_id,
+                                benchmark_template_version=variant.template_version,
+                            )
+                        legacy_system_text = (system + "\n\n" + shots).strip() if shots else system
+                        system_text = rendered.system.text if trace else legacy_system_text
+                        user_text = (
+                            rendered.user.text
+                            if trace
+                            else fill_prompt(user_schema, article, project.text_sections)
+                        )
                         prediction = await infer_with(
                             model,
                             inference,
-                            (system + "\n\n" + shots).strip() if shots else system,
-                            fill_prompt(user_schema, article, project.text_sections),
+                            system_text,
+                            user_text,
+                            trace=trace,
                         )
+                        if trace is not None and trace.producing_invocation is None:
+                            raise InferenceError("benchmark call has no succeeded invocation")
                     if not isinstance(prediction, dict):
                         raise InferenceError("invalid_json")  # JSON valide mais pas un objet
                 except InferenceError as exc:
@@ -261,6 +328,11 @@ async def _do_benchmark(
                         confidence_score=prediction.get("confidence_score"),
                         error=error,
                         seconds=took,
+                        search_id=run.search_id if trace else None,
+                        provenance_project_id=run.project_id if trace else None,
+                        source_snapshot_id=trace.snapshot.id if trace else None,
+                        invocation_id=trace.row.id if trace and trace.row else None,
+                        invocation_group_id=trace.group_id if trace else None,
                     )
                 )
                 done_steps += 1
