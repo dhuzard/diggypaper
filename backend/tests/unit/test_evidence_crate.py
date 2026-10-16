@@ -80,12 +80,27 @@ def fixture():
     )
     call_data = call.model_dump(mode="json")
     call_row = SimpleNamespace(
-        **{name: getattr(call, name) for name in (
-            "id", "project_id", "article_id", "source_snapshot_id", "group_id",
-            "parent_id", "search_id", "inference_job_id", "benchmark_run_id",
-            "variant", "stage", "call_kind", "sequence", "attempt", "schema_version",
-            "request_sha256",
-        )},
+        **{
+            name: getattr(call, name)
+            for name in (
+                "id",
+                "project_id",
+                "article_id",
+                "source_snapshot_id",
+                "group_id",
+                "parent_id",
+                "search_id",
+                "inference_job_id",
+                "benchmark_run_id",
+                "variant",
+                "stage",
+                "call_kind",
+                "sequence",
+                "attempt",
+                "schema_version",
+                "request_sha256",
+            )
+        },
         canonical_bytes=canonical_json(call_data),
         envelope_sha256=digest(call_data),
         request_envelope=call_data,
@@ -170,7 +185,8 @@ def test_legacy_and_fulltext_capture_are_explicit_without_frozen_bytes():
         source.project_id, [legacy, fulltext], {source.id: source}, {call.id: call}, {}
     )
     assert {r["capture_state"] for r in manifest["results"]} == {
-        "legacy_unversioned", "source_unavailable"
+        "legacy_unversioned",
+        "source_unavailable",
     }
     assert manifest["sources"] == manifest["invocations"] == []
     assert all(item["evidence_graph"] is None for item in history)
