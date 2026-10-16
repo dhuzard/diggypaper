@@ -1,6 +1,7 @@
 """Export XLSX d'un projet : corpus + résultats d'analyse + relecture humaine + paramètres."""
 
 import asyncio
+import hashlib
 import io
 import json
 import os
@@ -28,6 +29,7 @@ from app.api.v1.projects import (
     _require_project_member,
     article_filter,
 )
+from app.core.config import get_settings
 from app.db.models import (
     Article,
     ArticleFile,
@@ -54,6 +56,12 @@ _XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 def export_dir() -> str:
     """Dossier des zips générés (volume partagé backend/worker)."""
     return os.environ.get("EXPORT_DIR", "/app/exports")
+
+
+async def _require_blind_export_access(db, project_id, user, scope) -> None:
+    """Project-wide exports can disclose other blind reviewers' work or counts."""
+    if scope.kind == "blind":
+        await _require_lead_or_admin(db, project_id, user)
 
 
 _MAX_CELL = 32000  # limite Excel : 32 767 caractères par cellule
@@ -231,8 +239,8 @@ async def _load(db: AsyncSession, project, where=None, search=None):
             )
         ).scalars():
             annos.setdefault(h.article_id, []).append(h)
-        names = {
-            u.id: u.full_name or u.email
+        reviewers = {
+            u.id: u
             for u in (
                 await db.execute(
                     select(User).where(
@@ -243,7 +251,17 @@ async def _load(db: AsyncSession, project, where=None, search=None):
         }
         for hs in annos.values():
             for h in hs:
-                h.reviewer = names.get(h.user_id)  # nom du relecteur pour l'export
+                reviewer = reviewers.get(h.user_id)
+                h.reviewer = (reviewer.full_name or reviewer.email) if reviewer else None
+                actor_hash = h.annotator_hash
+                if not actor_hash and reviewer:
+                    actor_hash = (
+                        reviewer.anonymized_hash
+                        or hashlib.sha256(
+                            (get_settings().anon_salt + reviewer.email).encode("utf-8")
+                        ).hexdigest()
+                    )
+                h.reviewer_ref = crate.reviewer_reference(project.id, actor_hash)
     import_jobs = (
         (
             await db.execute(
@@ -273,7 +291,7 @@ async def _load(db: AsyncSession, project, where=None, search=None):
         .scalars()
         .first()
     )
-    return articles, preds, annos, import_jobs, inf_job
+    return articles, preds, annos, import_jobs, None if search.kind == "blind" else inf_job
 
 
 def _slug(project) -> str:
@@ -286,6 +304,7 @@ async def export_xlsx(
 ) -> Response:
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
+    await _require_blind_export_access(db, project_id, user, scope)
     articles, preds, annos, import_jobs, inf_job = await _load(db, project, search=scope)
     project = ScopedProject(project, scope)
     data = await asyncio.to_thread(
@@ -315,6 +334,7 @@ def _notes(articles, preds: dict, fields: list[dict]) -> dict:
 async def _references(project_id, db, user, status, answers, fmt: str, search=None) -> Response:
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
+    await _require_blind_export_access(db, project_id, user, scope)
     where = article_filter(scope, status, answers)[0]
     articles, preds, *_ = await _load(db, project, where, scope)
     project = ScopedProject(project, scope)
@@ -340,6 +360,7 @@ async def get_prisma(
     """Effectifs du diagramme de flux PRISMA 2020 d'une recherche."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
+    await _require_blind_export_access(db, project_id, user, scope)
     articles, preds, annos, import_jobs, _ = await _load(db, project, search=scope)
     return prisma.prisma_counts(articles, preds, annos, import_jobs)
 
@@ -355,6 +376,7 @@ async def get_prisma_svg(
     """Diagramme PRISMA 2020 en SVG (langue : ``lang`` sinon celle du projet)."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
+    await _require_blind_export_access(db, project_id, user, scope)
     articles, preds, annos, import_jobs, _ = await _load(db, project, search=scope)
     counts = prisma.prisma_counts(articles, preds, annos, import_jobs)
     svg = prisma.render_svg(counts, lang or project.default_language or "fr")
@@ -376,6 +398,7 @@ async def get_prisma_pdf(
     """Diagramme PRISMA 2020 en PDF vectoriel (même contenu que le SVG)."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
+    await _require_blind_export_access(db, project_id, user, scope)
     articles, preds, annos, import_jobs, _ = await _load(db, project, search=scope)
     counts = prisma.prisma_counts(articles, preds, annos, import_jobs)
     pdf = prisma.svg_to_pdf(prisma.render_svg(counts, lang or project.default_language or "fr"))
@@ -548,7 +571,10 @@ async def get_crate_export(
 ) -> dict | None:
     """Dernier export RO-Crate de la recherche (statut, progression, téléchargeable ?)."""
     project = await _require_project_member(db, project_id, user)
-    job = await _latest_export(db, project_id, await get_search(db, project, search))
+    scope = await get_search(db, project, search)
+    if scope.kind == "blind":
+        await _require_lead_or_admin(db, project_id, user)
+    job = await _latest_export(db, project_id, scope)
     return _export_payload(job) if job else None
 
 
@@ -560,6 +586,11 @@ async def download_crate(
     job = await db.get(ExportJob, job_id)
     if job is None or job.project_id != project.id or job.status != "COMPLETED" or not job.filename:
         raise HTTPException(status_code=404, detail="export not found")
+    scope = await get_search(db, project, job.search_id)
+    if scope.kind == "blind":
+        # A project-wide archive includes every review, including those hidden from an annotator.
+        # Check the stored scope so older archives and direct download URLs are protected too.
+        await _require_lead_or_admin(db, project_id, user)
     path = Path(export_dir()) / job.filename
     if not path.is_file():  # purgé (plus de 7 jours) : à relancer
         raise HTTPException(status_code=410, detail="export expired")
