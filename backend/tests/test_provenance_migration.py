@@ -1094,6 +1094,9 @@ async def test_gold_revision_upgrade_immutability_cascade_and_guarded_downgrade(
                     .where(GoldRevision.id == revision.id)
                     .values(provenance_state="unqualified")
                 )
+        with pytest.raises(DBAPIError):
+            async with session.begin_nested():
+                await session.execute(delete(GoldRevision).where(GoldRevision.id == revision.id))
     await alembic(url, "downgrade", "0027", success=False)
     async with factory() as session:
         await session.execute(delete(GoldArticle).where(GoldArticle.id == gold.id))

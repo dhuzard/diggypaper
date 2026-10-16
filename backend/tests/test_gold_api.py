@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.db.models import (
@@ -261,6 +261,13 @@ async def test_gold_revisions_separate_source_quote_and_answer_staleness(
                 .where(GoldRevision.id == uuid.UUID(initial["revisions"][0]["id"]))
                 .values(provenance_state="legacy_unqualified")
             )
+    with pytest.raises(IntegrityError):
+        async with session.begin_nested():
+            await session.execute(
+                delete(GoldRevision).where(
+                    GoldRevision.id == uuid.UUID(initial["revisions"][0]["id"])
+                )
+            )
     gold_id = uuid.UUID(answer_only["id"])
     assert (await client.delete(f"{base}/{gold_id}")).status_code == 204
     assert (
@@ -372,6 +379,7 @@ async def test_blind_gold_hides_other_reviewers_revisions(
     ).json()["updated"] == 1
     own = (await client.get(base, params=params)).json()["items"][0]
     assert [r["source_annotation_ref"] for r in own["revisions"]] == [str(second.id)]
+    assert own["added_by"] is None
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     assert (await client.get(base, params=params)).json()["items"] == []
 

@@ -224,6 +224,7 @@ def _payload(
     names: dict,
     latest: HumanAnnotation | None,
     revisions: list[GoldRevision],
+    blind: bool,
 ) -> dict:
     """Une ligne du gold : réponses, lien vers sa fiche source, relecteur, obsolescence."""
     d = (ann.decision_json or {}) if ann else {}
@@ -253,7 +254,7 @@ def _payload(
         }
         if ann
         else None,
-        "added_by": names.get(g.added_by),
+        "added_by": None if blind else names.get(g.added_by),
         "stale": "changed" in staleness.values(),
         "staleness": staleness,
         "qualification": current.provenance_state if current else "legacy_unqualified",
@@ -306,7 +307,8 @@ async def _items(db: AsyncSession, project, scope, rows, user: User) -> list[dic
                 revisions[revision.gold_id].append(revision)
     names = await _names(
         db,
-        {a.user_id for a in anns.values()} | {g.added_by for g, _ in rows},
+        {a.user_id for a in anns.values()}
+        | ({g.added_by for g, _ in rows} if scope.kind != "blind" else set()),
     )
     return [
         _payload(
@@ -316,6 +318,7 @@ async def _items(db: AsyncSession, project, scope, rows, user: User) -> list[dic
             names,
             (latest.get(g.article_id) or (None, None))[0],
             revisions[g.id],
+            scope.kind == "blind",
         )
         for g, title in rows
     ]

@@ -61,11 +61,26 @@ def upgrade():
         CREATE TRIGGER gold_revisions_immutable BEFORE UPDATE ON gold_revisions
         FOR EACH ROW EXECUTE FUNCTION seip_gold_revision_immutable();
     """)
+    op.execute("""
+        CREATE FUNCTION seip_gold_revision_delete_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF EXISTS (SELECT 1 FROM gold_articles WHERE id = OLD.gold_id) THEN
+            RAISE EXCEPTION 'gold revisions require owner deletion';
+          END IF;
+          RETURN OLD;
+        END $$;
+    """)
+    op.execute("""
+        CREATE TRIGGER gold_revisions_delete_guard BEFORE DELETE ON gold_revisions
+        FOR EACH ROW EXECUTE FUNCTION seip_gold_revision_delete_guard();
+    """)
 
 
 def downgrade():
     if op.get_bind().execute(sa.text("SELECT EXISTS (SELECT 1 FROM gold_revisions)")).scalar():
         raise RuntimeError("refusing to discard gold revision history")
+    op.execute("DROP TRIGGER gold_revisions_delete_guard ON gold_revisions")
+    op.execute("DROP FUNCTION seip_gold_revision_delete_guard()")
     op.execute("DROP TRIGGER gold_revisions_immutable ON gold_revisions")
     op.execute("DROP FUNCTION seip_gold_revision_immutable()")
     op.drop_table("gold_revisions")
