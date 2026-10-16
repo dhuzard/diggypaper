@@ -273,7 +273,12 @@ async def get_prediction(
     user: UserDep,
     search: uuid.UUID | None = None,
 ) -> dict | None:
-    """Prédiction la plus récente de l'article dans cette recherche (null si aucune)."""
+    """Prédiction la plus récente de l'article dans cette recherche (null si aucune).
+
+    `evidence_graph.envelope.evidence[].origin == captured_input_context` means
+    only that source input was retained. Consult quote_checks for occurrence;
+    neither occurrence nor an answer link establishes scientific support.
+    """
     article = await _require_article(db, project_id, article_id, user)
     scope = await _scope(db, project_id, search)
     if scope.kind == "blind":
