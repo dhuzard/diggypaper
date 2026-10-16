@@ -116,13 +116,17 @@ async def test_postgres_bound_benchmark_variant_and_decision_immutable(
         await session.flush()
         article = Article(project_id=project.id, title="Article", abstract="Mice")
         prompt = PromptTemplate(
-            project_id=project.id, version_number="v1", system_prompt="Classify",
+            project_id=project.id,
+            version_number="v1",
+            system_prompt="Classify",
             user_prompt_schema="{article_text}",
         )
         model = ModelRegistry(name="benchmark-model", model_identifier="model-x")
         run = BenchmarkRun(
-            project_id=project.id, prompt_template_id=prompt.id,
-            models_tested=["benchmark-model"], status=BenchmarkStatus.PENDING,
+            project_id=project.id,
+            prompt_template_id=prompt.id,
+            models_tested=["benchmark-model"],
+            status=BenchmarkStatus.PENDING,
         )
         session.add_all([article, prompt, model])
         await session.flush()
@@ -140,7 +144,8 @@ async def test_postgres_bound_benchmark_variant_and_decision_immutable(
     )
     async with httpx.AsyncClient(transport=transport) as http:
         await _run_benchmark(
-            str(run.id), session_factory=factory,
+            str(run.id),
+            session_factory=factory,
             inference=OpenAICompatibleService("http://test/v1", http=http),
         )
     # Upgrade with a real, already-bound benchmark row in the database.
@@ -166,8 +171,10 @@ async def test_postgres_bound_benchmark_variant_and_decision_immutable(
             async with session.begin_nested():
                 session.add(
                     BenchmarkPrediction(
-                        benchmark_run_id=run.id, article_id=article.id,
-                        model_name=bound.model_name, variant="another",
+                        benchmark_run_id=run.id,
+                        article_id=article.id,
+                        model_name=bound.model_name,
+                        variant="another",
                         decision_json=bound.decision_json,
                         search_id=bound.search_id,
                         provenance_project_id=bound.provenance_project_id,
@@ -181,8 +188,10 @@ async def test_postgres_bound_benchmark_variant_and_decision_immutable(
             async with session.begin_nested():
                 session.add(
                     BenchmarkPrediction(
-                        benchmark_run_id=run.id, article_id=article.id,
-                        model_name=bound.model_name, variant=bound.variant,
+                        benchmark_run_id=run.id,
+                        article_id=article.id,
+                        model_name=bound.model_name,
+                        variant=bound.variant,
                         decision_json={"use_ai_behavior": False},
                         search_id=bound.search_id,
                         provenance_project_id=bound.provenance_project_id,
@@ -193,8 +202,11 @@ async def test_postgres_bound_benchmark_variant_and_decision_immutable(
                 )
                 await session.flush()
         legacy = BenchmarkPrediction(
-            benchmark_run_id=run.id, article_id=article.id,
-            model_name="legacy", variant="old", decision_json={"old": True},
+            benchmark_run_id=run.id,
+            article_id=article.id,
+            model_name="legacy",
+            variant="old",
+            decision_json={"old": True},
         )
         session.add(legacy)
         await session.commit()
