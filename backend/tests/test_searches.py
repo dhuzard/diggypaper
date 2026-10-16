@@ -434,7 +434,9 @@ async def test_blind_search_hides_model_and_other_reviewers_everywhere(
     shown = [i for i in mine if i["answers"]]
     assert len(shown) == 1 and shown[0]["prediction_status"] == "AUTO_ACCEPTED"
     own_gold = (await client.get(f"{base}/gold", params={"search": s["id"]})).json()["items"]
-    assert len(own_gold) == 1 and own_gold[0]["article_id"] == str(arts[0].id)
+    # The lead's gold copy remains hidden: this reviewer has submitted a
+    # judgment, but the current gold revision is not sourced from that judgment.
+    assert own_gold == []
     own_queue = (
         await client.get(f"{base}/articles", params={"search": s["id"], "status": "TO_REVIEW"})
     ).json()
