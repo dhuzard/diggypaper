@@ -2,6 +2,7 @@
 
 import asyncio
 import io
+import json
 
 import pytest
 from openpyxl import load_workbook
@@ -452,9 +453,28 @@ async def test_resume_inference_skips_done_articles(engine, session):
         def __init__(self):
             self.calls = 0
 
-        async def infer(self, model, system_prompt, user_prompt):
+        async def infer(self, model, system_prompt, user_prompt, *, trace=None):
             self.calls += 1
-            return {"confidence_score": 0.05, "evidence_quotes": [], "reasoning_summary": ""}
+            output = {"confidence_score": 0.05, "evidence_quotes": [], "reasoning_summary": ""}
+            if trace is not None:
+                await trace.before_dispatch(
+                    {
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        "temperature": 0.0,
+                        "response_format": {"type": "json_object"},
+                    }
+                )
+                await trace.on_http_response(
+                    json.dumps(
+                        {"choices": [{"message": {"content": json.dumps(output)}}]}
+                    ).encode(),
+                    200,
+                )
+            return output
 
     chat = Chat()
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

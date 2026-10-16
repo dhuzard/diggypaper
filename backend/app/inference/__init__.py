@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from typing import Protocol
 
 import httpx
 
@@ -20,6 +21,19 @@ from app.core.crypto import decrypt_secret
 from app.settings.service import get_setting
 
 logger = logging.getLogger(__name__)
+
+
+class ChatCallTrace(Protocol):
+    """Fail-closed observer at the actual driver boundary.
+
+    Implementations persist a prepared request before dispatch and capture the
+    actual HTTP response bytes before parsing. Headers and service URLs are not
+    exposed; a transport failure leaves the prepared call outcome unknown.
+    """
+
+    async def before_dispatch(self, body: dict) -> None: ...
+
+    async def on_http_response(self, raw: bytes, status_code: int) -> None: ...
 
 
 class InferenceError(Exception):
@@ -44,7 +58,14 @@ class OpenAICompatibleService:
         self._timeout = timeout
         self._http = http  # injectable (mock en tests) ; sinon créé à la demande
 
-    async def infer(self, model: str, system_prompt: str, user_prompt: str) -> dict:
+    async def infer(
+        self,
+        model: str,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        trace: ChatCallTrace | None = None,
+    ) -> dict:
         """Appelle le modèle et renvoie l'objet JSON parsé (spec §5).
 
         Lève ``InferenceError`` si la réponse n'est pas un JSON valide, en cas de
@@ -77,11 +98,15 @@ class OpenAICompatibleService:
         client = self._http or httpx.AsyncClient(timeout=self._timeout)
         try:
             try:
+                if trace is not None:
+                    await trace.before_dispatch(body)
                 resp = await client.post(url, json=body, headers=headers)
             except httpx.TimeoutException as exc:
                 raise InferenceError("timeout") from exc
             except httpx.HTTPError as exc:
                 raise InferenceError("connection_error") from exc
+            if trace is not None:
+                await trace.on_http_response(resp.content, resp.status_code)
             if resp.status_code >= 400:
                 raise InferenceError(f"HTTP {resp.status_code}")
             data = resp.json()
@@ -129,6 +154,8 @@ async def infer_with(
     system_prompt: str,
     user_prompt: str,
     name: str | None = None,
+    *,
+    trace: ChatCallTrace | None = None,
 ):
     """Appelle un modèle génératif du registre.
 
@@ -141,6 +168,10 @@ async def infer_with(
         svc = OpenAICompatibleService(
             url, key, timeout=default._timeout, public_only=model.owner_id is not None
         )
+        if trace is not None:
+            return await svc.infer(name, system_prompt, user_prompt, trace=trace)
         return await svc.infer(name, system_prompt, user_prompt)
     ident = model.model_identifier if model is not None else (name or "")
+    if trace is not None:
+        return await default.infer(ident, system_prompt, user_prompt, trace=trace)
     return await default.infer(ident, system_prompt, user_prompt)

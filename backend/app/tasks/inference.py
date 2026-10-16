@@ -27,7 +27,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app import metrics
-from app.article_text import fill_prompt
 from app.celery_app import celery_app
 from app.core.config import get_settings
 from app.db.base import DATABASE_URL as _IMPORT_TIME_DATABASE_URL
@@ -53,6 +52,9 @@ from app.inference import (
     make_inference_service,
 )
 from app.inference.scoring import is_scorer, score_prediction
+from app.provenance_capture import capture_article_source
+from app.provenance_chat import PersistedChatTrace
+from app.provenance_render import render_chat
 from app.schema import project_fields
 from app.searches import ScopedProject, get_search, gold_condition, in_search, lot_condition
 from app.settings.service import get_setting
@@ -291,19 +293,63 @@ async def _do_inference(
     # Visible tout de suite (0 / N) : le premier appel peut télécharger les poids du modèle.
     await _progress(session, job, 0, len(articles), 0, counts())
 
-    async def predict(model, article, *, light: bool) -> dict:
+    frozen: dict = {}
+    invocation_groups: dict = {}
+
+    async def predict(model, article, *, light: bool) -> tuple[dict, PersistedChatTrace | None]:
         """Scoreur (Laya…) ou LLM génératif ; ``light`` = étage 1 (abstract seulement)."""
         if is_scorer(model):
-            return await score_prediction(model, project, article, light=light)
-        kinds = ["abstract"] if light else project.text_sections
-        user_prompt = fill_prompt(prompt.user_prompt_schema, article, kinds)
-        system = prompt.system_prompt or ""
-        if shots and not light:
-            system = (system + "\n\n" + shots).strip()
-        out = await infer_with(model, inference, system, user_prompt, name=job.model_used)
+            return await score_prediction(model, project, article, light=light), None
+        if article.id not in frozen:
+            snapshot, main_view_id = await capture_article_source(
+                session,
+                project_id=job.project_id,
+                article_id=article.id,
+                text_sections=project.text_sections,
+            )
+            await session.commit()  # No source row lock crosses the model request.
+            frozen[article.id] = (snapshot, main_view_id)
+        snapshot, main_view_id = frozen[article.id]
+        view_id = (
+            next(
+                view.id
+                for view in snapshot.views
+                if view.kind == "composed" and view.selection == ("abstract",)
+            )
+            if light
+            else main_view_id
+        )
+        rendered = render_chat(
+            snapshot,
+            view_id,
+            prompt.system_prompt,
+            prompt.user_prompt_schema,
+            examples=shots if not light else "",
+            example_ref=f"job:{job.id}:gold_examples" if shots and not light else None,
+        )
+        trace = PersistedChatTrace(
+            session,
+            snapshot=snapshot,
+            rendered=rendered,
+            job=job,
+            prompt=prompt,
+            model=model,
+            field_schema=project_fields(project),
+            group_id=invocation_groups.setdefault(article.id, uuid.uuid4()),
+            stage="prefilter" if light else "main",
+            sequence=0 if light else 1,
+        )
+        out = await infer_with(
+            model,
+            inference,
+            rendered.system.text,
+            rendered.user.text,
+            name=job.model_used,
+            trace=trace,
+        )
         if not isinstance(out, dict):
             raise InferenceError("invalid_json")  # JSON valide mais pas un objet
-        return out
+        return out, trace
 
     async def cancelled() -> bool:
         # Arrêt demandé depuis l'interface (POST …/inference/cancel : statut FAILED en base).
@@ -324,15 +370,17 @@ async def _do_inference(
             continue
         model_name = job.model_used
         prediction = None
+        producing = None
         try:
             if pre is not None:
                 # Étage 1 : titre + abstract ; un rejet net écarte l'article sans étage 2.
-                p1 = await predict(pre, article, light=True)
+                p1, pre_trace = await predict(pre, article, light=True)
                 if _triage(p1.get("confidence_score")) == REJECTED:
                     prediction, model_name = p1, pre.name
+                    producing = pre_trace
                     prefiltered += 1
             if prediction is None:
-                prediction = await predict(main, article, light=False)
+                prediction, producing = await predict(main, article, light=False)
         except InferenceError as exc:
             # Petits modèles : une sortie non-JSON ne doit pas tuer tout le job ;
             # timeout / connexion / HTTP restent fatals.
@@ -340,6 +388,8 @@ async def _do_inference(
                 raise
             invalid += 1
             await _progress(session, job, processed, len(articles), invalid, counts())
+            frozen.pop(article.id, None)
+            invocation_groups.pop(article.id, None)
             continue
         confidence = prediction.get("confidence_score")
         status = _triage(confidence)
@@ -353,16 +403,22 @@ async def _do_inference(
         session.add(
             ArticlePrediction(
                 article_id=article.id,
-                search_id=search.id,
+                search_id=job.search_id if producing else search.id,
                 prompt_template_id=prompt.id,
                 model_used=model_name,
                 decision_json=prediction,
                 confidence_score=confidence,
                 evidence_quotes=prediction.get("evidence_quotes"),
                 status=status,
+                provenance_project_id=job.project_id if producing else None,
+                source_snapshot_id=producing.snapshot.id if producing else None,
+                invocation_id=producing.row.id if producing else None,
+                invocation_group_id=producing.group_id if producing else None,
             )
         )
         await _progress(session, job, processed, len(articles), invalid, counts())
+        frozen.pop(article.id, None)
+        invocation_groups.pop(article.id, None)
 
     duration = time.monotonic() - start
     validation = None

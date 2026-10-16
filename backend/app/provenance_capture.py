@@ -86,6 +86,7 @@ async def capture_article_source(
         sections=tuple(article.sections or ()),
     )
     selected = composed_view(components, text_sections)
+    abstract_only = composed_view(components, ["abstract"])
     snapshot = SourceSnapshotV1(
         project_id=project_id,
         article_id=article_id,
@@ -95,7 +96,12 @@ async def capture_article_source(
         source=source,
         components=components,
         raw_artifact=artifact,
-        views=(selected, legacy_methods_view(components), title_abstract_view(components)),
+        views=(
+            selected,
+            abstract_only,
+            legacy_methods_view(components),
+            title_abstract_view(components),
+        ),
     )
     session.add(source_record(snapshot))
     await session.flush()
