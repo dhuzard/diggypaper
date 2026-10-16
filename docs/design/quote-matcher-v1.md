@@ -1,4 +1,4 @@
-# Captured article-input quotation matcher v1
+# Captured article-input quotation matcher v1.1
 
 Pure foundation for [SEIP issue #3](https://github.com/dhuzard/diggypaper/issues/3),
 based on `9e5859c1d00921fb19f5c61146deeb39977b2df9`. This implements deterministic
@@ -56,7 +56,9 @@ result = asdict(matcher.match("café sample"))
 `normalization_version`, `status`, `match_mode`, bounded `candidates`,
 `candidates_truncated`, `input_occurrence_count`,
 `distinct_source_location_count`, `counts_complete`,
-`unique_input_occurrence`, `unique_source_location`, and optional `reason`.
+`unique_input_occurrence`, `unique_source_location`, optional `reason`,
+`resource_limit_kind`, `candidate_examinations`, `validation_codepoints`,
+`candidate_examination_limit` and `validation_codepoint_limit`.
 Dataclasses can be serialized with `dataclasses.asdict`; callers own safe
 serialization of arbitrary non-string invalid objects. This module neither
 adds support/adjudication fields nor interprets an answer. For example, finding
@@ -67,10 +69,11 @@ adds support/adjudication fields nor interprets an answer. For example, finding
 | `exact` | At least one exact occurrence, with no observed distinct-source ambiguity. |
 | `normalized` | No exact occurrence; at least one occurrence after the enabled normalization, with no observed distinct-source ambiguity. |
 | `ambiguous` | At least two observed distinct source locations; `match_mode` retains exact/normalized provenance. |
-| `not_found` | The enabled pass(es) found no valid occurrence in any supplied target span. |
+| `not_found` | The enabled pass(es) completed and found no valid occurrence in any supplied target span. |
 | `invalid` | Non-string, empty/whitespace-only, or over the configured code-point limit. |
 | `source_unavailable` | A valid quote was checked with no captured source input (`source=None`). |
 | `not_checked` | Caller explicitly passed `checked=False`, including for legacy quotations. |
+| `incomplete` | A search was attempted but a work limit stopped it before any valid occurrence was established; this is not a negative match result. |
 
 An empty span tuple means a known input supplied no target text, so a valid
 quote returns `not_found`. Use `checked=False` for historical/unversioned rows;
@@ -90,15 +93,45 @@ adapter must provide canonical component identity; matching text alone never
 deduplicates locations or establishes component identity.
 
 The default candidate cap is 32; the default maximum quote is 16,384 code points.
-Search stops after observing one additional occurrence beyond the cap. Only the
-capped candidates are retained, while counts include the overflow witness.
+The default examination limit is 128 hits per pass, and the default normalized
+validation-work limit is 262,144 code-point units per pass. Both budgets are
+shared across all spans searched by that pass. Every substring hit consumes one
+examination, including hits rejected by original-slice validation. A normalized
+hit is charged twice its normalized needle length before scanning/copying the
+two offset maps, then its covering original-slice length before copying and
+normalizing that slice. Work that would exceed the configured budget is not
+performed. Counters and configured limits are retained in each search result.
+One-time full-source normalization/map construction is outside these per-hit
+budgets, so ordinary retained 1 MB views can still be searched. Overall source
+size remains the capture boundary's separate policy.
+
+The accepted-candidate cap stops search after observing one additional valid
+occurrence beyond the cap. Only the capped candidates are retained, while counts
+include the overflow witness.
 `candidates_truncated=True` and `counts_complete=False` mean both counts are
-lower bounds. Uniqueness flags are `False` after two relevant observations,
+lower bounds. `candidates_truncated=True` also means a work limit stopped the
+search, including when zero candidates were accepted. It does not guarantee
+that omitted valid candidates exist. `reason='resource_limit'` and
+`resource_limit_kind` (`candidate_examinations` or `validation_codepoints`)
+distinguish a work-limit stop from an accepted-candidate cap. Downstream
+integration must inspect `counts_complete` and `status`, not infer completeness
+from candidate count or the truncation flag alone.
+
+With zero accepted hits, a work-limit stop returns `incomplete`; it never returns
+`not_found` or the caller-skipped/legacy state `not_checked`. Accepted hits retain
+`exact`, `normalized` or `ambiguous` existence status, plus the resource-limit
+metadata and incomplete counts. Uniqueness flags are `False` after two relevant
+observations,
 `True` only after a complete one-location search, and `None` when unknown or
 inapplicable. A capped `exact`/`normalized` result with
 `unique_source_location=None` asserts existence only. Never infer uniqueness
 from status alone, candidate count, or a lower-bound source count of one.
 Non-search outcomes have `counts_complete=False`.
+
+The algorithm version is `article-input-quote-v1.1`; this adds the incomplete
+state and deterministic work accounting to v1. Work units bound the amount of
+per-hit mapping/slice validation; they are not a wall-clock deadline or a bound
+on one-time source-map construction.
 
 ## Normalization and offsets
 
@@ -165,26 +198,48 @@ Cold batches include lazy map construction; warm batches reuse maps. A separate
 `tracemalloc` run reports peak Python allocations, excluding prebuilt source and
 quotes. This is not process RSS or an end-to-end service/load benchmark.
 
-Measured 2026-10-16 on Windows 11 build 26200, Python 3.12.6, pytest 9.1.1,
-pytest-asyncio 1.4.0 and Ruff 0.17.1 in an isolated environment. All 48 focused
-tests and the scoped Ruff check/format check passed. The application suite was
-not run for this isolated foundation. Raw benchmark output is retained in
+It additionally runs the rejected-normalized-hit review reproduction at 20,000,
+100,000 and 1,000,000 UTF-8 bytes: repeated `U+0344` source characters with a
+quote made from repeated `U+0308 U+0301` pairs plus a final `U+0308`, with an
+accepted-candidate cap of one. Every matching transformed substring has an
+invalid original covering slice. The 20 KB case includes the exact 500-pair
+review quote plus 99 nearby quote lengths. `--resource-limits-only` runs these
+three adversarial rows alone. Results report examined hits, validation work and
+incomplete/resource-limit outcomes alongside time and allocations.
+
+Version 1.1 was measured 2026-10-16 on Windows 11 build 26200, Python 3.12.6,
+pytest 9.1.1, pytest-asyncio 1.4.0 and Ruff 0.17.1 in an isolated environment.
+All 60 focused tests and the scoped Ruff check/format check passed. The
+application suite was not run for this isolated foundation. Raw v1.1 benchmark
+output is retained in
+[`quote-matcher-v1.1-windows-python312.jsonl`](../benchmarks/quote-matcher-v1.1-windows-python312.jsonl);
+the original baseline remains in
 [`quote-matcher-v1-windows-python312.jsonl`](../benchmarks/quote-matcher-v1-windows-python312.jsonl).
 
 | UTF-8 input bytes | Mode | Cold median (ms) | Warm median (ms) | Peak Python allocations (MiB) |
 |---:|---|---:|---:|---:|
-| 100,000 | exact | 6.639 | 6.546 | 0.057 |
-| 100,000 | whitespace normalized | 107.912 | 14.677 | 4.001 |
-| 100,000 | NFC normalized | 110.435 | 15.548 | 4.098 |
-| 100,000 | repeated characters | 25.656 | 26.435 | 0.518 |
-| 1,000,000 | exact | 50.233 | 45.284 | 0.057 |
-| 1,000,000 | whitespace normalized | 1,188.570 | 83.875 | 40.146 |
-| 1,000,000 | NFC normalized | 1,350.249 | 105.238 | 41.101 |
-| 1,000,000 | repeated characters | 30.630 | 33.146 | 0.517 |
+| 100,000 | exact | 6.898 | 6.664 | 0.061 |
+| 100,000 | whitespace normalized | 96.947 | 14.331 | 4.001 |
+| 100,000 | NFC normalized | 114.725 | 16.129 | 4.098 |
+| 100,000 | repeated characters | 28.495 | 28.126 | 0.522 |
+| 1,000,000 | exact | 42.635 | 42.779 | 0.061 |
+| 1,000,000 | whitespace normalized | 1,224.904 | 84.590 | 40.146 |
+| 1,000,000 | NFC normalized | 1,307.330 | 102.516 | 41.101 |
+| 1,000,000 | repeated characters | 29.700 | 29.915 | 0.522 |
+| 20,000 | rejected normalized hits | 3,637.633 | 3,617.723 | 4.028 |
+| 100,000 | rejected normalized hits | 4,230.780 | 3,932.291 | 20.043 |
+| 1,000,000 | rejected normalized hits | 6,423.401 | 3,724.496 | 201.460 |
 
 Each row processes 100 quotes. Exact/normalized fixture rows produced 100 of the
 expected status, with one retained candidate per quote; repeated-character rows
-produced 100 ambiguous results with at most 32 retained candidates. Cold
-normalization remains materially more expensive than exact matching; the cache
-and bounded lifetime are deliberate. These synthetic local measurements establish
-behavior and cost, without claiming a production throughput or latency guarantee.
+produced 100 ambiguous results with at most 32 retained candidates. All rejected
+normalized-hit rows returned 100 `incomplete` results with `reason='resource_limit'`,
+zero accepted candidates and unknown uniqueness, after at most 105 examined hits
+and 262,134 validation units per quote. Ordinary exact/normalized rows remained
+complete without resource-limit stops. The high peak for the all-combining
+1 MB source comes from one-time source-map construction, outside the per-hit
+validation budget. Source-size policy and that allocation remain explicit
+integration limits. Cold normalization remains materially more expensive than
+exact matching; the cache and bounded lifetime are deliberate. These synthetic
+local measurements establish behavior and cost, without claiming a production
+throughput or latency guarantee.

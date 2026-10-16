@@ -10,12 +10,20 @@ from array import array
 from dataclasses import dataclass
 from typing import Literal
 
-ALGORITHM_VERSION = "article-input-quote-v1"
+ALGORITHM_VERSION = "article-input-quote-v1.1"
 NORMALIZATION_VERSION = f"nfc-whitespace-v1/ucd-{unicodedata.unidata_version}"
 MatchStatus = Literal[
-    "exact", "normalized", "not_found", "ambiguous", "invalid", "source_unavailable", "not_checked"
+    "exact",
+    "normalized",
+    "not_found",
+    "ambiguous",
+    "invalid",
+    "source_unavailable",
+    "not_checked",
+    "incomplete",
 ]
 MatchMode = Literal["exact", "normalized"]
+ResourceLimitKind = Literal["candidate_examinations", "validation_codepoints"]
 _WHITESPACE = re.compile(r"\s+")
 _ASCII_RUNS = re.compile(r"[\x00-\x7f]+|[^\x00-\x7f]+")
 
@@ -102,6 +110,13 @@ class QuoteCandidate:
 
 @dataclass(frozen=True)
 class QuoteMatch:
+    """Occurrence evidence with explicit search completeness.
+
+    ``candidates_truncated`` covers both the accepted-candidate cap and a work
+    limit, including a stop with zero accepted candidates. Inspect ``status``,
+    ``counts_complete`` and ``resource_limit_kind`` to interpret that flag.
+    """
+
     quote: object
     status: MatchStatus
     input_ref: str | None
@@ -116,6 +131,11 @@ class QuoteMatch:
     unique_input_occurrence: bool | None = None
     unique_source_location: bool | None = None
     reason: str | None = None
+    resource_limit_kind: ResourceLimitKind | None = None
+    candidate_examinations: int = 0
+    validation_codepoints: int = 0
+    candidate_examination_limit: int | None = None
+    validation_codepoint_limit: int | None = None
 
 
 def normalize_quote_text(text: str) -> str:
@@ -221,6 +241,9 @@ class ArticleQuoteMatcher:
     become lower bounds; unknown uniqueness is None. A matched status asserts
     existence, and only ``unique_source_location is True`` asserts uniqueness.
     Each origin span is searched independently, with overlapping matches allowed.
+    Every substring hit, including rejected normalized hits, consumes examination
+    budget. Per-hit mapping and original-slice normalization consume a separate
+    code-point budget. Lazy full-source normalization is outside these budgets.
     """
 
     def __init__(
@@ -230,12 +253,16 @@ class ArticleQuoteMatcher:
         allow_normalized: bool = False,
         max_candidates: int = 32,
         max_quote_codepoints: int = 16_384,
+        max_candidate_examinations: int = 128,
+        max_validation_codepoints: int = 262_144,
     ) -> None:
         if source is not None and not isinstance(source, TargetArticleInput):
             raise ValueError("source must be TargetArticleInput or None")
         for name, value in (
             ("max_candidates", max_candidates),
             ("max_quote_codepoints", max_quote_codepoints),
+            ("max_candidate_examinations", max_candidate_examinations),
+            ("max_validation_codepoints", max_validation_codepoints),
         ):
             if type(value) is not int or value < 1:
                 raise ValueError(f"{name} must be a positive integer")
@@ -243,6 +270,8 @@ class ArticleQuoteMatcher:
         self.allow_normalized = allow_normalized
         self.max_candidates = max_candidates
         self.max_quote_codepoints = max_quote_codepoints
+        self.max_candidate_examinations = max_candidate_examinations
+        self.max_validation_codepoints = max_validation_codepoints
         self._normalized: dict[int, _MappedText] = {}
 
     @property
@@ -279,6 +308,9 @@ class ArticleQuoteMatcher:
         locations: set[tuple[str, str, int, int]] = set()
         count = 0
         truncated = False
+        resource_limit_kind: ResourceLimitKind | None = None
+        examinations = 0
+        validation_codepoints = 0
         for span_index, span in enumerate(self.source.spans):
             mapped = None
             if mode == "normalized":
@@ -288,15 +320,31 @@ class ArticleQuoteMatcher:
             haystack = mapped.text if mapped is not None else span.text
             cursor = 0
             while (index := haystack.find(needle, cursor)) >= 0:
+                if examinations == self.max_candidate_examinations:
+                    resource_limit_kind = "candidate_examinations"
+                    break
+                examinations += 1
                 cursor = index + 1  # Deliberately retain overlapping occurrences.
                 end_index = index + len(needle)
                 if mapped is None:
                     start, end = index, end_index
                 else:
+                    # Charge before allocating/scanning map slices. Rejected hits
+                    # consume budget too; accepted-candidate caps cannot bound them.
+                    mapping_work = 2 * len(needle)
+                    if validation_codepoints + mapping_work > self.max_validation_codepoints:
+                        resource_limit_kind = "validation_codepoints"
+                        break
+                    validation_codepoints += mapping_work
                     # Combining marks may reorder. A covering range is valid only
                     # if the retained original slice really normalizes to needle.
                     start = min(mapped.starts[index:end_index])
                     end = max(mapped.ends[index:end_index])
+                    slice_work = end - start
+                    if validation_codepoints + slice_work > self.max_validation_codepoints:
+                        resource_limit_kind = "validation_codepoints"
+                        break
+                    validation_codepoints += slice_work
                     if normalize_quote_text(span.text[start:end]) != needle:
                         continue
                 candidate = QuoteCandidate(
@@ -317,13 +365,16 @@ class ArticleQuoteMatcher:
                     truncated = True
                     break
                 found.append(candidate)
-            if truncated:
+            if truncated or resource_limit_kind is not None:
                 break
-        unique_input = False if count > 1 else (None if truncated or not count else True)
-        unique_source = False if len(locations) > 1 else (None if truncated or not count else True)
+        incomplete = truncated or resource_limit_kind is not None
+        unique_input = False if count > 1 else (None if incomplete or not count else True)
+        unique_source = False if len(locations) > 1 else (None if incomplete or not count else True)
         status: MatchStatus = "not_found"
         if count:
             status = "ambiguous" if len(locations) > 1 else mode
+        elif resource_limit_kind is not None:
+            status = "incomplete"
         return QuoteMatch(
             quote,
             status,
@@ -331,10 +382,16 @@ class ArticleQuoteMatcher:
             tuple(found),
             match_mode=mode if count else None,
             normalization_version=NORMALIZATION_VERSION if mode == "normalized" else None,
-            candidates_truncated=truncated,
+            candidates_truncated=incomplete,
             input_occurrence_count=count,
             distinct_source_location_count=len(locations),
-            counts_complete=not truncated,
+            counts_complete=not incomplete,
             unique_input_occurrence=unique_input,
             unique_source_location=unique_source,
+            reason="resource_limit" if resource_limit_kind is not None else None,
+            resource_limit_kind=resource_limit_kind,
+            candidate_examinations=examinations,
+            validation_codepoints=validation_codepoints,
+            candidate_examination_limit=self.max_candidate_examinations,
+            validation_codepoint_limit=self.max_validation_codepoints,
         )

@@ -1,0 +1,9 @@
+{
+  "name": "rejected_normalized_hits_review_reproduction",
+  "source_repeat": "\u0344",
+  "source_repetitions": 10000,
+  "quote_repeat": "\u0308\u0301",
+  "quote_repetitions": 500,
+  "quote_suffix": "\u0308",
+  "max_candidates": 1
+}

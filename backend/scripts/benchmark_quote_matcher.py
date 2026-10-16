@@ -5,6 +5,7 @@ Source/quote construction is excluded. Cold batch includes lazy normalization;
 warm batch reuses the same matcher. Peak is Python-traced allocations (not RSS).
 """
 
+import argparse
 import gc
 import json
 import platform
@@ -13,11 +14,20 @@ from collections import Counter
 from statistics import median
 from time import perf_counter
 
-from app.quote_matcher import ArticleInputSpan, ArticleQuoteMatcher, TargetArticleInput
+from app.quote_matcher import (
+    ALGORITHM_VERSION,
+    NORMALIZATION_VERSION,
+    ArticleInputSpan,
+    ArticleQuoteMatcher,
+    TargetArticleInput,
+)
 
 
 def fixture(size: int, mode: str) -> tuple[TargetArticleInput, list[str]]:
-    if mode == "repeated":
+    if mode == "rejected_normalized":
+        text = "\u0344" * (size // 2)
+        quotes = ["\u0308\u0301" * (500 + index) + "\u0308" for index in range(100)]
+    elif mode == "repeated":
         text = "a" * size
         quotes = ["a" * length for length in range(1, 101)]
     else:
@@ -47,7 +57,9 @@ def measure(size: int, mode: str) -> dict:
     warm_times = []
     for _ in range(3):
         gc.collect()
-        matcher = ArticleQuoteMatcher(source, allow_normalized=True)
+        matcher = ArticleQuoteMatcher(
+            source, allow_normalized=True, max_candidates=1 if mode == "rejected_normalized" else 32
+        )
         started = perf_counter()
         results = batch(matcher, quotes)
         cold_times.append((perf_counter() - started) * 1000)
@@ -57,7 +69,9 @@ def measure(size: int, mode: str) -> dict:
     del matcher
     gc.collect()
     tracemalloc.start()
-    memory_matcher = ArticleQuoteMatcher(source, allow_normalized=True)
+    memory_matcher = ArticleQuoteMatcher(
+        source, allow_normalized=True, max_candidates=1 if mode == "rejected_normalized" else 32
+    )
     memory_results = batch(memory_matcher, quotes)
     _, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
@@ -73,23 +87,35 @@ def measure(size: int, mode: str) -> dict:
         "peak_python_mib": round(peak / 1024**2, 3),
         "statuses": dict(Counter(result.status for result in results)),
         "max_retained_candidates": max(len(result.candidates) for result in results),
+        "max_candidate_examinations": max(result.candidate_examinations for result in results),
+        "max_validation_codepoints": max(result.validation_codepoints for result in results),
+        "resource_limit_count": sum(result.reason == "resource_limit" for result in results),
+        "incomplete_count": sum(not result.counts_complete for result in results),
     }
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--resource-limits-only", action="store_true")
+    args = parser.parse_args()
     print(
         json.dumps(
             {
                 "python": platform.python_version(),
+                "algorithm_version": ALGORITHM_VERSION,
+                "normalization_version": NORMALIZATION_VERSION,
                 "platform": platform.platform(),
                 "timing_repetitions": 3,
                 "memory": "tracemalloc peak; source/quote construction excluded; not RSS",
             }
         )
     )
-    for size in (100_000, 1_000_000):
-        for mode in ("exact", "normalized_whitespace", "normalized_unicode", "repeated"):
-            print(json.dumps(measure(size, mode)), flush=True)
+    if not args.resource_limits_only:
+        for size in (100_000, 1_000_000):
+            for mode in ("exact", "normalized_whitespace", "normalized_unicode", "repeated"):
+                print(json.dumps(measure(size, mode)), flush=True)
+    for size in (20_000, 100_000, 1_000_000):
+        print(json.dumps(measure(size, "rejected_normalized")), flush=True)
 
 
 if __name__ == "__main__":
