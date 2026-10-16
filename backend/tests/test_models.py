@@ -70,11 +70,13 @@ EXPECTED_TABLES = {
     "searches",  # recherches : question + lot d'articles
     "search_articles",  # lot figé d'une recherche
     "benchmark_predictions",  # réponses de chaque variante du banc d'essai
+    "source_snapshots",
+    "invocations",
 }
 
 
 def fk(col):
-    return next(iter(col.foreign_keys))
+    return next(f for f in col.foreign_keys if len(f.constraint.elements) == 1)
 
 
 def test_all_tables_registered():
@@ -496,6 +498,10 @@ def test_article_predictions_columns():
         "search_id",
         "status",
         "created_at",
+        "provenance_project_id",
+        "source_snapshot_id",
+        "invocation_id",
+        "invocation_group_id",
     }
     assert c["id"].primary_key
     assert fk(c["article_id"]).column is Article.__table__.c.id
@@ -525,6 +531,10 @@ def test_human_annotations_columns():
         "decision_json",
         "notes",
         "created_at",
+        "provenance_project_id",
+        "source_snapshot_id",
+        "source_view_id",
+        "source_view_sha256",
     }
     assert c["id"].primary_key
     assert fk(c["article_id"]).column is Article.__table__.c.id

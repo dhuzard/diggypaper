@@ -1,0 +1,293 @@
+"""Opt-in real upgrade test. SEIP_TEST_POSTGRES_URL must allow temporary databases.
+
+Each run creates/drops its own UUID-named database; it never resets the supplied
+database. Run against a disposable PostgreSQL 16 service, not production.
+"""
+
+import asyncio
+import copy
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import uuid
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+from sqlalchemy import delete, insert, select, text, update
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from app.db.models import (
+    Article,
+    ArticlePrediction,
+    HumanAnnotation,
+    Invocation,
+    Project,
+    SourceSnapshot,
+)
+from app.provenance import (
+    MAX_RAW_BYTES,
+    Reconciliation,
+    ResponseCapture,
+    SourceSnapshotV1,
+    complete_invocation,
+    invocation_record,
+    prepare_invocation,
+    review_binding,
+    source_record,
+)
+
+BACKEND = Path(__file__).resolve().parents[1]
+DATA = json.loads((Path(__file__).parent / "fixtures/provenance_v1.json").read_text("utf-8"))
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("SEIP_TEST_POSTGRES_URL"), reason="requires disposable PostgreSQL admin URL"
+)
+
+
+async def alembic(url, action, revision, *, success=True):
+    result = await asyncio.to_thread(
+        subprocess.run,
+        [sys.executable, "-m", "alembic", action, revision],
+        cwd=BACKEND,
+        env={**os.environ, "DATABASE_URL": url},
+        capture_output=True,
+        text=True,
+    )
+    assert (result.returncode == 0) == success, result.stderr[-6000:]
+    return result
+
+
+@pytest.fixture
+async def postgres_database():
+    url = make_url(os.environ["SEIP_TEST_POSTGRES_URL"])
+    name = "seip_storage_test_" + uuid.uuid4().hex
+    admin = create_async_engine(url, isolation_level="AUTOCOMMIT")
+    async with admin.connect() as connection:
+        await connection.exec_driver_sql(f'CREATE DATABASE "{name}"')
+    test_url = url.set(database=name).render_as_string(hide_password=False)
+    engine = create_async_engine(test_url)
+    try:
+        yield test_url, engine
+    finally:
+        await engine.dispose()
+        async with admin.connect() as connection:
+            await connection.execute(
+                text(
+                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                    "WHERE datname = :name AND pid <> pg_backend_pid()"
+                ),
+                {"name": name},
+            )
+            await connection.exec_driver_sql(f'DROP DATABASE "{name}"')
+        await admin.dispose()
+
+
+async def test_populated_postgres_upgrade_downgrade_and_storage_guards(postgres_database):
+    url, engine = postgres_database
+    await alembic(url, "upgrade", "0021")
+    source = SourceSnapshotV1.model_validate(DATA["snapshot"])
+    pid, aid = source.project_id, source.article_id
+    legacy_pred, legacy_review, run, legacy_bench = [uuid.uuid4() for _ in range(4)]
+    async with engine.begin() as connection:
+        await connection.execute(
+            text("INSERT INTO projects(id,title) VALUES (:id,'Legacy')"), {"id": pid}
+        )
+        await connection.execute(
+            text(
+                "INSERT INTO articles(id,project_id,title,abstract) "
+                "VALUES (:id,:pid,'Old title','Old abstract')"
+            ),
+            {"id": aid, "pid": pid},
+        )
+        await connection.execute(
+            text(
+                "INSERT INTO article_predictions(id,article_id,model_used,decision_json) "
+                "VALUES (:id,:aid,'old-model',jsonb_build_object('old',true))"
+            ),
+            {"id": legacy_pred, "aid": aid},
+        )
+        await connection.execute(
+            text(
+                "INSERT INTO human_annotations(id,article_id,decision_json) "
+                "VALUES (:id,:aid,jsonb_build_object('old_review',true))"
+            ),
+            {"id": legacy_review, "aid": aid},
+        )
+        await connection.execute(
+            text("INSERT INTO benchmark_runs(id,project_id) VALUES (:id,:pid)"),
+            {"id": run, "pid": pid},
+        )
+        await connection.execute(
+            text(
+                "INSERT INTO benchmark_predictions"
+                "(id,benchmark_run_id,article_id,model_name,decision_json) "
+                "VALUES (:id,:run,:aid,'old-model',jsonb_build_object('old_benchmark',true))"
+            ),
+            {"id": legacy_bench, "run": run, "aid": aid},
+        )
+        assert await connection.scalar(text("SELECT gen_random_uuid()")) is not None
+    await alembic(url, "upgrade", "head")
+    async with engine.connect() as connection:
+        assert await connection.scalar(text("SELECT count(*) FROM source_snapshots")) == 0
+        for table in ("article_predictions", "human_annotations", "benchmark_predictions"):
+            row = (
+                await connection.execute(
+                    text(
+                        "SELECT decision_json,source_snapshot_id,provenance_project_id "
+                        f"FROM {table}"
+                    )
+                )
+            ).one()
+            assert (
+                row.decision_json
+                and row.source_snapshot_id is None
+                and row.provenance_project_id is None
+            )
+    # A rollback with populated legacy tables and zero captured sources loses no rows.
+    await alembic(url, "downgrade", "0021")
+    async with engine.connect() as connection:
+        assert await connection.scalar(text("SELECT decision_json FROM article_predictions")) == {
+            "old": True
+        }
+        assert await connection.scalar(text("SELECT count(*) FROM human_annotations")) == 1
+    await alembic(url, "upgrade", "head")
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        session.add(source_record(source))
+        await session.commit()
+        values = copy.deepcopy(DATA["invocations"][0]["envelope"])
+        for key in ("project_id", "article_id", "source_snapshot_id", "request_sha256"):
+            values.pop(key)
+        invocation = invocation_record(prepare_invocation(source, **values))
+        session.add(invocation)
+        await session.commit()
+        complete_invocation(invocation, "outcome_unknown")
+        await session.commit()
+        with pytest.raises(DBAPIError):
+            async with session.begin_nested():
+                await session.execute(
+                    update(Invocation)
+                    .where(Invocation.id == invocation.id)
+                    .values(
+                        outcome="succeeded",
+                        completed_at=datetime.now(UTC),
+                        response_capture={
+                            "origin": "driver_parsed",
+                            "raw_availability": "unavailable",
+                        },
+                        reconciliation={
+                            "actor_ref": "test",
+                            "reason": "claimed recovery",
+                            "recorded_at": datetime.now(UTC).isoformat(),
+                        },
+                    )
+                )
+        complete_invocation(
+            invocation,
+            "succeeded",
+            response=ResponseCapture(
+                origin="driver_parsed",
+                raw_availability="unavailable",
+                parsed={"answer": True},
+                reason="actual recovered parsed output; raw bytes unavailable",
+            ),
+            reconciliation=Reconciliation(
+                actor_ref="operator:test", reason="recovered actual call result"
+            ),
+        )
+        await session.commit()
+        bound = ArticlePrediction(
+            article_id=aid,
+            model_used="new-model",
+            provenance_project_id=pid,
+            source_snapshot_id=source.id,
+            invocation_id=invocation.id,
+            invocation_group_id=invocation.group_id,
+        )
+        review = HumanAnnotation(article_id=aid, **review_binding(source, source.views[1].id))
+        session.add_all([bound, review])
+        await session.commit()
+        other_project = Project(title="Other")
+        session.add(other_project)
+        await session.flush()
+        other_article = Article(project_id=other_project.id)
+        session.add(other_article)
+        await session.commit()
+        statements = [
+            update(SourceSnapshot)
+            .where(SourceSnapshot.id == source.id)
+            .values(snapshot_sha256="0" * 64),
+            update(Invocation)
+            .where(Invocation.id == invocation.id)
+            .values(request_envelope={"forged": True}),
+            update(Invocation).where(Invocation.id == invocation.id).values(outcome="failed"),
+            update(ArticlePrediction)
+            .where(ArticlePrediction.id == bound.id)
+            .values(
+                source_snapshot_id=None,
+                provenance_project_id=None,
+                invocation_id=None,
+                invocation_group_id=None,
+            ),
+            update(HumanAnnotation)
+            .where(HumanAnnotation.id == review.id)
+            .values(source_view_id=uuid.uuid4()),
+            update(ArticlePrediction)
+            .where(ArticlePrediction.id == legacy_pred)
+            .values(source_snapshot_id=source.id, provenance_project_id=pid),
+            insert(ArticlePrediction).values(
+                article_id=other_article.id,
+                provenance_project_id=pid,
+                source_snapshot_id=source.id,
+                model_used="wrong scope",
+            ),
+            insert(ArticlePrediction).values(
+                article_id=aid,
+                provenance_project_id=other_project.id,
+                source_snapshot_id=source.id,
+                model_used="wrong scope",
+            ),
+            delete(SourceSnapshot).where(SourceSnapshot.id == source.id),
+        ]
+        for statement in statements:
+            with pytest.raises(DBAPIError):
+                async with session.begin_nested():
+                    await session.execute(statement)
+        # Core SQL bypasses constructor checks: PostgreSQL still enforces raw digest/cap.
+        for data, checksum in ((b"wrong", "a" * 64), (b"x" * (MAX_RAW_BYTES + 1), None)):
+            row = source_record(source)
+            columns = {
+                column.name: getattr(row, column.name)
+                for column in SourceSnapshot.__table__.columns
+            }
+            columns.update(
+                id=uuid.uuid4(),
+                raw_data=data,
+                raw_availability="retained",
+                raw_sha256=checksum or hashlib.sha256(data).hexdigest(),
+                raw_media_type="application/pdf",
+            )
+            with pytest.raises(DBAPIError):
+                async with session.begin_nested():
+                    await session.execute(insert(SourceSnapshot).values(**columns))
+        assert (
+            await session.scalar(
+                select(ArticlePrediction.source_snapshot_id).where(
+                    ArticlePrediction.id == legacy_pred
+                )
+            )
+            is None
+        )
+    blocked = await alembic(url, "downgrade", "0021", success=False)
+    assert "refusing to discard retained provenance" in blocked.stderr
+    async with engine.begin() as connection:
+        assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "0022"
+        assert await connection.scalar(text("SELECT count(*) FROM source_snapshots")) == 1
+        # Explicit ownership deletion remains the documented retention boundary.
+        await connection.execute(delete(Project).where(Project.id == pid))
+        assert await connection.scalar(select(SourceSnapshot.id)) is None
+        assert await connection.scalar(select(Invocation.id)) is None
