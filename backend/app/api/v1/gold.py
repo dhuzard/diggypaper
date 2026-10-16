@@ -271,11 +271,25 @@ async def list_gold(
     """Références valables pour la recherche (celles de toute recherche de même question)."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
+    visible = []
+    if scope.kind == "blind":
+        # Gold may be shared across same-question searches. In a blind search,
+        # reveal a reference only after this reviewer has locked a judgment on
+        # that article; another member's review is not sufficient.
+        visible.append(
+            select(HumanAnnotation.id)
+            .where(
+                HumanAnnotation.article_id == GoldArticle.article_id,
+                HumanAnnotation.user_id == user.id,
+                in_search(HumanAnnotation.search_id, scope),
+            )
+            .exists()
+        )
     rows = (
         await db.execute(
             select(GoldArticle, Article.title)
             .join(Article, GoldArticle.article_id == Article.id)
-            .where(await gold_condition(db, project, scope))
+            .where(await gold_condition(db, project, scope), *visible)
             .order_by(GoldArticle.id)
         )
     ).all()

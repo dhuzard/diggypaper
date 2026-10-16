@@ -612,7 +612,28 @@ async def list_articles(
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
 
-    where, pstatus, pconf, pdec, annotated = article_filter(scope, status, answers)
+    if scope.kind == "blind" and sort == "score_desc":
+        # Sorting by a hidden confidence score leaks its ordering before review.
+        raise HTTPException(status_code=422, detail="score sort unavailable (blind)")
+
+    own_annotated = (
+        select(HumanAnnotation.id)
+        .where(
+            HumanAnnotation.article_id == Article.id,
+            HumanAnnotation.user_id == user.id,
+            in_search(HumanAnnotation.search_id, scope),
+        )
+        .exists()
+    )
+
+    # A blind reviewer must see their own remaining queue, independent of any
+    # other reviewer's progress. The shared filter otherwise uses all reviews.
+    filter_status = None if scope.kind == "blind" and status == "TO_REVIEW" else status
+    where, pstatus, pconf, pdec, annotated = article_filter(scope, filter_status, answers)
+    if scope.kind == "blind":
+        annotated = own_annotated
+        if status == "TO_REVIEW":
+            where.append(~own_annotated)
     total = (await db.execute(select(func.count()).select_from(Article).where(*where))).scalar_one()
     order = {
         "date_desc": [Article.pub_date.desc().nulls_last()],
@@ -666,12 +687,17 @@ async def list_articles(
         )
     ).scalar_one()
     if mine is not None:  # aveugle : pas de répartition des résultats de l'IA
-        stats = {"NONE": sum(stats.values()) - stats.get("TO_REVIEW", 0)}
-        stats["TO_REVIEW"] = (
+        remaining = (
             await db.execute(
-                select(func.count()).select_from(Article).where(lot_condition(scope), ~annotated)
+                select(func.count())
+                .select_from(Article)
+                .where(lot_condition(scope), ~own_annotated)
             )
         ).scalar_one()
+        lot_size = (
+            await db.execute(select(func.count()).select_from(Article).where(lot_condition(scope)))
+        ).scalar_one()
+        stats = {"NONE": lot_size - remaining, "TO_REVIEW": remaining}
 
     def visible(a) -> bool:  # donnée de l'IA / d'autrui montrable pour cet article ?
         return mine is None or a.id in mine
