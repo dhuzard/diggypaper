@@ -308,7 +308,8 @@ async def test_bound_benchmark_result_rejects_variant_and_result_rewrite(
     async with httpx.AsyncClient(transport=transport) as http:
         factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
         await _run_benchmark(
-            str(run.id), session_factory=factory,
+            str(run.id),
+            session_factory=factory,
             inference=OpenAICompatibleService("http://test/v1", http=http),
         )
     bound = (await session.execute(select(BenchmarkPrediction))).scalar_one()
@@ -325,9 +326,9 @@ async def test_bound_benchmark_result_rejects_variant_and_result_rewrite(
         with pytest.raises(DBAPIError):
             async with session.begin_nested():
                 await session.execute(
-                    update(BenchmarkPrediction).where(BenchmarkPrediction.id == bound.id).values(
-                        **values
-                    )
+                    update(BenchmarkPrediction)
+                    .where(BenchmarkPrediction.id == bound.id)
+                    .values(**values)
                 )
     with pytest.raises(DBAPIError):
         async with session.begin_nested():
@@ -365,15 +366,18 @@ async def test_bound_benchmark_result_rejects_variant_and_result_rewrite(
             await session.flush()
 
     legacy = BenchmarkPrediction(
-        benchmark_run_id=run.id, article_id=arts[0].id,
-        model_name="legacy", variant="old", decision_json={"old": True},
+        benchmark_run_id=run.id,
+        article_id=arts[0].id,
+        model_name="legacy",
+        variant="old",
+        decision_json={"old": True},
     )
     session.add(legacy)
     await session.commit()
     await session.execute(
-        update(BenchmarkPrediction).where(BenchmarkPrediction.id == legacy.id).values(
-            variant="revised", decision_json={"old": False}
-        )
+        update(BenchmarkPrediction)
+        .where(BenchmarkPrediction.id == legacy.id)
+        .values(variant="revised", decision_json={"old": False})
     )
     await session.commit()
     await session.refresh(legacy)

@@ -56,7 +56,11 @@ _AnimalSex = Literal["MALE_ONLY", "FEMALE_ONLY", "BOTH_SEXES", "UNSPECIFIED"]
 
 
 _META_KEYS = {
-    "confidence_score", "evidence_quotes", "reasoning_summary", "review_status", "source_binding",
+    "confidence_score",
+    "evidence_quotes",
+    "reasoning_summary",
+    "review_status",
+    "source_binding",
 }
 
 
@@ -140,9 +144,13 @@ async def get_article(
     modèles » suit les parties de la recherche."""
     article = await _require_article(db, project_id, article_id, user)
     scope = await _scope(db, project_id, search)
-    if scope.kind == "blind" and await db.scalar(
-        select(Article.id).where(Article.id == article.id, lot_condition(scope))
-    ) is None:
+    if (
+        scope.kind == "blind"
+        and await db.scalar(
+            select(Article.id).where(Article.id == article.id, lot_condition(scope))
+        )
+        is None
+    ):
         raise HTTPException(status_code=404, detail="Article not found in search")
     snapshot, view_id = await capture_article_source(
         db, project_id=project_id, article_id=article_id, text_sections=scope.text_sections
@@ -418,21 +426,24 @@ async def create_annotation(
     article = await _require_article(db, project_id, article_id, user)
     scope = await _scope(db, project_id, search)
     if scope.kind == "blind":
-        if await db.scalar(
-            select(Article.id).where(Article.id == article.id, lot_condition(scope))
-        ) is None:
+        if (
+            await db.scalar(
+                select(Article.id).where(Article.id == article.id, lot_condition(scope))
+            )
+            is None
+        ):
             raise HTTPException(status_code=404, detail="Article not found in search")
         # Serialize first submissions on PostgreSQL so two parallel POSTs cannot
         # both pass the existence check before either commits.
-        await db.scalar(
-            select(Article.id).where(Article.id == article.id).with_for_update()
-        )
+        await db.scalar(select(Article.id).where(Article.id == article.id).with_for_update())
         prior = await db.scalar(
-            select(HumanAnnotation.id).where(
+            select(HumanAnnotation.id)
+            .where(
                 HumanAnnotation.article_id == article.id,
                 HumanAnnotation.user_id == user.id,
                 in_search(HumanAnnotation.search_id, scope),
-            ).limit(1)
+            )
+            .limit(1)
         )
         if prior is not None:
             raise HTTPException(status_code=409, detail="blind review already submitted")
@@ -449,8 +460,11 @@ async def create_annotation(
             raise HTTPException(status_code=422, detail="invalid source view token")
         try:
             source_id, view_id, digest = parse_review_token(
-                token, project_id=project_id, article_id=article_id,
-                scope=scope, user_id=user.id,
+                token,
+                project_id=project_id,
+                article_id=article_id,
+                scope=scope,
+                user_id=user.id,
             )
         except ValueError:
             raise HTTPException(status_code=422, detail="invalid source view token") from None
@@ -465,16 +479,21 @@ async def create_annotation(
                 status_code=409, detail="retained source view unavailable"
             ) from None
         if (
-            snapshot.project_id != project_id or snapshot.article_id != article_id
+            snapshot.project_id != project_id
+            or snapshot.article_id != article_id
             or source_columns["source_view_sha256"] != digest
         ):
             raise HTTPException(status_code=422, detail="invalid source view token")
         current = await db.scalar(
-            select(Article).where(Article.id == article_id).with_for_update()
+            select(Article)
+            .where(Article.id == article_id)
+            .with_for_update()
             .execution_options(populate_existing=True)
         )
         current_components = Components(
-            title=current.title, abstract=current.abstract, methods_text=current.methods_text,
+            title=current.title,
+            abstract=current.abstract,
+            methods_text=current.methods_text,
             sections=tuple(current.sections or ()),
         )
         drift = (

@@ -318,7 +318,8 @@ async def test_blind_sample_hides_predictions_until_reviewed(client, session, co
     assert (await client.get(f"{url}/prediction", params={"search": s["id"]})).json() is None
     token = (await client.get(url, params={"search": s["id"]})).json()["source_view_token"]
     r = await client.post(
-        f"{url}/annotation", params={"search": s["id"]},
+        f"{url}/annotation",
+        params={"search": s["id"]},
         json={"ai": False, "source_view_token": token},
     )
     assert r.status_code == 201
@@ -383,7 +384,8 @@ async def test_blind_search_hides_model_and_other_reviewers_everywhere(
         "source_view_token"
     ]
     await client.post(
-        f"{article_url}/annotation", params={"search": s["id"]},
+        f"{article_url}/annotation",
+        params={"search": s["id"]},
         json={"ai": False, "source_view_token": lead_token},
     )
     await client.post(f"{base}/gold/from-reviews", params={"search": s["id"]}, json={})
@@ -427,7 +429,8 @@ async def test_blind_search_hides_model_and_other_reviewers_everywhere(
         "source_view_token"
     ]
     await client.post(
-        f"{article_url}/annotation", params={"search": s["id"]},
+        f"{article_url}/annotation",
+        params={"search": s["id"]},
         json={"ai": True, "source_view_token": member_token},
     )
     mine = (await client.get(f"{base}/articles", params={"search": s["id"]})).json()["items"]
