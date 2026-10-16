@@ -802,6 +802,7 @@ class EvidenceSupportAssessment(Base):
             "protocol_version = 'seip-support-v1'",
             name="ck_support_assessments_protocol",
         ),
+        CheckConstraint("length(actor_ref) = 64", name="ck_support_assessments_actor_ref"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
@@ -813,10 +814,10 @@ class EvidenceSupportAssessment(Base):
     graph_revision_ref: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
     answer_ref: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
     evidence_ref: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
-    actor_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL")
     )
-    actor_ref: Mapped[str] = mapped_column(String(36), nullable=False)
+    actor_ref: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
     protocol_version: Mapped[str] = mapped_column(String(40), nullable=False)

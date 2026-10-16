@@ -3,7 +3,8 @@
 Draft SEIP #4 slice, stacked on the answer/evidence graph in PR #27. A qualified
 project reviewer can record `supports`, `contradicts`, `insufficient`, `unclear`,
 or `not_assessed` for one **existing answer–evidence link** in one prediction
-revision. The server stamps actor, time and `seip-support-v1`; a nonempty rationale
+revision. The server stamps a durable salted actor pseudonym, time and
+`seip-support-v1`; a nonempty rationale
 is required for a judgment other than `not_assessed`. The assessment is an
 explicit human claim. Quote occurrence, answer agreement and model confidence
 never create or prefill it.
@@ -24,10 +25,12 @@ submitted their own annotation; then GET returns only that caller's assessments.
 POST locks the article row before checking the current prediction so a concurrent
 prediction insert cannot silently retarget the judgment on PostgreSQL. The
 database checks the exact stored link, revision, project, article, actor and
-protocol on insert; updates and deletes are blocked. A populated migration will
-not downgrade and discard these records. This intentionally prevents ordinary
-deletion of a prediction or user with an assessment. Account anonymization and
-retention policy need a later explicit design.
+protocol on insert. Judgment fields cannot be updated; only nulling the actor
+foreign key for account deletion/anonymization is allowed. The salted pseudonym
+remains, following the existing annotation deletion pattern, and no raw user ID
+is returned by this API. No API deletes individual judgments. Deleting the owning
+prediction or project cascades its assessments under the existing product cleanup
+policy. A populated migration will not downgrade and discard the records.
 
 This does not implement a reviewer interface, source-view verification of what
 the assessor read, gold adjudication, qualification metrics, or independent

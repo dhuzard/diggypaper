@@ -57,6 +57,7 @@ from app.provenance import (
     source_record,
 )
 from app.provenance_capture import capture_article_source
+from app.pseudonym import anonymized_actor_ref
 from app.quote_checks import check_prediction_quotes
 from app.tasks.benchmark import _run_benchmark
 
@@ -995,7 +996,7 @@ async def test_support_assessment_sql_guard_and_guarded_downgrade(postgres_datab
             answer_ref=uuid.UUID(link["answer_ref"]),
             evidence_ref=uuid.UUID(link["evidence_ref"]),
             actor_id=actor_id,
-            actor_ref=str(actor_id),
+            actor_ref=anonymized_actor_ref("reviewer@example.org"),
             status="supports",
             rationale="Human inspected source context.",
             protocol_version="seip-support-v1",
@@ -1022,7 +1023,7 @@ async def test_support_assessment_sql_guard_and_guarded_downgrade(postgres_datab
             "answer_ref": uuid.uuid4(),
             "evidence_ref": uuid.UUID(link["evidence_ref"]),
             "actor_id": actor_id,
-            "actor_ref": str(actor_id),
+            "actor_ref": anonymized_actor_ref("reviewer@example.org"),
             "status": "supports",
             "rationale": "forged link",
             "protocol_version": "seip-support-v1",
@@ -1030,15 +1031,20 @@ async def test_support_assessment_sql_guard_and_guarded_downgrade(postgres_datab
         with pytest.raises(DBAPIError):
             async with session.begin_nested():
                 await session.execute(insert(EvidenceSupportAssessment).values(**forged))
-        with pytest.raises(DBAPIError):
-            async with session.begin_nested():
-                await session.execute(
-                    delete(EvidenceSupportAssessment).where(
-                        EvidenceSupportAssessment.id == assessment.id
-                    )
-                )
+        await session.execute(text("DELETE FROM users WHERE id = :id"), {"id": actor_id})
+        await session.commit()
+        await session.refresh(assessment)
+        assert assessment.actor_id is None
+        assert assessment.actor_ref == anonymized_actor_ref("reviewer@example.org")
     refused = await alembic(url, "downgrade", "0026", success=False)
     assert "refusing to discard human support assessments" in refused.stderr
+    async with factory() as session:
+        await session.execute(
+            delete(ArticlePrediction).where(ArticlePrediction.id == prediction_id)
+        )
+        await session.commit()
+        assert await session.get(EvidenceSupportAssessment, assessment.id) is None
+    await alembic(url, "downgrade", "0026")
 
 
 async def test_empty_support_assessment_migration_downgrades(postgres_database):

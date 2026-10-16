@@ -15,6 +15,7 @@ from app.db.models import (
     Search,
 )
 from app.evidence_prediction import prediction_envelope
+from app.pseudonym import anonymized_actor_ref
 
 
 async def _project_article(session, user):
@@ -105,7 +106,7 @@ async def test_assessment_is_human_and_exact_despite_not_found_quote(
     response = await client.post(url, json=payload)
     assert response.status_code == 201, response.text
     row = response.json()
-    assert row["actor_ref"] == str(researcher_user.id)
+    assert row["actor_ref"] == anonymized_actor_ref(researcher_user.email)
     assert row["protocol_version"] == "seip-support-v1"
     assert row["created_at"]
     assert row["status"] == "supports"
@@ -214,7 +215,7 @@ async def test_member_and_blind_boundaries(client, session, researcher_user, adm
             answer_ref=uuid.UUID(payload["answer_ref"]),
             evidence_ref=uuid.UUID(payload["evidence_ref"]),
             actor_id=admin_user.id,
-            actor_ref=str(admin_user.id),
+            actor_ref=anonymized_actor_ref(admin_user.email),
             status="unclear",
             rationale="Independent review pending.",
             protocol_version="seip-support-v1",
@@ -224,7 +225,7 @@ async def test_member_and_blind_boundaries(client, session, researcher_user, adm
     assert (await client.get(url)).json()["assessments"] == []
     assert (await client.post(url, json=payload)).status_code == 201
     own = (await client.get(url)).json()["assessments"]
-    assert len(own) == 1 and own[0]["actor_ref"] == str(researcher_user.id)
+    assert len(own) == 1 and own[0]["actor_ref"] == anonymized_actor_ref(researcher_user.email)
     foreign = Project(title="Foreign")
     session.add(foreign)
     await session.flush()
@@ -233,3 +234,41 @@ async def test_member_and_blind_boundaries(client, session, researcher_user, adm
     await session.commit()
     foreign_url = _url(foreign, foreign_article, prediction)
     assert (await client.get(foreign_url)).status_code == 403
+
+
+async def test_anonymization_preserves_pseudonymous_assessment(
+    client, session, researcher_user, do_login
+):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _project_article(session, researcher_user)
+    prediction, payload = await _prediction(session, project, article)
+    response = await client.post(_url(project, article, prediction), json=payload)
+    assert response.status_code == 201
+    prior_ref = response.json()["actor_ref"]
+    assert (await client.delete("/api/v1/users/me/anonymize")).status_code == 204
+    assessment = await session.get(EvidenceSupportAssessment, uuid.UUID(response.json()["id"]))
+    await session.refresh(assessment)
+    await session.refresh(researcher_user)
+    assert assessment.actor_id is None
+    assert assessment.actor_ref == researcher_user.anonymized_hash == prior_ref
+
+
+async def test_admin_deletion_preserves_pseudonymous_assessment(
+    client, session, researcher_user, admin_user, do_login
+):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _project_article(session, researcher_user)
+    prediction, payload = await _prediction(session, project, article)
+    response = await client.post(_url(project, article, prediction), json=payload)
+    assert response.status_code == 201
+    prior_ref = response.json()["actor_ref"]
+    await do_login("admin@lab.fr", "admin-pass-123", consent=True)
+    deleted = await client.delete(f"/api/v1/admin/users/{researcher_user.id}")
+    assert deleted.status_code == 200, deleted.text
+    assessment = await session.get(EvidenceSupportAssessment, uuid.UUID(response.json()["id"]))
+    await session.refresh(assessment)
+    assert assessment.actor_id is None
+    assert assessment.actor_ref == prior_ref
+    assert await session.get(ArticlePrediction, prediction.id) is not None
+    history = (await client.get(_url(project, article, prediction))).json()
+    assert history["assessments"][0]["actor_ref"] == prior_ref

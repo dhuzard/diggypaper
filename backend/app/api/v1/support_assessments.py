@@ -18,6 +18,7 @@ from app.db.models import (
     User,
 )
 from app.evidence_links import EvidenceEnvelopeV1
+from app.pseudonym import anonymized_actor_ref
 from app.searches import in_search
 
 router = APIRouter(prefix="/projects", tags=["support assessments"])
@@ -182,7 +183,9 @@ async def create_support_assessment(
     if (
         envelope.scope.project_ref != str(project_id)
         or envelope.scope.article_ref != str(article_id)
+        or envelope.scope.record_kind != "prediction"
         or envelope.scope.record_ref != str(prediction_id)
+        or envelope.scope.revision_ref != str(prediction_id)
         or envelope.scope.revision_ref != str(payload.graph_revision_ref)
     ):
         raise HTTPException(status_code=409, detail="Evidence graph revision mismatch")
@@ -197,7 +200,7 @@ async def create_support_assessment(
         answer_ref=payload.answer_ref,
         evidence_ref=payload.evidence_ref,
         actor_id=user.id,
-        actor_ref=str(user.id),
+        actor_ref=anonymized_actor_ref(user.email),
         status=payload.status,
         rationale=payload.rationale.strip(),
         protocol_version=PROTOCOL_VERSION,

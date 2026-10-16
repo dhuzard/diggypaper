@@ -33,10 +33,10 @@ def upgrade():
         sa.Column(
             "actor_id",
             UUID(as_uuid=True),
-            sa.ForeignKey("users.id", ondelete="RESTRICT"),
-            nullable=False,
+            sa.ForeignKey("users.id", ondelete="SET NULL"),
+            nullable=True,
         ),
-        sa.Column("actor_ref", sa.String(36), nullable=False),
+        sa.Column("actor_ref", sa.String(64), nullable=False),
         sa.Column("status", sa.String(16), nullable=False),
         sa.Column("rationale", sa.Text(), nullable=False),
         sa.Column("protocol_version", sa.String(40), nullable=False),
@@ -56,6 +56,7 @@ def upgrade():
             "protocol_version = 'seip-support-v1'",
             name="ck_support_assessments_protocol",
         ),
+        sa.CheckConstraint("length(actor_ref) = 64", name="ck_support_assessments_actor_ref"),
     )
     op.create_index(
         "ix_support_assessments_prediction_created",
@@ -66,7 +67,11 @@ def upgrade():
         CREATE FUNCTION seip_support_assessment_guard() RETURNS trigger LANGUAGE plpgsql AS $$
         DECLARE graph jsonb;
         BEGIN
-          IF TG_OP IN ('UPDATE', 'DELETE') THEN
+          IF TG_OP = 'UPDATE' THEN
+            IF OLD.actor_id IS NOT NULL AND NEW.actor_id IS NULL AND
+               (to_jsonb(NEW) - 'actor_id') = (to_jsonb(OLD) - 'actor_id') THEN
+              RETURN NEW;
+            END IF;
             RAISE EXCEPTION 'support assessments are append-only';
           END IF;
           SELECT p.evidence_graph_json INTO graph
@@ -77,7 +82,7 @@ def upgrade():
              coalesce(graph->'envelope'->>'state','') <> 'structured' OR
              coalesce(graph->'envelope'->'scope'->>'revision_ref','')
                <> NEW.graph_revision_ref::text OR
-             NEW.actor_ref <> NEW.actor_id::text OR
+             NEW.actor_id IS NULL OR
              NOT EXISTS (
                SELECT 1 FROM jsonb_array_elements(graph->'envelope'->'links') AS link
                WHERE link->>'answer_ref' = NEW.answer_ref::text
@@ -90,7 +95,7 @@ def upgrade():
     """)
     op.execute("""
         CREATE TRIGGER evidence_support_assessments_guard
-        BEFORE INSERT OR UPDATE OR DELETE ON evidence_support_assessments FOR EACH ROW
+        BEFORE INSERT OR UPDATE ON evidence_support_assessments FOR EACH ROW
         EXECUTE FUNCTION seip_support_assessment_guard();
     """)
 
