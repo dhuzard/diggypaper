@@ -40,13 +40,28 @@ _PRIVATE = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|\b(?:bearer|api[_ -]?key|
 _ACTOR_REF = re.compile(r"[0-9a-f]{64}\Z")
 _SUPPORT_STATUSES = {"supports", "contradicts", "insufficient", "unclear", "not_assessed"}
 _HISTORY_KEYS = {
-    "prediction_id", "article_id", "search_id", "capture_state", "graph_state",
-    "evidence_graph", "support_assessments", "support_assessments_state",
-    "support_assessments_withheld_count", "decision_state", "decision_json",
+    "prediction_id",
+    "article_id",
+    "search_id",
+    "capture_state",
+    "graph_state",
+    "evidence_graph",
+    "support_assessments",
+    "support_assessments_state",
+    "support_assessments_withheld_count",
+    "decision_state",
+    "decision_json",
 }
 _ASSESSMENT_KEYS = {
-    "id", "graph_revision_ref", "answer_ref", "evidence_ref", "actor_ref",
-    "status", "created_at", "protocol_version", "rationale_state",
+    "id",
+    "graph_revision_ref",
+    "answer_ref",
+    "evidence_ref",
+    "actor_ref",
+    "status",
+    "created_at",
+    "protocol_version",
+    "rationale_state",
 }
 
 
@@ -82,10 +97,13 @@ def _permitted(snapshot, call) -> bool:
             return False
     if any(span.origin == "example" for span in call.input_spans):
         return False
-    if any(
-        getattr(call.execution, key) is not None
-        for key in ("winning_call_id", "confidence_call_id", "answers_call_id")
-    ) or call.parent_id is not None:
+    if (
+        any(
+            getattr(call.execution, key) is not None
+            for key in ("winning_call_id", "confidence_call_id", "answers_call_id")
+        )
+        or call.parent_id is not None
+    ):
         return False  # A partial invocation group cannot be replayed.
     return not (_PRIVATE.search(row_text(snapshot)) or _PRIVATE.search(row_text(call)))
 
@@ -195,17 +213,17 @@ def build_bundle(
                 raise ValueError("support assessment has a dangling graph link")
             if graph_state == "recorded":
                 human.append(
-                {
-                    "id": str(assessment.id),
-                    "graph_revision_ref": str(assessment.graph_revision_ref),
-                    "answer_ref": str(assessment.answer_ref),
-                    "evidence_ref": str(assessment.evidence_ref),
-                    "actor_ref": assessment.actor_ref,
-                    "status": assessment.status,
-                    "created_at": assessment.created_at.isoformat(),
-                    "protocol_version": assessment.protocol_version,
-                    "rationale_state": "withheld_from_portable_export",
-                }
+                    {
+                        "id": str(assessment.id),
+                        "graph_revision_ref": str(assessment.graph_revision_ref),
+                        "answer_ref": str(assessment.answer_ref),
+                        "evidence_ref": str(assessment.evidence_ref),
+                        "actor_ref": assessment.actor_ref,
+                        "status": assessment.status,
+                        "created_at": assessment.created_at.isoformat(),
+                        "protocol_version": assessment.protocol_version,
+                        "rationale_state": "withheld_from_portable_export",
+                    }
                 )
         quote_state = "legacy_unversioned" if state == "legacy_unversioned" else "unavailable"
         quote_reason = None if state == "legacy_unversioned" else "quote checks not distributable"
@@ -331,7 +349,8 @@ def validate_bundle(manifest: dict, history: list[dict]) -> dict:
         definition_raw = graph.get("field_definition")
         definition = (
             FrozenFieldDefinition.model_validate(definition_raw)
-            if definition_raw is not None else None
+            if definition_raw is not None
+            else None
         )
         scope = EnvelopeScope(
             project_ref=replay["project_id"],
@@ -347,16 +366,20 @@ def validate_bundle(manifest: dict, history: list[dict]) -> dict:
             answers=tuple(
                 ExpectedAnswer(field_key=field.key, value=decision[field.key])
                 for field in definition.fields
-            ) if definition else (),
+            )
+            if definition
+            else (),
             allowed_input_refs=(replay["invocation_ref"],),
-            source_bindings=(SourceBindingReceipt(
-                binding_ref=replay["invocation_ref"],
-                project_ref=replay["project_id"],
-                article_ref=replay["article_id"],
-                snapshot_ref=replay["source_snapshot_ref"],
-                input_ref=replay["invocation_ref"],
-                input_kind="invocation",
-            ),),
+            source_bindings=(
+                SourceBindingReceipt(
+                    binding_ref=replay["invocation_ref"],
+                    project_ref=replay["project_id"],
+                    article_ref=replay["article_id"],
+                    snapshot_ref=replay["source_snapshot_ref"],
+                    input_ref=replay["invocation_ref"],
+                    input_kind="invocation",
+                ),
+            ),
             quote_matches=tuple(
                 QuoteMatchReceipt(
                     match_ref=item["match_ref"],
@@ -366,7 +389,8 @@ def validate_bundle(manifest: dict, history: list[dict]) -> dict:
                     input_ref=replay["invocation_ref"],
                     quote=item["result"]["quote"],
                     status=item["result"]["status"],
-                ) for item in (checks or {}).get("items", [])
+                )
+                for item in (checks or {}).get("items", [])
             ),
         )
         validate_envelope(envelope, context)
@@ -415,8 +439,7 @@ def validate_archive(path: Path) -> dict:
         ):
             raise ValueError("archive must contain one copy of each evidence file")
         if any(
-            archive.getinfo(name).file_size > 25_000_000
-            for name in (manifest_name, history_name)
+            archive.getinfo(name).file_size > 25_000_000 for name in (manifest_name, history_name)
         ):
             raise ValueError("evidence file exceeds archive validation bound")
         raw_manifest = archive.read(manifest_name)
