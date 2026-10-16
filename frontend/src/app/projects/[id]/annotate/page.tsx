@@ -7,6 +7,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { ArticleLinks, biblioLine } from "@/components/Certainty";
 import { AnnotationForm, Annotation } from "@/components/AnnotationForm";
 import { EvidenceHighlighter } from "@/components/EvidenceHighlighter";
+import { QuoteOccurrencePanel } from "@/components/QuoteOccurrencePanel";
 import { SwipeableCard } from "@/components/SwipeableCard";
 import { Button } from "@/components/ui/Button";
 import { articlesStoreKey, withSearch } from "@/lib/search";
@@ -347,9 +348,13 @@ export default function AnnotatePage() {
                 {pdfError && <span className="text-danger">{pdfError}</span>}
               </div>
             </div>
-            {shownPrediction && !shownPrediction.evidence_quotes?.length && (
+            {shownPrediction && !shownPrediction.quote_checks && !shownPrediction.evidence_quotes?.length && (
               <p className="mb-2 rounded bg-surface-muted p-2 text-xs text-muted">{t("noEvidence")}</p>
             )}
+            {shownPrediction && <QuoteOccurrencePanel checks={shownPrediction.quote_checks} />}
+            {shownPrediction?.evidence_quotes?.length ? (
+              <p className="mb-1 text-xs text-muted">{t("currentTextHighlight")}</p>
+            ) : null}
             <EvidenceHighlighter
               text={article.text ?? article.methods_text ?? ""}
               quotes={shownPrediction?.evidence_quotes}

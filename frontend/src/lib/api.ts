@@ -102,8 +102,29 @@ export interface ArticlePrediction {
   decision_json: Record<string, unknown> | null;
   confidence_score: number | null;
   evidence_quotes: string[] | null;
+  quote_checks: QuoteChecks | null;
   status: "AUTO_ACCEPTED" | "AUTO_REJECTED" | "NEEDS_HUMAN_REVIEW";
   created_at: string | null;
+}
+
+export interface QuoteChecks {
+  schema_version: "quote-checks-v1";
+  state: "missing_quote_field" | "invalid_quote_list" | "empty_quote_list" | "checked" | "incomplete";
+  source_snapshot_ref: string;
+  input_ref: string;
+  list_complete: boolean;
+  overflow_count: number;
+  items: Array<{
+    quote_index: number;
+    match_ref: string;
+    result: {
+      quote: unknown;
+      status: "exact" | "normalized" | "not_found" | "ambiguous" | "invalid" | "source_unavailable" | "not_checked" | "incomplete";
+      counts_complete: boolean;
+      input_occurrence_count: number;
+      distinct_source_location_count: number;
+    };
+  }>;
 }
 
 /** Décision : un champ par SchemaField du projet + clés standard. */
