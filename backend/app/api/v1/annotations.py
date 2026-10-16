@@ -28,7 +28,19 @@ from app.api.v1.projects import (
     review_payload,
 )
 from app.article_text import compose_text
-from app.db.models import Article, ArticlePrediction, HumanAnnotation, Project, Search, User
+from app.db.models import (
+    Article,
+    ArticlePrediction,
+    HumanAnnotation,
+    Project,
+    Search,
+    SourceSnapshot,
+    User,
+)
+from app.provenance import Components, review_binding, source_from_record
+from app.provenance_capture import capture_article_source
+from app.provenance_render import composed_view
+from app.review_source import issue_review_token, parse_review_token
 from app.schema import project_fields, validate_decision
 from app.searches import get_search, in_search
 
@@ -43,7 +55,9 @@ UserDep = Annotated[User, Depends(get_current_user)]
 _AnimalSex = Literal["MALE_ONLY", "FEMALE_ONLY", "BOTH_SEXES", "UNSPECIFIED"]
 
 
-_META_KEYS = {"confidence_score", "evidence_quotes", "reasoning_summary", "review_status"}
+_META_KEYS = {
+    "confidence_score", "evidence_quotes", "reasoning_summary", "review_status", "source_binding",
+}
 
 
 class AnnotationCreate(BaseModel):
@@ -124,7 +138,23 @@ async def get_article(
     modèles » suit les parties de la recherche."""
     article = await _require_article(db, project_id, article_id, user)
     scope = await _scope(db, project_id, search)
-    return _article_payload(article, scope.text_sections)
+    snapshot, view_id = await capture_article_source(
+        db, project_id=project_id, article_id=article_id, text_sections=scope.text_sections
+    )
+    view = next(view for view in snapshot.views if view.id == view_id)
+    result = _article_payload(article, scope.text_sections)
+    # Build all displayed source fields from the same locked capture, not a stale
+    # ORM article or a second read after another worker can replace the source.
+    result.update(
+        title=snapshot.components.title,
+        abstract=snapshot.components.abstract,
+        methods_text=snapshot.components.methods_text,
+        text=view.text,
+        has_fulltext=bool(snapshot.components.sections),
+        source_view_token=issue_review_token(snapshot, view_id, scope.id, user.id),
+    )
+    await db.commit()
+    return result
 
 
 @router.post(
@@ -377,6 +407,63 @@ async def create_annotation(
     """
     article = await _require_article(db, project_id, article_id, user)
     scope = await _scope(db, project_id, search)
+    if scope.kind == "blind":
+        # Serialize first submissions on PostgreSQL so two parallel POSTs cannot
+        # both pass the existence check before either commits.
+        await db.scalar(
+            select(Article.id).where(Article.id == article.id).with_for_update()
+        )
+        prior = await db.scalar(
+            select(HumanAnnotation.id).where(
+                HumanAnnotation.article_id == article.id,
+                HumanAnnotation.user_id == user.id,
+                in_search(HumanAnnotation.search_id, scope),
+            ).limit(1)
+        )
+        if prior is not None:
+            raise HTTPException(status_code=409, detail="blind review already submitted")
+    token = payload.get("source_view_token")
+    if token is None:
+        binding = {"state": "legacy_unversioned", "current_source_drift": None}
+        source_columns = {}
+    else:
+        if not isinstance(token, str):
+            raise HTTPException(status_code=422, detail="invalid source view token")
+        try:
+            source_id, view_id, digest = parse_review_token(
+                token, project_id=project_id, article_id=article_id,
+                search_id=scope.id, user_id=user.id,
+            )
+        except ValueError:
+            raise HTTPException(status_code=422, detail="invalid source view token") from None
+        retained = await db.get(SourceSnapshot, source_id)
+        if retained is None:
+            raise HTTPException(status_code=409, detail="retained source view unavailable")
+        try:
+            snapshot = source_from_record(retained)
+            source_columns = review_binding(snapshot, view_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=409, detail="retained source view unavailable"
+            ) from None
+        if (
+            snapshot.project_id != project_id or snapshot.article_id != article_id
+            or source_columns["source_view_sha256"] != digest
+        ):
+            raise HTTPException(status_code=422, detail="invalid source view token")
+        current = await db.scalar(
+            select(Article).where(Article.id == article_id).with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        current_components = Components(
+            title=current.title, abstract=current.abstract, methods_text=current.methods_text,
+            sections=tuple(current.sections or ()),
+        )
+        drift = (
+            current_components != snapshot.components
+            or composed_view(current_components, scope.text_sections).sha256 != digest
+        )
+        binding = {"state": "view_bound", "current_source_drift": drift}
     if scope.fields is not None:
         # Schéma propre à la recherche : champs définis + clés standard optionnelles.
         errors = validate_decision(project_fields(scope), payload)
@@ -409,6 +496,7 @@ async def create_annotation(
         .first()
     )
     decision["review_status"] = _review_status(decision, latest)
+    decision["source_binding"] = binding
     ann = HumanAnnotation(
         article_id=article.id,
         user_id=user.id,
@@ -416,6 +504,7 @@ async def create_annotation(
         blind=blind or scope.kind == "blind",
         decision_json=decision,
         notes=decision["reasoning_summary"],
+        **source_columns,
     )
     db.add(ann)
     await db.commit()

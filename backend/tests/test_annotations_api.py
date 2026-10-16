@@ -79,6 +79,80 @@ async def test_get_article_returns_methods_text(client, session, researcher_user
     assert body["pmid"] == "111"
     assert body["title"] == "A study"
     assert body["methods_text"] == "Mice were randomized to groups."
+    assert body["source_view_token"]
+
+
+async def test_review_binds_retained_display_after_source_replacement(
+    client, session, researcher_user, do_login
+):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _make_project_with_article(session, researcher_user)
+    url = f"/api/v1/projects/{project.id}/articles/{article.id}"
+    shown = (await client.get(url)).json()
+    article.methods_text = "Different methods and animals."
+    await session.commit()
+    response = await client.post(
+        url + "/annotation",
+        json={**VALID_ANNOTATION, "source_view_token": shown["source_view_token"]},
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["decision_json"]["source_binding"] == {
+        "state": "view_bound", "current_source_drift": True
+    }
+    ann = await session.get(HumanAnnotation, uuid.UUID(response.json()["id"]))
+    assert ann.source_snapshot_id and ann.source_view_id and ann.source_view_sha256
+
+
+async def test_review_token_rejects_forgery_and_scope_reuse(
+    client, session, researcher_user, do_login
+):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    first, article = await _make_project_with_article(session, researcher_user)
+    second, other = await _make_project_with_article(session, researcher_user)
+    first_url = f"/api/v1/projects/{first.id}/articles/{article.id}"
+    token = (await client.get(first_url)).json()["source_view_token"]
+    other_url = f"/api/v1/projects/{second.id}/articles/{other.id}/annotation"
+    for candidate in (token, token[:-1] + ("a" if token[-1] != "a" else "b")):
+        response = await client.post(
+            other_url, json={**VALID_ANNOTATION, "source_view_token": candidate}
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "invalid source view token"
+
+
+async def test_old_client_review_is_explicitly_unversioned(
+    client, session, researcher_user, do_login
+):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _make_project_with_article(session, researcher_user)
+    response = await client.post(
+        f"/api/v1/projects/{project.id}/articles/{article.id}/annotation",
+        json=VALID_ANNOTATION,
+    )
+    assert response.status_code == 201
+    assert response.json()["decision_json"]["source_binding"] == {
+        "state": "legacy_unversioned", "current_source_drift": None
+    }
+
+
+async def test_blind_second_submission_cannot_replace_first_judgment(
+    client, session, researcher_user, do_login
+):
+    from app.db.models import Search
+
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _make_project_with_article(session, researcher_user)
+    blind = Search(
+        project_id=project.id, name="Blind", kind="blind", question="Q", lot_all=True,
+    )
+    session.add(blind)
+    await session.commit()
+    url = f"/api/v1/projects/{project.id}/articles/{article.id}"
+    token = (await client.get(url + f"?search={blind.id}")).json()["source_view_token"]
+    body = {**VALID_ANNOTATION, "source_view_token": token}
+    assert (await client.post(url + f"/annotation?search={blind.id}", json=body)).status_code == 201
+    repeat = await client.post(url + f"/annotation?search={blind.id}", json=body)
+    assert repeat.status_code == 409
 
 
 async def test_get_article_404_not_found(client, session, researcher_user, do_login):
