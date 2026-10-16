@@ -106,6 +106,18 @@ it("fails closed when a graph link or frozen revision is unavailable", async () 
   expect(getSupportAssessments).not.toHaveBeenCalled();
 });
 
+it("does not offer a judgment on a forged structured link to legacy evidence", () => {
+  const forged = prediction();
+  const item = forged.evidence_graph!.envelope.evidence[0];
+  item.origin = "legacy_unversioned";
+  item.source_binding_ref = null;
+  item.quote_match_ref = null;
+  show(forged);
+  expect(screen.getByText(/No assessable links with a frozen answer/i)).toBeInTheDocument();
+  expect(getSupportAssessments).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "Save link assessment" })).not.toBeInTheDocument();
+});
+
 it("shows previous revision history without allowing new judgments", async () => {
   jest.mocked(getSupportAssessments).mockResolvedValue(history(false));
   show();

@@ -192,6 +192,16 @@ async def create_support_assessment(
     pair = (str(payload.answer_ref), str(payload.evidence_ref))
     if pair not in {(link.answer_ref, link.evidence_ref) for link in envelope.links}:
         raise HTTPException(status_code=422, detail="Answer/evidence link not in this revision")
+    # Pydantic checks record shape, but the graph contract forbids giving a
+    # legacy, unversioned passage an answer link. Stored JSON may predate or
+    # bypass the producer's validation; never turn such a link into a judgment.
+    evidence = {item.evidence_ref: item for item in envelope.evidence}
+    if len(evidence) != len(envelope.evidence) or any(
+        evidence.get(link.evidence_ref) is None
+        or evidence[link.evidence_ref].origin != "captured_input_context"
+        for link in envelope.links
+    ):
+        raise HTTPException(status_code=409, detail="Evidence graph has unassessable links")
     row = EvidenceSupportAssessment(
         prediction_id=prediction.id,
         project_id=project_id,

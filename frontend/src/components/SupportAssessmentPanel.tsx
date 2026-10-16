@@ -32,7 +32,7 @@ const matchStatuses = new Set([
   "source_unavailable", "not_checked", "incomplete",
 ]);
 
-/** A malformed or unfrozen graph never becomes an assessable form. The API revalidates writes. */
+/** A malformed or unfrozen graph never becomes an assessable form. The API checks exact links and rejects linked legacy evidence. */
 export function assessableLinks(
   graph: EvidenceGraph | null | undefined,
   projectId: string,
@@ -82,9 +82,7 @@ export function assessableLinks(
     const item = evidence.get(link.evidence_ref);
     const pair = `${link.answer_ref}:${link.evidence_ref}`;
     if (!answer || !item || seen.has(pair) ||
-      !["captured_input_context", "legacy_unversioned"].includes(item.origin) ||
-      (item.origin === "captured_input_context" && !item.source_binding_ref) ||
-      (item.origin === "legacy_unversioned" && (item.source_binding_ref || item.quote_match_ref))) {
+      item.origin !== "captured_input_context" || !item.source_binding_ref) {
       return null;
     }
     seen.add(pair);
