@@ -100,6 +100,7 @@
     },
     "EvidenceRecord": {
       "additionalProperties": false,
+      "description": "A model quote with source context, not an occurrence or support claim.",
       "properties": {
         "evidence_ref": {
           "pattern": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$",
@@ -118,7 +119,7 @@
         },
         "origin": {
           "enum": [
-            "captured_input",
+            "captured_input_context",
             "legacy_unversioned"
           ],
           "title": "Origin",
