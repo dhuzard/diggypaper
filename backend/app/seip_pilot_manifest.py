@@ -228,6 +228,7 @@ def _papers(manifest: dict, base: Path) -> tuple[dict, dict, dict]:
         elif effective["artifact_path"] is not None:
             artifact(base, effective["artifact_path"], effective["sha256"], text=True)
         eligible[paper_id] = paper
+    duplicate_owner = {}
     for paper in rows:
         duplicate_of = paper["duplicate_of"]
         if duplicate_of is None:
@@ -240,6 +241,10 @@ def _papers(manifest: dict, base: Path) -> tuple[dict, dict, dict]:
             alias_owner[alias] for alias in aliases(paper["aliases"]) if alias in alias_owner
         )
         require(owners <= {duplicate_of}, "excluded duplicate bridges eligible studies/splits")
+        identities = {("study", paper["study_key"])} | aliases(paper["aliases"])
+        for identity in identities:
+            prior = duplicate_owner.setdefault(identity, duplicate_of)
+            require(prior == duplicate_of, "excluded duplicates bridge eligible studies/splits")
         require(
             paper["study_key"] == original["study_key"]
             or bool(aliases(paper["aliases"]) & aliases(original["aliases"])),
