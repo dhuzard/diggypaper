@@ -90,13 +90,13 @@ def frozen_manifest(base):
             "fields": [{"key": "species", "kind": "categorical"}],
             "codebook_version": "synthetic-codebook-v1",
             "reference_set_id": "synthetic-locked-references",
-            "retry_rule": "first_valid_else_last",
+            "retry_rule": "first_attempt",
             "attempt_manifest_id": "synthetic-attempts-v1",
         },
         "attempts": [],
     }
     refreeze(manifest)
-    states = ["valid", "invalid_json", "invalid_schema", "error", "missing_call"]
+    states = ["declared_valid", "invalid_json", "invalid_schema", "error", "missing_call"]
     for index, paper in enumerate(papers[6:]):
         state = states[index % len(states)]
         output_path = f"outputs/{paper['id']}.json" if state in states[:3] else None
@@ -158,13 +158,12 @@ def test_retained_retry_follows_predeclared_choice_rule(tmp_path):
     manifest = frozen_manifest(tmp_path)
     first = manifest["attempts"][0]
     first["state"] = "invalid_json"
-    first["selected"] = False
     retry = copy.deepcopy(first)
-    retry.update(index=2, state="valid", invocation_id="invocation-retry", selected=True)
+    retry.update(index=2, state="declared_valid", invocation_id="invocation-retry", selected=False)
     manifest["attempts"].append(retry)
     assert validate_pilot_manifest(manifest, tmp_path)["attempts"] == 25
-    manifest["freeze"]["retry_rule"] = "first_attempt"
-    with pytest.raises(PilotManifestError, match="selected retry"):
+    manifest["freeze"]["retry_rule"] = "first_valid_else_last"
+    with pytest.raises(PilotManifestError, match="unverified validity"):
         validate_pilot_manifest(manifest, tmp_path)
 
 
@@ -264,6 +263,53 @@ def test_excluded_duplicate_candidate_remains_visible(tmp_path):
     manifest["papers"].append(excluded)
     refreeze(manifest)
     assert validate_pilot_manifest(manifest, tmp_path)["excluded"] == 1
+
+
+def test_excluded_duplicate_cannot_bridge_development_and_held_out(tmp_path):
+    manifest = frozen_manifest(tmp_path)
+    excluded = copy.deepcopy(manifest["papers"][0])
+    excluded.update(
+        id="synthetic-bridge",
+        status="excluded",
+        split=None,
+        stratum=None,
+        source=None,
+        effective_input=None,
+        exclusion_reason="candidate bridge",
+        duplicate_of="synthetic-01",
+        aliases=copy.deepcopy(manifest["papers"][6]["aliases"]),
+    )
+    manifest["papers"].append(excluded)
+    refreeze(manifest)
+    with pytest.raises(PilotManifestError, match="bridges eligible"):
+        validate_pilot_manifest(manifest, tmp_path)
+
+
+@pytest.mark.parametrize(
+    "raw", [b"not JSON", b"[]", b'{"x":NaN}', b'{"x":1e999}', b'{"x":1,"x":2}']
+)
+def test_declared_valid_requires_strict_json_object_but_not_schema(tmp_path, raw):
+    manifest = frozen_manifest(tmp_path)
+    row = manifest["attempts"][0]
+    row["output_sha256"] = write_artifact(tmp_path, row["output_path"], raw)
+    with pytest.raises(PilotManifestError):
+        validate_pilot_manifest(manifest, tmp_path)
+    row["output_sha256"] = write_artifact(tmp_path, row["output_path"], b'{"wrong_field":true}')
+    assert validate_pilot_manifest(manifest, tmp_path)["output_schema_validation"] == "unverified"
+
+
+def test_fifo_artifact_is_rejected_before_read(tmp_path):
+    import os
+
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("FIFO requires POSIX")
+    manifest = frozen_manifest(tmp_path)
+    path = tmp_path / "fifo.txt"
+    os.mkfifo(path)
+    manifest["papers"][0]["effective_input"]["artifact_path"] = "fifo.txt"
+    refreeze(manifest)
+    with pytest.raises(PilotManifestError, match="regular file"):
+        validate_pilot_manifest(manifest, tmp_path)
 
 
 def test_source_without_retained_artifact_is_reported_as_claim_only(tmp_path):
