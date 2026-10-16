@@ -20,13 +20,17 @@ from sqlalchemy import delete, insert, select, text, update
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from test_provenance import numeric_envelopes, prepared
 
 from app.db.models import (
     Article,
     ArticlePrediction,
+    BenchmarkRun,
     HumanAnnotation,
+    InferenceJob,
     Invocation,
     Project,
+    Search,
     SourceSnapshot,
 )
 from app.provenance import (
@@ -35,9 +39,12 @@ from app.provenance import (
     ResponseCapture,
     SourceSnapshotV1,
     complete_invocation,
+    digest,
+    invocation_from_record,
     invocation_record,
     prepare_invocation,
     review_binding,
+    source_from_record,
     source_record,
 )
 
@@ -211,6 +218,114 @@ async def test_populated_postgres_upgrade_downgrade_and_storage_guards(postgres_
         review = HumanAnnotation(article_id=aid, **review_binding(source, source.views[1].id))
         session.add_all([bound, review])
         await session.commit()
+        numeric_source, numeric_call = numeric_envelopes()
+        numeric_source = SourceSnapshotV1.model_validate(
+            {**numeric_source.model_dump(mode="json"), "id": str(uuid.uuid4())}
+        )
+        session.add(source_record(numeric_source))
+        await session.commit()
+        numeric_values = numeric_call.model_dump()
+        for key in ("project_id", "article_id", "source_snapshot_id", "request_sha256"):
+            numeric_values.pop(key)
+        numeric_values.update(id=uuid.uuid4(), group_id=uuid.uuid4())
+        numeric_call = prepare_invocation(numeric_source, **numeric_values)
+        numeric_row = invocation_record(numeric_call)
+        session.add(numeric_row)
+        await session.commit()
+        loaded_source = await session.get(SourceSnapshot, numeric_source.id, populate_existing=True)
+        await session.refresh(numeric_row)
+        assert digest(loaded_source.payload) != numeric_source.sha256
+        assert digest(numeric_row.request_envelope) != numeric_row.envelope_sha256
+        assert source_from_record(loaded_source).sha256 == numeric_source.sha256
+        assert invocation_from_record(numeric_row).request_sha256 == numeric_call.request_sha256
+        assert source_from_record(loaded_source).model_dump(
+            mode="json"
+        ) == numeric_source.model_dump(mode="json")
+        complete_invocation(
+            numeric_row,
+            "succeeded",
+            response=ResponseCapture(
+                origin="driver_parsed", raw_availability="not_captured", parsed={"actual": True}
+            ),
+        )
+        await session.commit()
+        standard = Search(project_id=pid, name="Standard", is_default=True)
+        blind = Search(project_id=pid, name="Blind", kind="blind")
+        session.add_all([standard, blind])
+        await session.flush()
+        for owner_class, key in (
+            (InferenceJob, "inference_job_id"),
+            (BenchmarkRun, "benchmark_run_id"),
+        ):
+            owners = []
+            for search_id in (standard.id, None):
+                args = {"project_id": pid, "search_id": search_id}
+                if owner_class is InferenceJob:
+                    args["model_used"] = "test"
+                owner = owner_class(**args)
+                session.add(owner)
+                owners.append(owner)
+            await session.flush()
+            for owner, search_id, allowed in (
+                (owners[0], standard.id, True),
+                (owners[0], blind.id, False),
+                (owners[0], None, False),
+                (owners[1], standard.id, False),
+                (owners[1], None, True),
+            ):
+                candidate = invocation_record(
+                    prepared(
+                        source,
+                        id=uuid.uuid4(),
+                        group_id=uuid.uuid4(),
+                        search_id=search_id,
+                        **{key: owner.id},
+                    )
+                )
+                statement = insert(Invocation).values(
+                    **{c.name: getattr(candidate, c.name) for c in Invocation.__table__.columns}
+                )
+                if allowed:
+                    await session.execute(statement)
+                else:
+                    with pytest.raises(DBAPIError):
+                        async with session.begin_nested():
+                            await session.execute(statement)
+            for target in owners:
+                with pytest.raises(DBAPIError):
+                    async with session.begin_nested():
+                        await session.execute(
+                            update(owner_class)
+                            .where(owner_class.id == target.id)
+                            .values(search_id=blind.id)
+                        )
+        await session.commit()
+        for origin in ("driver_parsed", "unavailable"):
+            for raw_state in ("retained", "unavailable", "not_captured"):
+                candidate = invocation_record(
+                    prepared(source, id=uuid.uuid4(), group_id=uuid.uuid4())
+                )
+                session.add(candidate)
+                await session.commit()
+                fake = {
+                    "origin": origin,
+                    "raw_availability": raw_state,
+                    "raw_base64": "FAKE",
+                    "raw_sha256": "bogus",
+                    "parsed": {} if origin == "driver_parsed" else None,
+                    "reason": "unavailable",
+                }
+                with pytest.raises(DBAPIError):
+                    async with session.begin_nested():
+                        await session.execute(
+                            update(Invocation)
+                            .where(Invocation.id == candidate.id)
+                            .values(
+                                outcome="succeeded",
+                                completed_at=datetime.now(UTC),
+                                response_capture=fake,
+                            )
+                        )
         other_project = Project(title="Other")
         session.add(other_project)
         await session.flush()
@@ -224,6 +339,7 @@ async def test_populated_postgres_upgrade_downgrade_and_storage_guards(postgres_
             update(Invocation)
             .where(Invocation.id == invocation.id)
             .values(request_envelope={"forged": True}),
+            update(Invocation).where(Invocation.id == invocation.id).values(canonical_bytes=b"{}"),
             update(Invocation).where(Invocation.id == invocation.id).values(outcome="failed"),
             update(ArticlePrediction)
             .where(ArticlePrediction.id == bound.id)
@@ -257,6 +373,16 @@ async def test_populated_postgres_upgrade_downgrade_and_storage_guards(postgres_
             with pytest.raises(DBAPIError):
                 async with session.begin_nested():
                     await session.execute(statement)
+        for change in (
+            {"canonical_bytes": b"{}"},
+            {"payload": {**source.model_dump(mode="json"), "doi": "wrong"}},
+        ):
+            candidate = source_record(source)
+            columns = {c.name: getattr(candidate, c.name) for c in SourceSnapshot.__table__.columns}
+            columns.update(id=uuid.uuid4(), **change)
+            with pytest.raises(DBAPIError):
+                async with session.begin_nested():
+                    await session.execute(insert(SourceSnapshot).values(**columns))
         # Core SQL bypasses constructor checks: PostgreSQL still enforces raw digest/cap.
         for data, checksum in ((b"wrong", "a" * 64), (b"x" * (MAX_RAW_BYTES + 1), None)):
             row = source_record(source)
@@ -286,7 +412,7 @@ async def test_populated_postgres_upgrade_downgrade_and_storage_guards(postgres_
     assert "refusing to discard retained provenance" in blocked.stderr
     async with engine.begin() as connection:
         assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "0022"
-        assert await connection.scalar(text("SELECT count(*) FROM source_snapshots")) == 1
+        assert await connection.scalar(text("SELECT count(*) FROM source_snapshots")) == 2
         # Explicit ownership deletion remains the documented retention boundary.
         await connection.execute(delete(Project).where(Project.id == pid))
         assert await connection.scalar(select(SourceSnapshot.id)) is None

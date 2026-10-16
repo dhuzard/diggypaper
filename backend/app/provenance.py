@@ -5,9 +5,9 @@
 use the exact UTF-8 bytes. Request hashes describe application payloads, not HTTP
 serialization. Database ownership cascades deliberately bound retention.
 
-Constructors recompute canonical envelope digests. The database enforces scope,
-immutable rows/links, lifecycle, raw-byte bounds and (on PostgreSQL) raw digests;
-it does not independently reproduce canonical JSON hashes on direct SQL INSERT.
+Canonical bytes are the authoritative replay artifact; JSONB is a query projection
+whose numeric spelling can change. PostgreSQL checks byte digests and projection
+equality; constructors/readers also check the versioned canonical encoding.
 """
 
 from __future__ import annotations
@@ -19,12 +19,14 @@ import math
 import re
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any, Literal
 from urllib.parse import parse_qsl, urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StrictInt, model_validator
 
 MAX_RAW_BYTES = 25 * 1024 * 1024
+MAX_CANONICAL_BYTES = 64 * 1024 * 1024  # Storage limit, independent of export rights.
 ENCODING = "seip-json-v1"
 Hash = str
 Path = tuple[str | StrictInt, ...]
@@ -619,6 +621,10 @@ def source_record(snapshot: SourceSnapshotV1, *, raw_data: bytes | None = None):
             raise ValueError("raw artifact digest mismatch")
     elif raw_data is not None:
         raise ValueError("raw bytes require explicit retained availability")
+    payload = snapshot.model_dump(mode="json")
+    canonical = canonical_json(payload)
+    if len(canonical) > MAX_CANONICAL_BYTES:
+        raise ValueError("canonical snapshot exceeds storage bound")
     return SourceSnapshot(
         id=snapshot.id,
         project_id=snapshot.project_id,
@@ -626,7 +632,8 @@ def source_record(snapshot: SourceSnapshotV1, *, raw_data: bytes | None = None):
         captured_at=snapshot.captured_at,
         schema_version=1,
         snapshot_sha256=snapshot.sha256,
-        payload=snapshot.model_dump(mode="json"),
+        payload=payload,
+        canonical_bytes=canonical,
         raw_availability=raw.availability,
         raw_sha256=raw.sha256,
         raw_media_type=raw.media_type,
@@ -638,6 +645,9 @@ def invocation_record(invocation: InvocationV1):
     from app.db.models import Invocation
 
     payload = invocation.model_dump(mode="json")
+    canonical = canonical_json(payload)
+    if len(canonical) > MAX_CANONICAL_BYTES:
+        raise ValueError("canonical invocation exceeds storage bound")
     columns = (
         "id",
         "project_id",
@@ -660,6 +670,7 @@ def invocation_record(invocation: InvocationV1):
         **{name: getattr(invocation, name) for name in columns},
         schema_version=1,
         request_envelope=payload,
+        canonical_bytes=canonical,
         envelope_sha256=digest(payload),
         outcome="prepared",
     )
@@ -699,7 +710,7 @@ def complete_invocation(
             raise ValueError("terminal outcome requires explicit response availability")
         ended = completed_at or datetime.now(UTC)
         _aware(ended)
-        prepared_at = InvocationV1.model_validate(row.request_envelope).prepared_at
+        prepared_at = invocation_from_record(row).prepared_at
         if ended < prepared_at:
             raise ValueError("completion precedes preparation")
     row.outcome, row.completed_at = outcome, ended
@@ -717,3 +728,67 @@ def review_binding(snapshot: SourceSnapshotV1, view_id: uuid.UUID) -> dict:
         "source_view_id": view.id,
         "source_view_sha256": view.sha256,
     }
+
+
+def _read_canonical(data: bytes, checksum: str, projection: Any) -> dict:
+    if not isinstance(data, bytes) or len(data) > MAX_CANONICAL_BYTES:
+        raise ValueError("missing or oversized authoritative canonical bytes")
+    if hashlib.sha256(data).hexdigest() != checksum:
+        raise ValueError("canonical byte digest mismatch")
+    payload = json.loads(data)
+    if canonical_json(payload) != data:
+        raise ValueError("retained bytes do not use the versioned canonical encoding")
+
+    def semantic(value):
+        if isinstance(value, Decimal):
+            return ("number", value)
+        if isinstance(value, list):
+            return ("array", tuple(semantic(child) for child in value))
+        if isinstance(value, dict):
+            return ("object", {key: semantic(child) for key, child in value.items()})
+        return (type(value).__name__, value)
+
+    actual = json.loads(data, parse_int=Decimal, parse_float=Decimal)
+    projected = json.loads(canonical_json(projection), parse_int=Decimal, parse_float=Decimal)
+    if semantic(actual) != semantic(projected):
+        raise ValueError("JSON projection disagrees with authoritative canonical bytes")
+    return payload
+
+
+def source_from_record(row) -> SourceSnapshotV1:
+    snapshot = SourceSnapshotV1.model_validate(
+        _read_canonical(row.canonical_bytes, row.snapshot_sha256, row.payload)
+    )
+    if snapshot.sha256 != row.snapshot_sha256 or any(
+        getattr(snapshot, key) != getattr(row, key) for key in ("id", "project_id", "article_id")
+    ):
+        raise ValueError("source identity/hash disagrees with authoritative bytes")
+    return snapshot
+
+
+def invocation_from_record(row) -> InvocationV1:
+    invocation = InvocationV1.model_validate(
+        _read_canonical(row.canonical_bytes, row.envelope_sha256, row.request_envelope)
+    )
+    if invocation.request_sha256 != row.request_sha256 or any(
+        getattr(invocation, key) != getattr(row, key)
+        for key in (
+            "id",
+            "project_id",
+            "article_id",
+            "source_snapshot_id",
+            "group_id",
+            "parent_id",
+            "search_id",
+            "inference_job_id",
+            "benchmark_run_id",
+            "variant",
+            "stage",
+            "call_kind",
+            "sequence",
+            "attempt",
+            "schema_version",
+        )
+    ):
+        raise ValueError("invocation identity/hash disagrees with authoritative bytes")
+    return invocation

@@ -40,6 +40,7 @@ _FROZEN = (
     "request_sha256",
     "envelope_sha256",
     "request_envelope",
+    "canonical_bytes",
 )
 
 
@@ -139,6 +140,7 @@ def upgrade():
         sa.Column("schema_version", sa.Integer(), nullable=False),
         sa.Column("snapshot_sha256", sa.String(64), nullable=False),
         sa.Column("payload", JSONB(), nullable=False),
+        sa.Column("canonical_bytes", sa.LargeBinary(), nullable=False),
         sa.Column("raw_availability", sa.String(), nullable=False),
         sa.Column("raw_sha256", sa.String(64)),
         sa.Column("raw_media_type", sa.String()),
@@ -152,6 +154,14 @@ def upgrade():
             ondelete="CASCADE",
         ),
         sa.CheckConstraint("schema_version = 1", name="ck_source_snapshots_version"),
+        sa.CheckConstraint(
+            "length(canonical_bytes) <= 67108864", name="ck_source_snapshots_canonical_size"
+        ),
+        sa.CheckConstraint(
+            "encode(sha256(canonical_bytes),'hex') = snapshot_sha256 AND "
+            "convert_from(canonical_bytes,'UTF8')::jsonb = payload",
+            name="ck_source_snapshots_canonical_integrity",
+        ),
         sa.CheckConstraint(
             "raw_availability IN ('retained','digest_only','not_captured','unavailable')",
             name="ck_source_snapshots_raw_availability",
@@ -204,6 +214,7 @@ def upgrade():
         sa.Column("request_sha256", sa.String(64), nullable=False),
         sa.Column("envelope_sha256", sa.String(64), nullable=False),
         sa.Column("request_envelope", JSONB(), nullable=False),
+        sa.Column("canonical_bytes", sa.LargeBinary(), nullable=False),
         sa.Column("outcome", sa.String(), nullable=False),
         sa.Column("completed_at", sa.DateTime(timezone=True)),
         sa.Column("response_capture", JSONB()),
@@ -260,6 +271,14 @@ def upgrade():
             ["id", "project_id", "article_id", "source_snapshot_id", "group_id"],
         ),
         sa.CheckConstraint("schema_version = 1", name="ck_invocations_version"),
+        sa.CheckConstraint(
+            "length(canonical_bytes) <= 67108864", name="ck_invocations_canonical_size"
+        ),
+        sa.CheckConstraint(
+            "encode(sha256(canonical_bytes),'hex') = envelope_sha256 AND "
+            "convert_from(canonical_bytes,'UTF8')::jsonb = request_envelope",
+            name="ck_invocations_canonical_integrity",
+        ),
         sa.CheckConstraint("sequence >= 0 AND attempt >= 1", name="ck_invocations_sequence"),
         sa.CheckConstraint("stage IN ('prefilter','main')", name="ck_invocations_stage"),
         sa.CheckConstraint(
@@ -310,6 +329,14 @@ def _guards():
             IF NEW.outcome <> 'prepared' THEN
               RAISE EXCEPTION 'invocation must start prepared';
             END IF;
+            IF NEW.inference_job_id IS NOT NULL AND NOT EXISTS (
+              SELECT 1 FROM inference_jobs j WHERE j.id = NEW.inference_job_id
+                AND j.search_id IS NOT DISTINCT FROM NEW.search_id
+            ) THEN RAISE EXCEPTION 'invocation job search mismatch'; END IF;
+            IF NEW.benchmark_run_id IS NOT NULL AND NOT EXISTS (
+              SELECT 1 FROM benchmark_runs r WHERE r.id = NEW.benchmark_run_id
+                AND r.search_id IS NOT DISTINCT FROM NEW.search_id
+            ) THEN RAISE EXCEPTION 'invocation benchmark search mismatch'; END IF;
             IF EXISTS (SELECT 1 FROM invocations i WHERE i.group_id = NEW.group_id AND
               ROW(i.project_id,i.article_id,i.source_snapshot_id,i.search_id,
                   i.inference_job_id,i.benchmark_run_id) IS DISTINCT FROM
@@ -337,6 +364,12 @@ def _guards():
             IF jsonb_typeof(NEW.response_capture) IS DISTINCT FROM 'object'
               OR coalesce(NEW.response_capture->>'origin','') NOT IN
                  ('driver_raw','driver_parsed','unavailable')
+              OR coalesce(NEW.response_capture->>'raw_availability','') NOT IN
+                 ('retained','not_captured','unavailable')
+              OR (NEW.response_capture->>'origin' <> 'driver_raw' AND
+                  (NEW.response_capture->>'raw_availability' = 'retained'
+                   OR NEW.response_capture->>'raw_base64' IS NOT NULL
+                   OR NEW.response_capture->>'raw_sha256' IS NOT NULL))
               OR (NEW.response_capture->>'origin' = 'driver_parsed' AND
                   coalesce(NEW.response_capture->'parsed','null'::jsonb) = 'null'::jsonb)
               OR (NEW.response_capture->>'origin' = 'driver_raw' AND
@@ -421,6 +454,27 @@ def _guards():
             f"CREATE TRIGGER {table}_binding BEFORE INSERT OR UPDATE ON {table} "
             "FOR EACH ROW EXECUTE FUNCTION seip_binding_guard()"
         )
+    op.execute("""
+        CREATE FUNCTION seip_parent_scope_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF ROW(NEW.project_id,NEW.search_id)
+             IS DISTINCT FROM ROW(OLD.project_id,OLD.search_id) THEN
+            IF TG_TABLE_NAME = 'inference_jobs' THEN
+              IF EXISTS (SELECT 1 FROM invocations i WHERE i.inference_job_id = OLD.id) THEN
+                RAISE EXCEPTION 'captured invocation parent scope is immutable';
+              END IF;
+            ELSIF EXISTS (SELECT 1 FROM invocations i WHERE i.benchmark_run_id = OLD.id) THEN
+              RAISE EXCEPTION 'captured invocation parent scope is immutable';
+            END IF;
+          END IF;
+          RETURN NEW;
+        END $$;
+    """)
+    for table in ("inference_jobs", "benchmark_runs"):
+        op.execute(
+            f"CREATE TRIGGER {table}_provenance_scope BEFORE UPDATE ON {table} "
+            "FOR EACH ROW EXECUTE FUNCTION seip_parent_scope_guard()"
+        )
 
 
 def downgrade():
@@ -429,6 +483,9 @@ def downgrade():
         raise RuntimeError(
             "refusing to discard retained provenance; export and explicitly delete first"
         )
+    for table in ("inference_jobs", "benchmark_runs"):
+        op.execute(f"DROP TRIGGER {table}_provenance_scope ON {table}")
+    op.execute("DROP FUNCTION seip_parent_scope_guard()")
     for table in _LINK_TABLES:
         op.execute(f"DROP TRIGGER {table}_binding ON {table}")
     op.execute("DROP FUNCTION seip_binding_guard()")

@@ -929,6 +929,14 @@ class SourceSnapshot(Base):
         ),
         CheckConstraint("schema_version = 1", name="ck_source_snapshots_version"),
         CheckConstraint(
+            "length(canonical_bytes) <= 67108864", name="ck_source_snapshots_canonical_size"
+        ),
+        CheckConstraint(
+            "encode(sha256(canonical_bytes),'hex') = snapshot_sha256 AND "
+            "convert_from(canonical_bytes,'UTF8')::jsonb = payload",
+            name="ck_source_snapshots_canonical_integrity",
+        ).ddl_if(dialect="postgresql"),
+        CheckConstraint(
             "raw_availability IN ('retained','digest_only','not_captured','unavailable')",
             name="ck_source_snapshots_raw_availability",
         ),
@@ -964,6 +972,7 @@ class SourceSnapshot(Base):
     schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
     snapshot_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict] = mapped_column(PROVENANCE_JSON, nullable=False)
+    canonical_bytes: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     raw_availability: Mapped[str] = mapped_column(String, nullable=False)
     raw_sha256: Mapped[str | None] = mapped_column(String(64))
     raw_media_type: Mapped[str | None] = mapped_column(String)
@@ -1027,6 +1036,14 @@ class Invocation(Base):
             name="fk_invocations_parent_scope",
         ),
         CheckConstraint("schema_version = 1", name="ck_invocations_version"),
+        CheckConstraint(
+            "length(canonical_bytes) <= 67108864", name="ck_invocations_canonical_size"
+        ),
+        CheckConstraint(
+            "encode(sha256(canonical_bytes),'hex') = envelope_sha256 AND "
+            "convert_from(canonical_bytes,'UTF8')::jsonb = request_envelope",
+            name="ck_invocations_canonical_integrity",
+        ).ddl_if(dialect="postgresql"),
         CheckConstraint("sequence >= 0 AND attempt >= 1", name="ck_invocations_sequence"),
         CheckConstraint("stage IN ('prefilter','main')", name="ck_invocations_stage"),
         CheckConstraint(
@@ -1070,6 +1087,7 @@ class Invocation(Base):
     request_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     envelope_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     request_envelope: Mapped[dict] = mapped_column(PROVENANCE_JSON, nullable=False)
+    canonical_bytes: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     outcome: Mapped[str] = mapped_column(String, nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     response_capture: Mapped[dict | None] = mapped_column(PROVENANCE_JSON)
@@ -1096,6 +1114,7 @@ _INVOCATION_FROZEN = (
     "request_sha256",
     "envelope_sha256",
     "request_envelope",
+    "canonical_bytes",
 )
 event.listen(
     SourceSnapshot.__table__,
@@ -1116,6 +1135,10 @@ event.listen(
         "OR i.source_snapshot_id IS NOT NEW.source_snapshot_id "
         "OR i.search_id IS NOT NEW.search_id OR i.inference_job_id IS NOT NEW.inference_job_id "
         "OR i.benchmark_run_id IS NOT NEW.benchmark_run_id)) "
+        "OR (NEW.inference_job_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM inference_jobs j "
+        "WHERE j.id = NEW.inference_job_id AND j.search_id IS NEW.search_id)) "
+        "OR (NEW.benchmark_run_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM benchmark_runs r "
+        "WHERE r.id = NEW.benchmark_run_id AND r.search_id IS NEW.search_id)) "
         "BEGIN SELECT RAISE(ABORT, 'invalid prepared invocation or group scope'); END"
     ).execute_if(dialect="sqlite"),
 )
@@ -1128,6 +1151,12 @@ event.listen(
         "coalesce(json_type(NEW.response_capture),'') <> 'object' OR "
         "coalesce(json_extract(NEW.response_capture,'$.origin'),'') NOT IN "
         "('driver_raw','driver_parsed','unavailable') OR "
+        "coalesce(json_extract(NEW.response_capture,'$.raw_availability'),'') NOT IN "
+        "('retained','not_captured','unavailable') OR "
+        "(json_extract(NEW.response_capture,'$.origin') <> 'driver_raw' AND ("
+        "json_extract(NEW.response_capture,'$.raw_availability') = 'retained' OR "
+        "json_extract(NEW.response_capture,'$.raw_base64') IS NOT NULL OR "
+        "json_extract(NEW.response_capture,'$.raw_sha256') IS NOT NULL)) OR "
         "(json_extract(NEW.response_capture,'$.origin') = 'driver_parsed' AND "
         "coalesce(json_type(NEW.response_capture,'$.parsed'),'null') = 'null') OR "
         "(json_extract(NEW.response_capture,'$.origin') = 'driver_raw' AND ("
@@ -1189,6 +1218,7 @@ for _table in (
         if _table.name == "human_annotations"
         else ["invocation_id", "invocation_group_id"]
     )
+
     _changed = " OR ".join(f"NEW.{name} IS NOT OLD.{name}" for name in _binding_columns)
     _scope = "NEW.article_id IS NOT OLD.article_id OR NEW.search_id IS NOT OLD.search_id"
     if _table.name == "benchmark_predictions":
@@ -1204,38 +1234,68 @@ for _table in (
     )
 
 
+for _parent, _reference in (
+    (InferenceJob.__table__, "inference_job_id"),
+    (BenchmarkRun.__table__, "benchmark_run_id"),
+):
+    event.listen(
+        _parent,
+        "after_create",
+        DDL(
+            f"CREATE TRIGGER {_parent.name}_provenance_scope BEFORE UPDATE ON {_parent.name} "
+            "WHEN (NEW.project_id IS NOT OLD.project_id OR NEW.search_id IS NOT OLD.search_id) "
+            f"AND EXISTS (SELECT 1 FROM invocations i WHERE i.{_reference} = OLD.id) "
+            "BEGIN SELECT RAISE(ABORT, 'captured invocation parent scope is immutable'); END"
+        ).execute_if(dialect="sqlite"),
+    )
+
+
 @event.listens_for(SourceSnapshot, "before_insert")
 def _validate_snapshot_row(_mapper, _connection, target):
-    from app.provenance import SourceSnapshotV1, source_record
+    from app.provenance import source_from_record, source_record
 
-    expected = source_record(
-        SourceSnapshotV1.model_validate(target.payload), raw_data=target.raw_data
-    )
+    expected = source_record(source_from_record(target), raw_data=target.raw_data)
     if any(
         getattr(target, c.name) != getattr(expected, c.name)
         for c in SourceSnapshot.__table__.columns
+        if c.name != "payload"
     ):
         raise ValueError("source row does not match its validated envelope")
 
 
 @event.listens_for(Invocation, "before_insert")
 def _validate_invocation_row(_mapper, connection, target):
+    from types import SimpleNamespace
+
     from sqlalchemy import select
 
-    from app.provenance import InvocationV1, SourceSnapshotV1, invocation_record, prepare_invocation
+    from app.provenance import (
+        invocation_from_record,
+        invocation_record,
+        prepare_invocation,
+        source_from_record,
+    )
 
-    payload = connection.scalar(
-        select(SourceSnapshot.payload).where(SourceSnapshot.id == target.source_snapshot_id)
+    payload = (
+        connection.execute(
+            select(SourceSnapshot.__table__).where(SourceSnapshot.id == target.source_snapshot_id)
+        )
+        .mappings()
+        .one_or_none()
     )
     if payload is None:
         raise ValueError("invocation requires a retained source snapshot")
-    envelope = InvocationV1.model_validate(target.request_envelope)
+    envelope = invocation_from_record(target)
     values = envelope.model_dump()
     for key in ("project_id", "article_id", "source_snapshot_id", "request_sha256"):
         values.pop(key)
-    checked = prepare_invocation(SourceSnapshotV1.model_validate(payload), **values)
+    checked = prepare_invocation(source_from_record(SimpleNamespace(**payload)), **values)
     expected = invocation_record(checked)
-    if any(getattr(target, name) != getattr(expected, name) for name in _INVOCATION_FROZEN):
+    if any(
+        getattr(target, name) != getattr(expected, name)
+        for name in _INVOCATION_FROZEN
+        if name != "request_envelope"
+    ):
         raise ValueError("invocation row does not match its validated envelope")
 
 

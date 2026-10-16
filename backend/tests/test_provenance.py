@@ -33,14 +33,64 @@ from app.provenance import (
     canonical_json,
     complete_invocation,
     digest,
+    invocation_from_record,
     invocation_record,
     prepare_invocation,
     review_binding,
+    source_from_record,
     source_record,
     text_digest,
 )
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures/provenance_v1.json").read_text("utf-8"))
+NUMBERS = json.loads(
+    (Path(__file__).parent / "fixtures/provenance_numbers_v1.json").read_text("utf-8")
+)
+
+
+def numeric_envelopes():
+    data = copy.deepcopy(FIXTURE["snapshot"])
+    data["components"]["sections"][0]["numbers"] = NUMBERS["original"]
+    source = SourceSnapshotV1.model_validate(data)
+    values = copy.deepcopy(FIXTURE["invocations"][0]["envelope"])
+    for key in ("project_id", "article_id", "source_snapshot_id", "request_sha256"):
+        values.pop(key)
+    values.update(
+        call_kind="onnx", input_spans=(), source_view_ids=(), quotation_producer="not_produced"
+    )
+    values["request"] = {
+        "output_names": None,
+        "feeds": {"features": {"shape": [1, 4], "dtype": "float64", "values": NUMBERS["original"]}},
+    }
+    values["prompt"]["field_schema"] = {"numeric_constraints": NUMBERS["original"]}
+    values["prompt"]["field_schema_sha256"] = digest(values["prompt"]["field_schema"])
+    return source, prepare_invocation(source, **values)
+
+
+def test_authoritative_bytes_survive_numeric_projection_changes_and_reject_tampering():
+    source, call = numeric_envelopes()
+    row, invocation = source_record(source), invocation_record(call)
+    row.payload["components"]["sections"][0]["numbers"] = copy.deepcopy(
+        NUMBERS["postgres_projection"]
+    )
+    invocation.request_envelope["prompt"]["field_schema"]["numeric_constraints"] = NUMBERS[
+        "postgres_projection"
+    ]
+    invocation.request_envelope["request"]["feeds"]["features"]["values"] = NUMBERS[
+        "postgres_projection"
+    ]
+    assert source_from_record(row).sha256 == source.sha256
+    assert invocation_from_record(invocation).request_sha256 == call.request_sha256
+    assert source_from_record(row).model_dump(mode="json") == source.model_dump(mode="json")
+    assert invocation_from_record(invocation).model_dump(mode="json") == call.model_dump(
+        mode="json"
+    )
+    row.payload["components"]["sections"][0]["numbers"][0] = False
+    with pytest.raises(ValueError, match="projection disagrees"):
+        source_from_record(row)
+    invocation.canonical_bytes += b" "
+    with pytest.raises(ValueError, match="byte digest"):
+        invocation_from_record(invocation)
 
 
 def snapshot(**changes):
@@ -347,6 +397,7 @@ async def test_sqlite_storage_immutability_lifecycle_and_legacy(session, stored)
     for statement in (
         update(SourceSnapshot).where(SourceSnapshot.id == row.id).values(payload={"forged": True}),
         update(Invocation).where(Invocation.id == invocation.id).values(request_sha256="0" * 64),
+        update(Invocation).where(Invocation.id == invocation.id).values(canonical_bytes=b"{}"),
         update(ArticlePrediction)
         .where(ArticlePrediction.id == bound.id)
         .values(
@@ -407,6 +458,86 @@ async def test_sqlite_storage_immutability_lifecycle_and_legacy(session, stored)
                 update(Invocation).where(Invocation.id == invocation.id).values(outcome="failed")
             )
     assert await session.scalar(select(SourceSnapshot.snapshot_sha256)) == source.sha256
+
+
+@pytest.mark.parametrize("owner", ["job", "benchmark"])
+async def test_job_and_run_search_references_must_match_including_legacy_null(
+    session, stored, owner
+):
+    from app.db.models import BenchmarkRun, InferenceJob, Search
+
+    source, _ = stored
+    standard = Search(project_id=source.project_id, name="Standard", is_default=True)
+    blind = Search(project_id=source.project_id, name="Blind", kind="blind")
+    session.add_all([standard, blind])
+    await session.flush()
+
+    def record(search_id):
+        if owner == "job":
+            return InferenceJob(
+                project_id=source.project_id, search_id=search_id, model_used="test"
+            )
+        return BenchmarkRun(project_id=source.project_id, search_id=search_id)
+
+    explicit, legacy = record(standard.id), record(None)
+    session.add_all([explicit, legacy])
+    await session.commit()
+    for target, search_id, allowed in (
+        (explicit, standard.id, True),
+        (explicit, blind.id, False),
+        (explicit, None, False),
+        (legacy, standard.id, False),
+        (legacy, None, True),
+    ):
+        args = {"inference_job_id" if owner == "job" else "benchmark_run_id": target.id}
+        call = invocation_record(
+            prepared(source, id=uuid.uuid4(), group_id=uuid.uuid4(), search_id=search_id, **args)
+        )
+        statement = insert(Invocation).values(
+            **{c.name: getattr(call, c.name) for c in Invocation.__table__.columns}
+        )
+        if allowed:
+            await session.execute(statement)
+        else:
+            with pytest.raises(IntegrityError):
+                async with session.begin_nested():
+                    await session.execute(statement)
+    await session.commit()
+    owner_class = InferenceJob if owner == "job" else BenchmarkRun
+    for target in (explicit, legacy):
+        with pytest.raises(IntegrityError):
+            async with session.begin_nested():
+                await session.execute(
+                    update(owner_class)
+                    .where(owner_class.id == target.id)
+                    .values(search_id=blind.id)
+                )
+
+
+@pytest.mark.parametrize("origin", ["driver_parsed", "unavailable"])
+@pytest.mark.parametrize("raw_state", ["retained", "unavailable", "not_captured"])
+async def test_direct_sql_nonraw_response_cannot_retain_raw_fields(
+    session, stored, origin, raw_state
+):
+    source, _ = stored
+    call = invocation_record(prepared(source))
+    session.add(call)
+    await session.commit()
+    fake = {
+        "origin": origin,
+        "raw_availability": raw_state,
+        "raw_base64": "FAKE",
+        "raw_sha256": "bogus",
+        "parsed": {} if origin == "driver_parsed" else None,
+        "reason": "explicitly unavailable",
+    }
+    with pytest.raises(IntegrityError):
+        async with session.begin_nested():
+            await session.execute(
+                update(Invocation)
+                .where(Invocation.id == call.id)
+                .values(outcome="succeeded", completed_at=datetime.now(UTC), response_capture=fake)
+            )
 
 
 async def test_scoped_fks_reject_wrong_article_project_search_and_view(session, stored):
