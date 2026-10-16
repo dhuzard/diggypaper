@@ -312,6 +312,9 @@ def test_normalized_offset_map_differential_and_candidate_round_trip():
         ("max_candidate_examinations", True),
         ("max_validation_codepoints", 0),
         ("max_validation_codepoints", False),
+        ("max_combining_run", 0),
+        ("max_normalized_source_codepoints", False),
+        ("max_normalized_decomposed_codepoints", -1),
     ],
 )
 def test_invalid_configuration(name, value):
@@ -328,7 +331,10 @@ def test_rejected_normalized_hits_have_bounded_validation_work():
     text = fixture["source_repeat"] * fixture["source_repetitions"]
     quote = fixture["quote_repeat"] * fixture["quote_repetitions"] + fixture["quote_suffix"]
     matcher = ArticleQuoteMatcher(
-        source(text), allow_normalized=True, max_candidates=fixture["max_candidates"]
+        source(text),
+        allow_normalized=True,
+        max_candidates=fixture["max_candidates"],
+        max_combining_run=20_000,  # Isolate per-hit accounting from run admission.
     )
     result = matcher.match(quote)
     assert result.status == "incomplete"
@@ -401,6 +407,7 @@ def test_budget_is_charged_before_normalizing_a_large_covering_slice(monkeypatch
         source("a" + "\u0315" * 10_000 + "\u0300"),
         allow_normalized=True,
         max_validation_codepoints=100,
+        max_combining_run=20_000,  # Admit the source to isolate the per-hit slice budget.
     ).match("à")
     assert result.status == "incomplete"
     assert result.resource_limit_kind == "validation_codepoints"
@@ -443,6 +450,167 @@ def test_complete_rejected_search_returns_not_found():
     assert result.reason is None
     assert result.candidate_examinations == 1
     assert result.counts_complete is True
+
+
+def test_long_quote_run_is_refused_before_native_nfc_or_map_allocation(monkeypatch):
+    import app.quote_matcher as module
+
+    text = "a" + "\u0315" * 50_000 + "\u0300" * 8_001
+    quote = "à" + "\u0300" * 8_000
+
+    def forbidden(*args):
+        pytest.fail("unadmitted quote must not reach whole-string normalization or allocation")
+
+    monkeypatch.setattr(module, "normalize_quote_text", forbidden)
+    monkeypatch.setattr(module, "_normalize_with_offsets", forbidden)
+    matcher = ArticleQuoteMatcher(source(text), allow_normalized=True)
+    result = matcher.match(quote)
+    assert result.status == "incomplete"
+    assert result.reason == "resource_limit"
+    assert result.resource_limit_kind == "quote_combining_run"
+    assert result.candidate_examinations == result.validation_codepoints == 0
+    assert result.normalized_source_codepoints == result.normalized_decomposed_codepoints == 0
+    assert result.combining_run_limit == 256
+    assert matcher._normalized == {}
+    assert result.counts_complete is False
+    assert result.unique_input_occurrence is result.unique_source_location is None
+
+
+def test_long_source_run_is_refused_before_native_nfc_or_map_allocation(monkeypatch):
+    import app.quote_matcher as module
+
+    native_normalize = module.unicodedata.normalize
+
+    def guarded_normalize(form, text):
+        assert len(text) <= 1  # Only quote NFC and single-codepoint preflight NFD are needed.
+        return native_normalize(form, text)
+
+    def forbidden_map(*args):
+        pytest.fail("unadmitted source must not allocate a normalized map")
+
+    monkeypatch.setattr(module, "_normalize_with_offsets", forbidden_map)
+    matcher = ArticleQuoteMatcher(
+        source("a" + "\u0315" * 50_000 + "\u0300" * 8_001), allow_normalized=True
+    )
+    with monkeypatch.context() as scoped:
+        scoped.setattr(module.unicodedata, "normalize", guarded_normalize)
+        result = matcher.match("à")
+    assert result.status == "incomplete"
+    assert result.resource_limit_kind == "source_combining_run"
+    assert result.normalized_source_codepoints == result.normalized_decomposed_codepoints == 0
+    assert matcher._normalized == {}
+
+
+def test_run_gate_counts_canonical_decomposition_expansion():
+    result = ArticleQuoteMatcher(source("\u0344" * 200), allow_normalized=True).match(
+        "\u0308\u0301\u0308"
+    )
+    assert result.status == "incomplete"
+    assert result.resource_limit_kind == "source_combining_run"
+    assert result.normalized_source_codepoints == 0
+
+
+def test_exact_match_is_usable_when_normalized_run_admission_would_fail():
+    quote = "à" + "\u0300" * 8_000
+    result = ArticleQuoteMatcher(source(quote), allow_normalized=True).match(quote)
+    assert result.status == "exact"
+    assert result.counts_complete is True
+    assert result.normalized_source_codepoints == 0
+
+
+def test_cumulative_source_budget_includes_repeated_spans_before_map_allocation(monkeypatch):
+    import app.quote_matcher as module
+
+    allocations = []
+    original_map = module._normalize_with_offsets
+
+    def observed_map(text):
+        allocations.append(text)
+        return original_map(text)
+
+    monkeypatch.setattr(module, "_normalize_with_offsets", observed_map)
+    captured = TargetArticleInput(
+        "repeated-input",
+        tuple(span("cafe\u0301", path=f"messages/{index}/content") for index in range(10)),
+    )
+    matcher = ArticleQuoteMatcher(
+        captured, allow_normalized=True, max_normalized_source_codepoints=10
+    )
+    result = matcher.match("café")
+    assert result.status == "normalized"
+    assert result.reason == "resource_limit"
+    assert result.resource_limit_kind == "normalized_source_codepoints"
+    assert result.normalized_source_codepoints == 10
+    assert result.normalized_decomposed_codepoints == 10
+    assert result.input_occurrence_count == 2
+    assert result.unique_input_occurrence is False
+    assert result.unique_source_location is None
+    assert result.counts_complete is False
+    assert len(allocations) == len(matcher._normalized) == 2
+    again = matcher.match("café")
+    assert again.normalized_source_codepoints == 10
+    assert len(allocations) == 2  # Reusing the cache never double-charges or reallocates it.
+
+
+def test_cumulative_decomposition_budget_is_checked_before_map_allocation(monkeypatch):
+    import app.quote_matcher as module
+
+    def forbidden(*args):
+        pytest.fail("decomposition expansion must be admitted before map allocation")
+
+    monkeypatch.setattr(module, "_normalize_with_offsets", forbidden)
+    captured = source("각" * 100)
+    result = ArticleQuoteMatcher(
+        captured, allow_normalized=True, max_normalized_decomposed_codepoints=299
+    ).match("\u1100\u1161\u11a8")
+    assert result.status == "incomplete"
+    assert result.resource_limit_kind == "normalized_decomposed_codepoints"
+    assert result.normalized_source_codepoints == result.normalized_decomposed_codepoints == 0
+
+
+def test_original_size_gate_precedes_decomposition_preflight(monkeypatch):
+    import app.quote_matcher as module
+
+    original = module._normalization_preflight
+
+    def only_quote(text, *args):
+        assert text == "café"
+        return original(text, *args)
+
+    monkeypatch.setattr(module, "_normalization_preflight", only_quote)
+    result = ArticleQuoteMatcher(
+        source("cafe\u0301"), allow_normalized=True, max_normalized_source_codepoints=4
+    ).match("café")
+    assert result.resource_limit_kind == "normalized_source_codepoints"
+    assert result.status == "incomplete"
+
+
+def test_normalized_match_at_both_admission_budgets_is_allowed():
+    text = ("a" + "\u0344" * 127) * 3
+    matcher = ArticleQuoteMatcher(
+        source(text),
+        allow_normalized=True,
+        max_normalized_source_codepoints=384,
+        max_normalized_decomposed_codepoints=765,
+    )
+    result = matcher.match("ä\u0301")
+    assert result.status == "ambiguous"
+    assert result.match_mode == "normalized"
+    assert result.reason is result.resource_limit_kind is None
+    assert result.normalized_source_codepoints == 384
+    assert result.normalized_decomposed_codepoints == 765
+    assert result.input_occurrence_count == 3
+    assert result.counts_complete is True
+
+
+def test_decomposed_combining_run_exactly_at_limit_is_admitted():
+    text = "a" + "\u0344" * 128
+    quote = normalize_quote_text(text)
+    result = ArticleQuoteMatcher(source(text), allow_normalized=True).match(quote)
+    assert result.status == "normalized"
+    assert result.resource_limit_kind is None
+    assert result.counts_complete is True
+    assert result.normalized_decomposed_codepoints == 257
 
 
 def test_invalid_origin_maps_are_rejected():

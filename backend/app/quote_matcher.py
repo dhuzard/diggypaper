@@ -10,7 +10,7 @@ from array import array
 from dataclasses import dataclass
 from typing import Literal
 
-ALGORITHM_VERSION = "article-input-quote-v1.1"
+ALGORITHM_VERSION = "article-input-quote-v1.2"
 NORMALIZATION_VERSION = f"nfc-whitespace-v1/ucd-{unicodedata.unidata_version}"
 MatchStatus = Literal[
     "exact",
@@ -23,7 +23,14 @@ MatchStatus = Literal[
     "incomplete",
 ]
 MatchMode = Literal["exact", "normalized"]
-ResourceLimitKind = Literal["candidate_examinations", "validation_codepoints"]
+ResourceLimitKind = Literal[
+    "candidate_examinations",
+    "validation_codepoints",
+    "quote_combining_run",
+    "source_combining_run",
+    "normalized_source_codepoints",
+    "normalized_decomposed_codepoints",
+]
 _WHITESPACE = re.compile(r"\s+")
 _ASCII_RUNS = re.compile(r"[\x00-\x7f]+|[^\x00-\x7f]+")
 
@@ -136,12 +143,19 @@ class QuoteMatch:
     validation_codepoints: int = 0
     candidate_examination_limit: int | None = None
     validation_codepoint_limit: int | None = None
+    combining_run_limit: int | None = None
+    normalized_source_codepoints: int = 0
+    normalized_decomposed_codepoints: int = 0
+    normalized_source_codepoint_limit: int | None = None
+    normalized_decomposed_codepoint_limit: int | None = None
 
 
 def normalize_quote_text(text: str) -> str:
     """NFC, then replace each Unicode whitespace run with one ASCII space.
 
     No trimming, case-folding, punctuation repair, hyphen repair or fuzzy match.
+    This transformation primitive has no admission policy; the matcher gates
+    untrusted quote/source text before calling it.
     """
     return _WHITESPACE.sub(" ", unicodedata.normalize("NFC", text))
 
@@ -151,6 +165,36 @@ class _MappedText:
     text: str
     starts: array
     ends: array
+
+
+def _normalization_preflight(
+    text: str, max_combining_run: int, max_decomposed_codepoints: int | None = None
+) -> tuple[int, Literal["combining_run", "decomposed_codepoints"] | None]:
+    """Admit normalization without sorting or normalizing an unbounded run.
+
+    NFD is called on one code point at a time, whose decomposition is bounded
+    by the recorded Unicode database. No whole-string NFC is performed here.
+    Count decomposed marks so composition-excluded U+0344 cannot hide expansion.
+    """
+    count = 0
+    run = 0
+    for match in _ASCII_RUNS.finditer(text):
+        chunk = match.group()
+        if chunk.isascii():
+            count += len(chunk)
+            run = 0
+            if max_decomposed_codepoints is not None and count > max_decomposed_codepoints:
+                return count, "decomposed_codepoints"
+            continue
+        for char in chunk:
+            for token in unicodedata.normalize("NFD", char):
+                count += 1
+                if max_decomposed_codepoints is not None and count > max_decomposed_codepoints:
+                    return count, "decomposed_codepoints"
+                run = run + 1 if unicodedata.combining(token) else 0
+                if run > max_combining_run:
+                    return count, "combining_run"
+    return count, None
 
 
 def _nfc_with_offsets(text: str) -> _MappedText:
@@ -243,7 +287,8 @@ class ArticleQuoteMatcher:
     Each origin span is searched independently, with overlapping matches allowed.
     Every substring hit, including rejected normalized hits, consumes examination
     budget. Per-hit mapping and original-slice normalization consume a separate
-    code-point budget. Lazy full-source normalization is outside these budgets.
+    code-point budget. Source maps have cumulative original/decomposed input
+    admission budgets, and NFC runs are bounded before normalization/allocation.
     """
 
     def __init__(
@@ -255,6 +300,9 @@ class ArticleQuoteMatcher:
         max_quote_codepoints: int = 16_384,
         max_candidate_examinations: int = 128,
         max_validation_codepoints: int = 262_144,
+        max_combining_run: int = 256,
+        max_normalized_source_codepoints: int = 1_100_000,
+        max_normalized_decomposed_codepoints: int = 2_200_000,
     ) -> None:
         if source is not None and not isinstance(source, TargetArticleInput):
             raise ValueError("source must be TargetArticleInput or None")
@@ -263,6 +311,9 @@ class ArticleQuoteMatcher:
             ("max_quote_codepoints", max_quote_codepoints),
             ("max_candidate_examinations", max_candidate_examinations),
             ("max_validation_codepoints", max_validation_codepoints),
+            ("max_combining_run", max_combining_run),
+            ("max_normalized_source_codepoints", max_normalized_source_codepoints),
+            ("max_normalized_decomposed_codepoints", max_normalized_decomposed_codepoints),
         ):
             if type(value) is not int or value < 1:
                 raise ValueError(f"{name} must be a positive integer")
@@ -272,7 +323,12 @@ class ArticleQuoteMatcher:
         self.max_quote_codepoints = max_quote_codepoints
         self.max_candidate_examinations = max_candidate_examinations
         self.max_validation_codepoints = max_validation_codepoints
+        self.max_combining_run = max_combining_run
+        self.max_normalized_source_codepoints = max_normalized_source_codepoints
+        self.max_normalized_decomposed_codepoints = max_normalized_decomposed_codepoints
         self._normalized: dict[int, _MappedText] = {}
+        self._normalized_source_codepoints = 0
+        self._normalized_decomposed_codepoints = 0
 
     @property
     def source(self) -> TargetArticleInput | None:
@@ -300,7 +356,59 @@ class ArticleQuoteMatcher:
         exact = self._search(quote, quote, "exact")
         if exact.input_occurrence_count or not self.allow_normalized:
             return exact
+        _, rejected = _normalization_preflight(quote, self.max_combining_run)
+        if rejected is not None:
+            return QuoteMatch(
+                quote,
+                "incomplete",
+                input_ref,
+                normalization_version=NORMALIZATION_VERSION,
+                candidates_truncated=True,
+                reason="resource_limit",
+                resource_limit_kind="quote_combining_run",
+                **self._resource_accounting(),
+            )
         return self._search(quote, normalize_quote_text(quote), "normalized")
+
+    def _resource_accounting(self) -> dict[str, int]:
+        return {
+            "candidate_examination_limit": self.max_candidate_examinations,
+            "validation_codepoint_limit": self.max_validation_codepoints,
+            "combining_run_limit": self.max_combining_run,
+            "normalized_source_codepoints": self._normalized_source_codepoints,
+            "normalized_decomposed_codepoints": self._normalized_decomposed_codepoints,
+            "normalized_source_codepoint_limit": self.max_normalized_source_codepoints,
+            "normalized_decomposed_codepoint_limit": self.max_normalized_decomposed_codepoints,
+        }
+
+    def _prepare_normalized_span(
+        self, index: int, span: ArticleInputSpan
+    ) -> tuple[_MappedText | None, ResourceLimitKind | None]:
+        if index in self._normalized:
+            return self._normalized[index], None
+        if (
+            self._normalized_source_codepoints + len(span.text)
+            > self.max_normalized_source_codepoints
+        ):
+            return None, "normalized_source_codepoints"
+        decomposed_count, rejected = _normalization_preflight(
+            span.text,
+            self.max_combining_run,
+            self.max_normalized_decomposed_codepoints - self._normalized_decomposed_codepoints,
+        )
+        if rejected is not None:
+            return None, (
+                "source_combining_run"
+                if rejected == "combining_run"
+                else "normalized_decomposed_codepoints"
+            )
+        # Admission precedes map construction; repeated spans each consume their
+        # own allocation budget. Reusing an existing map does not charge it twice.
+        self._normalized_source_codepoints += len(span.text)
+        self._normalized_decomposed_codepoints += decomposed_count
+        mapped = _normalize_with_offsets(span.text)
+        self._normalized[index] = mapped
+        return mapped, None
 
     def _search(self, quote: str, needle: str, mode: MatchMode) -> QuoteMatch:
         assert self.source is not None
@@ -312,11 +420,14 @@ class ArticleQuoteMatcher:
         examinations = 0
         validation_codepoints = 0
         for span_index, span in enumerate(self.source.spans):
+            if not span.text:
+                continue
             mapped = None
             if mode == "normalized":
-                if span_index not in self._normalized:
-                    self._normalized[span_index] = _normalize_with_offsets(span.text)
-                mapped = self._normalized[span_index]
+                mapped, resource_limit_kind = self._prepare_normalized_span(span_index, span)
+                if resource_limit_kind is not None:
+                    break
+                assert mapped is not None
             haystack = mapped.text if mapped is not None else span.text
             cursor = 0
             while (index := haystack.find(needle, cursor)) >= 0:
@@ -345,6 +456,8 @@ class ArticleQuoteMatcher:
                         resource_limit_kind = "validation_codepoints"
                         break
                     validation_codepoints += slice_work
+                    # The source preflight bounds every contiguous slice's NFD
+                    # combining run before this native NFC call can be reached.
                     if normalize_quote_text(span.text[start:end]) != needle:
                         continue
                 candidate = QuoteCandidate(
@@ -392,6 +505,5 @@ class ArticleQuoteMatcher:
             resource_limit_kind=resource_limit_kind,
             candidate_examinations=examinations,
             validation_codepoints=validation_codepoints,
-            candidate_examination_limit=self.max_candidate_examinations,
-            validation_codepoint_limit=self.max_validation_codepoints,
+            **self._resource_accounting(),
         )

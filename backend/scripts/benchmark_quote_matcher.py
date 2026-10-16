@@ -24,7 +24,16 @@ from app.quote_matcher import (
 
 
 def fixture(size: int, mode: str) -> tuple[TargetArticleInput, list[str]]:
-    if mode == "rejected_normalized":
+    if mode == "admitted_near_budget":
+        block = "a" + "\u0344" * 127
+        codepoints = 1_100_000
+        text = block * (codepoints // len(block)) + block[: codepoints % len(block)]
+        quotes = ["ä\u0301"] * 100
+    elif mode in ("canonical_reordering_quote", "canonical_reordering_source"):
+        text = "a" + "\u0315" * 50_000 + "\u0300" * 8_001
+        quote = "à" + "\u0300" * 8_000 if mode.endswith("quote") else "à"
+        quotes = [quote] * 100
+    elif mode == "rejected_normalized":
         text = "\u0344" * (size // 2)
         quotes = ["\u0308\u0301" * (500 + index) + "\u0308" for index in range(100)]
     elif mode == "repeated":
@@ -34,15 +43,21 @@ def fixture(size: int, mode: str) -> tuple[TargetArticleInput, list[str]]:
         lines = [f"Observation {index:03}: alpha beta café.\n" for index in range(100)]
         if mode == "normalized_whitespace":
             lines = [line.replace("alpha beta", "alpha\t\r\n beta") for line in lines]
-        if mode == "normalized_unicode":
+        if mode in ("normalized_unicode", "repeated_spans"):
             lines = [line.replace("café", "cafe\u0301") for line in lines]
         body = "".join(lines)
         # Fixed UTF-8 byte budget, without cutting a multibyte character.
         text = body + ("Methods and observations. " * size)[: size - len(body.encode("utf-8"))]
         quotes = [f"Observation {index:03}: alpha beta café." for index in range(100)]
+    span_count = 10 if mode == "repeated_spans" else 1
     captured = TargetArticleInput(
         "benchmark-invocation",
-        (ArticleInputSpan(text, "messages/1/content", 0, "snapshot", "view", 0, "abstract", 0),),
+        tuple(
+            ArticleInputSpan(
+                text, f"messages/{index}/content", 0, "snapshot", "view", 0, "abstract", 0
+            )
+            for index in range(span_count)
+        ),
     )
     return captured, quotes
 
@@ -79,6 +94,8 @@ def measure(size: int, mode: str) -> dict:
     assert len(source.spans[0].text.encode("utf-8")) == size
     return {
         "utf8_bytes": size,
+        "span_count": len(source.spans),
+        "total_utf8_bytes": sum(len(span.text.encode("utf-8")) for span in source.spans),
         "codepoints": len(source.spans[0].text),
         "mode": mode,
         "quotes": 100,
@@ -86,11 +103,18 @@ def measure(size: int, mode: str) -> dict:
         "warm_median_ms": round(median(warm_times), 3),
         "peak_python_mib": round(peak / 1024**2, 3),
         "statuses": dict(Counter(result.status for result in results)),
+        "match_modes": dict(Counter(result.match_mode for result in results if result.match_mode)),
         "max_retained_candidates": max(len(result.candidates) for result in results),
         "max_candidate_examinations": max(result.candidate_examinations for result in results),
         "max_validation_codepoints": max(result.validation_codepoints for result in results),
         "resource_limit_count": sum(result.reason == "resource_limit" for result in results),
         "incomplete_count": sum(not result.counts_complete for result in results),
+        "resource_limit_kinds": dict(
+            Counter(result.resource_limit_kind for result in results if result.resource_limit_kind)
+        ),
+        "retained_normalized_maps": len(memory_matcher._normalized),
+        "normalized_source_codepoints": memory_matcher._normalized_source_codepoints,
+        "normalized_decomposed_codepoints": memory_matcher._normalized_decomposed_codepoints,
     }
 
 
@@ -116,6 +140,10 @@ def main() -> None:
                 print(json.dumps(measure(size, mode)), flush=True)
     for size in (20_000, 100_000, 1_000_000):
         print(json.dumps(measure(size, "rejected_normalized")), flush=True)
+    for mode in ("canonical_reordering_quote", "canonical_reordering_source"):
+        print(json.dumps(measure(116_003, mode)), flush=True)
+    print(json.dumps(measure(1_000_000, "repeated_spans")), flush=True)
+    print(json.dumps(measure(2_191_406, "admitted_near_budget")), flush=True)
 
 
 if __name__ == "__main__":
