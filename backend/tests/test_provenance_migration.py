@@ -48,6 +48,7 @@ from app.provenance import (
     source_record,
 )
 from app.provenance_capture import capture_article_source
+from app.quote_checks import check_prediction_quotes
 
 BACKEND = Path(__file__).resolve().parents[1]
 DATA = json.loads((Path(__file__).parent / "fixtures/provenance_v1.json").read_text("utf-8"))
@@ -412,7 +413,7 @@ async def test_populated_postgres_upgrade_downgrade_and_storage_guards(postgres_
     blocked = await alembic(url, "downgrade", "0021", success=False)
     assert "refusing to discard retained provenance" in blocked.stderr
     async with engine.begin() as connection:
-        assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "0022"
+        assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "0023"
         assert await connection.scalar(text("SELECT count(*) FROM source_snapshots")) == 2
         # Explicit ownership deletion remains the documented retention boundary.
         await connection.execute(delete(Project).where(Project.id == pid))
@@ -573,3 +574,109 @@ async def test_capture_source_serializes_with_article_replacement(postgres_datab
     assert new.components.methods_text == "new methods"
     assert new.raw_artifact.sha256 == hashlib.sha256(b"new PDF").hexdigest()
     assert old.id != new.id
+
+
+async def test_quote_checks_upgrade_keeps_legacy_null_and_guarded_downgrade(postgres_database):
+    url, engine = postgres_database
+    await alembic(url, "upgrade", "head")
+    source = SourceSnapshotV1.model_validate(DATA["snapshot"])
+    project_id, article_id, prediction_id = source.project_id, source.article_id, uuid.uuid4()
+    async with engine.begin() as connection:
+        await connection.execute(
+            text("INSERT INTO projects(id,title) VALUES (:id,'Legacy')"),
+            {"id": project_id},
+        )
+        await connection.execute(
+            text("INSERT INTO articles(id,project_id) VALUES (:id,:project_id)"),
+            {"id": article_id, "project_id": project_id},
+        )
+        await connection.execute(
+            text(
+                "INSERT INTO article_predictions(id,article_id,model_used) "
+                "VALUES (:id,:article_id,'legacy')"
+            ),
+            {"id": prediction_id, "article_id": article_id},
+        )
+        assert (
+            await connection.scalar(
+                text("SELECT quote_checks_json FROM article_predictions WHERE id = :id"),
+                {"id": prediction_id},
+            )
+            is None
+        )
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        session.add(source_record(source))
+        await session.commit()
+        call = invocation_record(prepared(source))
+        session.add(call)
+        await session.commit()
+        decision = {"evidence_quotes": ["Mice α."]}
+        pending_check = ArticlePrediction(
+            article_id=article_id,
+            model_used="pending",
+            provenance_project_id=project_id,
+            source_snapshot_id=source.id,
+            invocation_id=call.id,
+            invocation_group_id=call.group_id,
+            quote_checks_json=check_prediction_quotes(invocation_from_record(call), decision),
+        )
+        with pytest.raises(DBAPIError):
+            async with session.begin_nested():
+                session.add(pending_check)
+                await session.flush()
+        complete_invocation(
+            call,
+            "succeeded",
+            response=ResponseCapture(
+                origin="driver_parsed", raw_availability="not_captured", parsed={"actual": True}
+            ),
+        )
+        await session.commit()
+        checked = ArticlePrediction(
+            article_id=article_id,
+            model_used="new",
+            decision_json=decision,
+            evidence_quotes=decision["evidence_quotes"],
+            provenance_project_id=project_id,
+            source_snapshot_id=source.id,
+            invocation_id=call.id,
+            invocation_group_id=call.group_id,
+            quote_checks_json=check_prediction_quotes(invocation_from_record(call), decision),
+        )
+        session.add(checked)
+        await session.commit()
+        for mutation in (
+            {"quote_checks_json": None},
+            {"decision_json": {"evidence_quotes": ["changed"]}},
+            {"evidence_quotes": ["changed"]},
+        ):
+            with pytest.raises(DBAPIError):
+                async with session.begin_nested():
+                    await session.execute(
+                        update(ArticlePrediction)
+                        .where(ArticlePrediction.id == checked.id)
+                        .values(**mutation)
+                    )
+        with pytest.raises(DBAPIError):
+            async with session.begin_nested():
+                await session.execute(
+                    insert(ArticlePrediction).values(
+                        article_id=article_id,
+                        model_used="forged",
+                        provenance_project_id=project_id,
+                        source_snapshot_id=source.id,
+                        invocation_id=call.id,
+                        invocation_group_id=call.group_id,
+                        quote_checks_json={
+                            **checked.quote_checks_json,
+                            "input_ref": str(uuid.uuid4()),
+                        },
+                    )
+                )
+    refused = await alembic(url, "downgrade", "0022", success=False)
+    assert "refusing to discard persisted quotation checks" in refused.stderr
+    async with factory() as session:
+        await session.execute(delete(ArticlePrediction).where(ArticlePrediction.id == checked.id))
+        await session.commit()
+    await alembic(url, "downgrade", "0022")

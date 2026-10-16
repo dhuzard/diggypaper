@@ -703,6 +703,28 @@ class ArticlePrediction(_ProvenanceState, Base):
         Index("ix_article_predictions_article_id", "article_id"),
         Index("ix_article_predictions_prompt_template_id", "prompt_template_id"),
         *_source_links("article_predictions", invocation=True),
+        CheckConstraint(
+            "quote_checks_json IS NULL OR ("
+            "source_snapshot_id IS NOT NULL AND invocation_id IS NOT NULL AND "
+            "jsonb_typeof(quote_checks_json) = 'object' AND "
+            "coalesce(quote_checks_json->>'schema_version','') = 'quote-checks-v1' AND "
+            "coalesce(quote_checks_json->>'input_ref','') = invocation_id::text AND "
+            "coalesce(quote_checks_json->>'source_snapshot_ref','') = source_snapshot_id::text AND "
+            "jsonb_typeof(quote_checks_json->'items') = 'array')",
+            name="ck_article_predictions_quote_checks_scope",
+        ).ddl_if(dialect="postgresql"),
+        CheckConstraint(
+            "quote_checks_json IS NULL OR ("
+            "source_snapshot_id IS NOT NULL AND invocation_id IS NOT NULL AND "
+            "json_type(quote_checks_json) = 'object' AND "
+            "coalesce(json_extract(quote_checks_json,'$.schema_version'),'') = 'quote-checks-v1' "
+            "AND replace(coalesce(json_extract(quote_checks_json,'$.input_ref'),''),'-','') "
+            "= invocation_id "
+            "AND replace(coalesce(json_extract(quote_checks_json,'$.source_snapshot_ref'),''),"
+            "'-','') "
+            "= source_snapshot_id AND json_type(quote_checks_json,'$.items') = 'array')",
+            name="ck_article_predictions_quote_checks_scope",
+        ).ddl_if(dialect="sqlite"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
@@ -716,6 +738,9 @@ class ArticlePrediction(_ProvenanceState, Base):
     decision_json: Mapped[dict | None] = mapped_column(JSONB)
     confidence_score: Mapped[float | None] = mapped_column(Float)
     evidence_quotes: Mapped[list[str] | None] = mapped_column(JSONB)
+    # V1 checks against the final producing invocation's retained target spans.
+    # NULL means historical/unversioned; this is not a semantic support judgment.
+    quote_checks_json: Mapped[dict | None] = mapped_column(PROVENANCE_JSON)
     provenance_project_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     source_snapshot_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     invocation_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
@@ -1115,6 +1140,30 @@ _INVOCATION_FROZEN = (
     "envelope_sha256",
     "request_envelope",
     "canonical_bytes",
+)
+event.listen(
+    ArticlePrediction.__table__,
+    "after_create",
+    DDL(
+        "CREATE TRIGGER article_predictions_quote_checks_completed "
+        "BEFORE INSERT ON article_predictions WHEN NEW.quote_checks_json IS NOT NULL "
+        "AND NOT EXISTS (SELECT 1 FROM invocations i WHERE i.id = NEW.invocation_id "
+        "AND i.outcome = 'succeeded') "
+        "BEGIN SELECT RAISE(ABORT, 'quotation checks require a completed producing call'); END"
+    ).execute_if(dialect="sqlite"),
+)
+event.listen(
+    ArticlePrediction.__table__,
+    "after_create",
+    DDL(
+        "CREATE TRIGGER article_predictions_quote_checks_immutable "
+        "BEFORE UPDATE ON article_predictions WHEN "
+        "NEW.quote_checks_json IS NOT OLD.quote_checks_json OR "
+        "(OLD.quote_checks_json IS NOT NULL AND ("
+        "NEW.decision_json IS NOT OLD.decision_json OR "
+        "NEW.evidence_quotes IS NOT OLD.evidence_quotes)) "
+        "BEGIN SELECT RAISE(ABORT, 'quotation checks and checked output are immutable'); END"
+    ).execute_if(dialect="sqlite"),
 )
 event.listen(
     SourceSnapshot.__table__,

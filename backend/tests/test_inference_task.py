@@ -136,6 +136,9 @@ async def test_run_inference_completes(engine, session):
     calls = (await session.execute(select(Invocation))).scalars().all()
     assert len(snapshots) == len(calls) == 2
     assert all(p.source_snapshot_id and p.invocation_id for p in preds)
+    assert all(p.quote_checks_json["state"] == "checked" for p in preds)
+    assert all(p.quote_checks_json["items"][0]["result"]["status"] == "not_found" for p in preds)
+    assert all(p.quote_checks_json["input_ref"] == str(p.invocation_id) for p in preds)
     for call in calls:
         envelope = invocation_from_record(call)
         source = next(s for s in snapshots if s.id == call.source_snapshot_id)
@@ -276,6 +279,7 @@ async def test_chat_prefilter_records_only_actual_calls_and_binds_producer(engin
     calls = (await session.execute(select(Invocation))).scalars().all()
     preds = (await session.execute(select(ArticlePrediction))).scalars().all()
     assert len(calls) == 3 and len(preds) == 2
+    assert all(pred.quote_checks_json["state"] == "empty_quote_list" for pred in preds)
     by_article = {article.id: article for article in articles}
     for pred in preds:
         article = by_article[pred.article_id]
