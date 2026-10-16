@@ -107,7 +107,7 @@ def prediction_envelope(
             {
                 "local_ref": f"quote-{index}",
                 "quote": quote,
-                "origin": "captured_input",
+                "origin": "captured_input_context",
                 "source_binding_ref": binding_ref,
                 "quote_match_ref": (
                     check_items[index]["match_ref"] if index in check_items else None

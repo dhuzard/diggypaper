@@ -131,7 +131,7 @@
         "evidence_ref": "4ab7c54b-a4cb-50db-9bff-a3b171d6aebf",
         "local_ref": "p-randomization",
         "quote": "Mice were randomized.",
-        "origin": "captured_input",
+        "origin": "captured_input_context",
         "source_binding_ref": "binding-A",
         "quote_match_ref": "match-A"
       },
@@ -139,7 +139,7 @@
         "evidence_ref": "8fefec25-cf3c-5bb6-9493-0dd8ecb4748e",
         "local_ref": "p-blinding",
         "quote": "Allocation was blinded.",
-        "origin": "captured_input",
+        "origin": "captured_input_context",
         "source_binding_ref": "binding-A",
         "quote_match_ref": "match-B"
       }

@@ -166,11 +166,11 @@ def test_link_validity_does_not_upgrade_any_match_status_to_support(status):
     assert "assessment" not in envelope.evidence[0].model_dump()
 
 
-def test_captured_input_can_have_no_match_and_still_makes_no_occurrence_claim():
+def test_captured_input_context_can_have_no_match_without_occurrence_claim():
     passages = deepcopy(FIXTURE["passages"])
     passages[0]["quote_match_ref"] = None
     envelope = build(passages=passages)
-    assert envelope.evidence[0].origin == "captured_input"
+    assert envelope.evidence[0].origin == "captured_input_context"
     assert envelope.evidence[0].quote_match_ref is None
 
 

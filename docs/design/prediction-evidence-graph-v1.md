@@ -10,8 +10,10 @@ For a complete, valid set of project/search answers, the envelope stores one
 server-assigned answer ID per field and one evidence ID per model-provided global
 quote. Quotes bind to the final captured invocation and its snapshot. A quote
 check reference is included only when the stored check covers that exact quote
-index. `captured_input` and quote occurrence never assert that a passage supports
-an answer.
+index. `captured_input_context` only identifies the retained search context; it
+does not claim an occurrence. A `not_found` check remains bound to this context
+with its status in `quote_checks`; an overflow quote has no check reference and is
+unassessed. Even a confirmed occurrence does not assert support for an answer.
 
 The generated prompt now requests optional `evidence_links` entries containing a
 field key and zero-based index into `evidence_quotes`. The adapter creates edges

@@ -30,7 +30,7 @@ freeze nested records/collections. Version is explicit and required on envelopes
     "evidence_ref": "<server-UUID>",
     "local_ref": "passage-1",
     "quote": "Mice were randomized.",
-    "origin": "captured_input",
+    "origin": "captured_input_context",
     "source_binding_ref": "binding-A",
     "quote_match_ref": null
   }],
@@ -124,8 +124,8 @@ metadata remain in their separately referenced record. They are not reconstructe
 or duplicated here. Component-based locations remain the matcher/source contract's
 responsibility; view offsets never become a new document-location identity here.
 
-`captured_input` means that a quotation claim is bound to a captured input. It
-does not mean the quote occurred there. A match reference can be absent or point
+`captured_input_context` means only that a quotation claim is bound to retained
+input context. It does not mean the quote occurred there. A match reference can be absent or point
 to `not_checked`, `not_found`, `incomplete`, or any other matcher status without
 turning the link into a support assessment. Source matching and answer linkage
 are separate observations. Support/adjudication fields are forbidden in this

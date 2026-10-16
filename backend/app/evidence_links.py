@@ -105,10 +105,12 @@ class AnswerRecord(_FrozenModel):
 
 
 class EvidenceRecord(_FrozenModel):
+    """A model quote with source context, not an occurrence or support claim."""
+
     evidence_ref: CanonicalId
     local_ref: LocalRef
     quote: Quote
-    origin: Literal["captured_input", "legacy_unversioned"]
+    origin: Literal["captured_input_context", "legacy_unversioned"]
     source_binding_ref: Ref | None = None
     quote_match_ref: Ref | None = None
 
@@ -119,7 +121,7 @@ class EvidenceRecord(_FrozenModel):
             if self.source_binding_ref is not None or self.quote_match_ref is not None:
                 raise ValueError("legacy_cannot_claim_source_or_match")
         elif self.source_binding_ref is None:
-            raise ValueError("captured_input_requires_binding")
+            raise ValueError("captured_input_context_requires_binding")
         return self
 
 
@@ -202,9 +204,11 @@ class ValidationContext(_FrozenModel):
 
 
 class PassageDraft(_FrozenModel):
+    """Producer-local passage claim; origin never establishes occurrence."""
+
     local_ref: LocalRef
     quote: Quote
-    origin: Literal["captured_input", "legacy_unversioned"] = "captured_input"
+    origin: Literal["captured_input_context", "legacy_unversioned"] = "captured_input_context"
     source_binding_ref: Ref | None = None
     quote_match_ref: Ref | None = None
 
@@ -252,7 +256,7 @@ def validate_envelope(
         if envelope.field_definition_ref is not None or envelope.answers or envelope.links:
             raise ValueError("legacy_must_remain_unlinked_and_unversioned")
         if any(record.origin != "legacy_unversioned" for record in envelope.evidence):
-            raise ValueError("legacy_cannot_claim_captured_input")
+            raise ValueError("legacy_cannot_claim_captured_input_context")
     else:
         if context.field_definition is None:
             raise ValueError("structured_requires_frozen_field_definition")

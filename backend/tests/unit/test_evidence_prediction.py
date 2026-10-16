@@ -54,6 +54,44 @@ def test_valid_answers_remain_unlinked_without_explicit_mapping():
     assert envelope.evidence[0].quote_match_ref is not None
 
 
+def test_not_found_quote_retains_context_without_occurrence_claim():
+    checks = {
+        "items": [
+            {
+                "quote_index": 0,
+                "match_ref": str(uuid.uuid4()),
+                "result": {
+                    "quote": "Mice were randomized.",
+                    "input_ref": str(INVOCATION),
+                    "status": "not_found",
+                },
+            }
+        ]
+    }
+    result = _graph({"randomized": True, "evidence_quotes": ["Mice were randomized."]}, checks)
+    envelope = EvidenceEnvelopeV1.model_validate(result["envelope"])
+    assert envelope.evidence[0].origin == "captured_input_context"
+    assert envelope.evidence[0].quote_match_ref == checks["items"][0]["match_ref"]
+    assert envelope.links == ()
+
+
+def test_overflow_quote_has_context_but_no_quote_match_receipt():
+    result = _graph(
+        {
+            "randomized": True,
+            "evidence_quotes": ["Mice were randomized.", "Unassessed overflow quote"],
+        }
+    )
+    envelope = EvidenceEnvelopeV1.model_validate(result["envelope"])
+    assert [item.origin for item in envelope.evidence] == [
+        "captured_input_context",
+        "captured_input_context",
+    ]
+    assert envelope.evidence[0].quote_match_ref is not None
+    assert envelope.evidence[1].quote_match_ref is None
+    assert envelope.links == ()
+
+
 def test_explicit_field_quote_mapping_creates_only_claimed_edge():
     result = _graph(
         {
