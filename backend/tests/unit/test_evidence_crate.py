@@ -289,3 +289,30 @@ def test_extra_synthetic_retained_view_is_withheld_even_with_abstract_only_compo
     assert manifest["results"][0]["capture_state"] == "source_unavailable"
     assert manifest["sources"] == manifest["invocations"] == []
     assert hidden not in json.dumps([manifest, history])
+
+
+def test_unmapped_prompt_metadata_is_copied_but_obvious_contact_or_credential_is_withheld():
+    pred, source, call, _ = fixture()
+
+    def with_prompt(value):
+        row = copy.deepcopy(call)
+        row.request_envelope["prompt"]["system_template"] = value
+        row.canonical_bytes = canonical_json(row.request_envelope)
+        row.envelope_sha256 = digest(row.request_envelope)
+        return row
+
+    passage = "A proprietary passage without a separately mapped example span."
+    metadata = with_prompt(passage)
+    manifest, _ = build_bundle(
+        source.project_id, [pred], {source.id: source}, {call.id: metadata}, {}
+    )
+    assert manifest["results"][0]["capture_state"] == "captured"
+    assert passage in base64.b64decode(manifest["invocations"][0]["canonical_base64"]).decode()
+    for value in ("person@example.org", "Bearer opaque-token"):
+        sensitive = with_prompt(value)
+        manifest, _ = build_bundle(
+            source.project_id, [pred], {source.id: source}, {call.id: sensitive}, {}
+        )
+        assert manifest["results"][0]["capture_state"] == "source_unavailable"
+        assert manifest["invocations"] == []
+        assert value not in json.dumps(manifest)

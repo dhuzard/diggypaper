@@ -1,7 +1,9 @@
 """Bounded SEIP evidence companion for an RO-Crate archive.
 
 The portable manifest uses the existing replay contract. Only article title and
-abstract captures without retained raw artifacts or prompt examples are copied.
+abstract captures without retained raw artifacts or separately mapped example
+input spans are copied. Prompt templates and the rendered request are included;
+their redistribution rights and privacy require review outside this validator.
 All other records remain explicit unavailable/legacy entries. No provider raw
 response, uploaded PDF, account identity, or assessment rationale is copied.
 """
