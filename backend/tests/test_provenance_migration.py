@@ -417,3 +417,98 @@ async def test_populated_postgres_upgrade_downgrade_and_storage_guards(postgres_
         await connection.execute(delete(Project).where(Project.id == pid))
         assert await connection.scalar(select(SourceSnapshot.id)) is None
         assert await connection.scalar(select(Invocation.id)) is None
+
+
+@pytest.mark.parametrize(
+    "owner_class,owner_key",
+    [
+        (InferenceJob, "inference_job_id"),
+        (BenchmarkRun, "benchmark_run_id"),
+    ],
+)
+async def test_parent_search_and_invocation_insert_serialize(
+    postgres_database, owner_class, owner_key
+):
+    """A concurrent parent retarget cannot escape the child insert guard."""
+    url, engine = postgres_database
+    await alembic(url, "upgrade", "head")
+    source = SourceSnapshotV1.model_validate(DATA["snapshot"])
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        session.add(Project(id=source.project_id, title="Concurrency"))
+        await session.flush()
+        session.add(Article(id=source.article_id, project_id=source.project_id))
+        original = Search(project_id=source.project_id, name="Original")
+        other = Search(project_id=source.project_id, name="Blind", kind="blind")
+        session.add_all([original, other])
+        await session.flush()
+        session.add(source_record(source))
+        await session.commit()
+
+        async def owner():
+            values = {"project_id": source.project_id, "search_id": original.id}
+            if owner_class is InferenceJob:
+                values["model_used"] = "test"
+            row = owner_class(**values)
+            session.add(row)
+            await session.commit()
+            return row.id
+
+        def child(owner_id):
+            row = invocation_record(
+                prepared(
+                    source,
+                    id=uuid.uuid4(),
+                    group_id=uuid.uuid4(),
+                    search_id=original.id,
+                    **{owner_key: owner_id},
+                )
+            )
+            return insert(Invocation).values(
+                **{
+                    column.name: getattr(row, column.name)
+                    for column in Invocation.__table__.columns
+                }
+            )
+
+        # Child wins the row lock: the parent UPDATE must wait, then its
+        # immutable-parent trigger rejects the retarget after child commit.
+        first_id = await owner()
+        async with engine.connect() as child_conn, engine.connect() as parent_conn:
+            child_tx = await child_conn.begin()
+            await child_conn.execute(child(first_id))
+            parent_tx = await parent_conn.begin()
+            await parent_conn.execute(text("SET LOCAL lock_timeout = '200ms'"))
+            with pytest.raises(DBAPIError):
+                await parent_conn.execute(
+                    update(owner_class).where(owner_class.id == first_id).values(search_id=other.id)
+                )
+            await parent_tx.rollback()
+            await child_tx.commit()
+        async with engine.begin() as connection:
+            with pytest.raises(DBAPIError):
+                async with connection.begin_nested():
+                    await connection.execute(
+                        update(owner_class)
+                        .where(owner_class.id == first_id)
+                        .values(search_id=other.id)
+                    )
+
+        # Parent wins: a child INSERT waits on its locked row, and after the
+        # parent commits the child must see the new search and reject the link.
+        second_id = await owner()
+        async with engine.connect() as parent_conn, engine.connect() as child_conn:
+            parent_tx = await parent_conn.begin()
+            await parent_conn.execute(
+                update(owner_class).where(owner_class.id == second_id).values(search_id=other.id)
+            )
+            child_tx = await child_conn.begin()
+            await child_conn.execute(text("SET LOCAL lock_timeout = '200ms'"))
+            with pytest.raises(DBAPIError):
+                await child_conn.execute(child(second_id))
+            await child_tx.rollback()
+            await parent_tx.commit()
+        async with engine.begin() as connection:
+            with pytest.raises(DBAPIError):
+                async with connection.begin_nested():
+                    await connection.execute(child(second_id))

@@ -323,20 +323,27 @@ def _guards():
     frozen_old = ",".join(f"OLD.{name}" for name in _FROZEN)
     op.execute(f"""
         CREATE FUNCTION seip_invocation_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+        DECLARE parent_search uuid;
         BEGIN
           IF TG_OP = 'INSERT' THEN
             PERFORM pg_advisory_xact_lock(hashtextextended(NEW.group_id::text, 0));
             IF NEW.outcome <> 'prepared' THEN
               RAISE EXCEPTION 'invocation must start prepared';
             END IF;
-            IF NEW.inference_job_id IS NOT NULL AND NOT EXISTS (
-              SELECT 1 FROM inference_jobs j WHERE j.id = NEW.inference_job_id
-                AND j.search_id IS NOT DISTINCT FROM NEW.search_id
-            ) THEN RAISE EXCEPTION 'invocation job search mismatch'; END IF;
-            IF NEW.benchmark_run_id IS NOT NULL AND NOT EXISTS (
-              SELECT 1 FROM benchmark_runs r WHERE r.id = NEW.benchmark_run_id
-                AND r.search_id IS NOT DISTINCT FROM NEW.search_id
-            ) THEN RAISE EXCEPTION 'invocation benchmark search mismatch'; END IF;
+            IF NEW.inference_job_id IS NOT NULL THEN
+              SELECT j.search_id INTO parent_search FROM inference_jobs j
+              WHERE j.id = NEW.inference_job_id FOR SHARE;
+              IF NOT FOUND OR parent_search IS DISTINCT FROM NEW.search_id THEN
+                RAISE EXCEPTION 'invocation job search mismatch';
+              END IF;
+            END IF;
+            IF NEW.benchmark_run_id IS NOT NULL THEN
+              SELECT r.search_id INTO parent_search FROM benchmark_runs r
+              WHERE r.id = NEW.benchmark_run_id FOR SHARE;
+              IF NOT FOUND OR parent_search IS DISTINCT FROM NEW.search_id THEN
+                RAISE EXCEPTION 'invocation benchmark search mismatch';
+              END IF;
+            END IF;
             IF EXISTS (SELECT 1 FROM invocations i WHERE i.group_id = NEW.group_id AND
               ROW(i.project_id,i.article_id,i.source_snapshot_id,i.search_id,
                   i.inference_job_id,i.benchmark_run_id) IS DISTINCT FROM
