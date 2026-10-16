@@ -107,6 +107,7 @@ def _prediction_payload(p: ArticlePrediction) -> dict:
         # Null means this historical/scorer prediction was not checked against
         # a captured model input. Do not infer a result from today's article.
         "quote_checks": p.quote_checks_json,
+        "evidence_graph": p.evidence_graph_json,
         "status": p.status,
         "created_at": p.created_at.isoformat() if p.created_at else None,
     }

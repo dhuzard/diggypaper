@@ -725,6 +725,22 @@ class ArticlePrediction(_ProvenanceState, Base):
             "= source_snapshot_id AND json_type(quote_checks_json,'$.items') = 'array')",
             name="ck_article_predictions_quote_checks_scope",
         ).ddl_if(dialect="sqlite"),
+        CheckConstraint(
+            "evidence_graph_json IS NULL OR ("
+            "quote_checks_json IS NOT NULL AND "
+            "coalesce(evidence_graph_json->'envelope'->>'schema_version','') = "
+            "'evidence-envelope-v1' AND "
+            "coalesce(evidence_graph_json->'envelope'->'scope'->>'record_kind','') = "
+            "'prediction' AND "
+            "coalesce(evidence_graph_json->'envelope'->'scope'->>'record_ref','') = id::text "
+            "AND coalesce(evidence_graph_json->'envelope'->'scope'->>'revision_ref','') "
+            "= id::text AND "
+            "coalesce(evidence_graph_json->'envelope'->'scope'->>'project_ref','') "
+            "= provenance_project_id::text AND "
+            "coalesce(evidence_graph_json->'envelope'->'scope'->>'article_ref','') "
+            "= article_id::text)",
+            name="ck_article_predictions_evidence_graph_scope",
+        ).ddl_if(dialect="postgresql"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
@@ -741,6 +757,9 @@ class ArticlePrediction(_ProvenanceState, Base):
     # V1 checks against the final producing invocation's retained target spans.
     # NULL means historical/unversioned; this is not a semantic support judgment.
     quote_checks_json: Mapped[dict | None] = mapped_column(PROVENANCE_JSON)
+    # Frozen field definition plus scoped evidence envelope for new chat outputs.
+    # NULL means historical, scorer, or invalid/unrepresentable model output.
+    evidence_graph_json: Mapped[dict | None] = mapped_column(PROVENANCE_JSON)
     provenance_project_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     source_snapshot_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     invocation_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)

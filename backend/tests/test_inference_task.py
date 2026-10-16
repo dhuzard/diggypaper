@@ -139,6 +139,8 @@ async def test_run_inference_completes(engine, session):
     assert all(p.quote_checks_json["state"] == "checked" for p in preds)
     assert all(p.quote_checks_json["items"][0]["result"]["status"] == "not_found" for p in preds)
     assert all(p.quote_checks_json["input_ref"] == str(p.invocation_id) for p in preds)
+    assert all(p.evidence_graph_json["envelope"]["state"] == "structured" for p in preds)
+    assert all(p.evidence_graph_json["envelope"]["links"] == [] for p in preds)
     for call in calls:
         envelope = invocation_from_record(call)
         source = next(s for s in snapshots if s.id == call.source_snapshot_id)
