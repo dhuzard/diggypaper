@@ -316,7 +316,11 @@ async def test_blind_sample_hides_predictions_until_reviewed(client, session, co
     await session.commit()
     url = f"{base}/articles/{art.id}"
     assert (await client.get(f"{url}/prediction", params={"search": s["id"]})).json() is None
-    r = await client.post(f"{url}/annotation", params={"search": s["id"]}, json={"ai": False})
+    token = (await client.get(url, params={"search": s["id"]})).json()["source_view_token"]
+    r = await client.post(
+        f"{url}/annotation", params={"search": s["id"]},
+        json={"ai": False, "source_view_token": token},
+    )
     assert r.status_code == 201
     assert (await client.get(f"{url}/prediction", params={"search": s["id"]})).json() is not None
     ann = (
@@ -374,8 +378,13 @@ async def test_blind_search_hides_model_and_other_reviewers_everywhere(
         )
     await session.commit()
     # le LEAD relit A1 ; un annotateur n'en voit RIEN : ni IA, ni réponse du LEAD
+    article_url = f"{base}/articles/{arts[0].id}"
+    lead_token = (await client.get(article_url, params={"search": s["id"]})).json()[
+        "source_view_token"
+    ]
     await client.post(
-        f"{base}/articles/{arts[0].id}/annotation", params={"search": s["id"]}, json={"ai": False}
+        f"{article_url}/annotation", params={"search": s["id"]},
+        json={"ai": False, "source_view_token": lead_token},
     )
     await _member(session, project, "ann@lab.fr")
     await do_login("ann@lab.fr", "member-pass-123", consent=True)
@@ -396,8 +405,12 @@ async def test_blind_search_hides_model_and_other_reviewers_everywhere(
     got = await client.get(f"{base}/articles/{arts[0].id}/annotation", params={"search": s["id"]})
     assert got.json() is None
     # après SA relecture, l'IA devient visible pour cet article
+    member_token = (await client.get(article_url, params={"search": s["id"]})).json()[
+        "source_view_token"
+    ]
     await client.post(
-        f"{base}/articles/{arts[0].id}/annotation", params={"search": s["id"]}, json={"ai": True}
+        f"{article_url}/annotation", params={"search": s["id"]},
+        json={"ai": True, "source_view_token": member_token},
     )
     mine = (await client.get(f"{base}/articles", params={"search": s["id"]})).json()["items"]
     shown = [i for i in mine if i["answers"]]

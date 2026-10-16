@@ -42,7 +42,7 @@ from app.provenance_capture import capture_article_source
 from app.provenance_render import composed_view
 from app.review_source import issue_review_token, parse_review_token
 from app.schema import project_fields, validate_decision
-from app.searches import get_search, in_search
+from app.searches import get_search, in_search, lot_condition
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +138,10 @@ async def get_article(
     modèles » suit les parties de la recherche."""
     article = await _require_article(db, project_id, article_id, user)
     scope = await _scope(db, project_id, search)
+    if scope.kind == "blind" and await db.scalar(
+        select(Article.id).where(Article.id == article.id, lot_condition(scope))
+    ) is None:
+        raise HTTPException(status_code=404, detail="Article not found in search")
     snapshot, view_id = await capture_article_source(
         db, project_id=project_id, article_id=article_id, text_sections=scope.text_sections
     )
@@ -151,7 +155,7 @@ async def get_article(
         methods_text=snapshot.components.methods_text,
         text=view.text,
         has_fulltext=bool(snapshot.components.sections),
-        source_view_token=issue_review_token(snapshot, view_id, scope.id, user.id),
+        source_view_token=issue_review_token(snapshot, view_id, scope, user.id),
     )
     await db.commit()
     return result
@@ -397,7 +401,6 @@ async def create_annotation(
     db: DbDep,
     user: UserDep,
     search: uuid.UUID | None = None,
-    blind: bool = False,
 ) -> dict:
     """Soumet une annotation humaine pour la recherche ``search`` (``blind`` : faite sans voir la
     prédiction du modèle, cf. échantillon à l'aveugle).
@@ -408,6 +411,10 @@ async def create_annotation(
     article = await _require_article(db, project_id, article_id, user)
     scope = await _scope(db, project_id, search)
     if scope.kind == "blind":
+        if await db.scalar(
+            select(Article.id).where(Article.id == article.id, lot_condition(scope))
+        ) is None:
+            raise HTTPException(status_code=404, detail="Article not found in search")
         # Serialize first submissions on PostgreSQL so two parallel POSTs cannot
         # both pass the existence check before either commits.
         await db.scalar(
@@ -424,7 +431,11 @@ async def create_annotation(
             raise HTTPException(status_code=409, detail="blind review already submitted")
     token = payload.get("source_view_token")
     if token is None:
-        binding = {"state": "legacy_unversioned", "current_source_drift": None}
+        if scope.kind == "blind":
+            raise HTTPException(
+                status_code=422, detail="source view token required for blind review"
+            )
+        binding = {"state": "legacy_unversioned", "current_display_text_drift": None}
         source_columns = {}
     else:
         if not isinstance(token, str):
@@ -432,7 +443,7 @@ async def create_annotation(
         try:
             source_id, view_id, digest = parse_review_token(
                 token, project_id=project_id, article_id=article_id,
-                search_id=scope.id, user_id=user.id,
+                scope=scope, user_id=user.id,
             )
         except ValueError:
             raise HTTPException(status_code=422, detail="invalid source view token") from None
@@ -463,7 +474,7 @@ async def create_annotation(
             current_components != snapshot.components
             or composed_view(current_components, scope.text_sections).sha256 != digest
         )
-        binding = {"state": "view_bound", "current_source_drift": drift}
+        binding = {"state": "view_bound", "current_display_text_drift": drift}
     if scope.fields is not None:
         # Schéma propre à la recherche : champs définis + clés standard optionnelles.
         errors = validate_decision(project_fields(scope), payload)
@@ -501,7 +512,7 @@ async def create_annotation(
         article_id=article.id,
         user_id=user.id,
         search_id=scope.id,
-        blind=blind or scope.kind == "blind",
+        blind=scope.kind == "blind",
         decision_json=decision,
         notes=decision["reasoning_summary"],
         **source_columns,

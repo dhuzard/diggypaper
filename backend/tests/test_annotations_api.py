@@ -7,8 +7,11 @@ Endpoints du viewer d'annotation :
 """
 
 import uuid
-from datetime import UTC
+from datetime import UTC, datetime, timedelta
 
+import jwt
+
+from app.core.config import get_settings
 from app.db.models import (
     Article,
     ArticlePrediction,
@@ -97,7 +100,7 @@ async def test_review_binds_retained_display_after_source_replacement(
     )
     assert response.status_code == 201, response.text
     assert response.json()["decision_json"]["source_binding"] == {
-        "state": "view_bound", "current_source_drift": True
+        "state": "view_bound", "current_display_text_drift": True
     }
     ann = await session.get(HumanAnnotation, uuid.UUID(response.json()["id"]))
     assert ann.source_snapshot_id and ann.source_view_id and ann.source_view_sha256
@@ -131,7 +134,7 @@ async def test_old_client_review_is_explicitly_unversioned(
     )
     assert response.status_code == 201
     assert response.json()["decision_json"]["source_binding"] == {
-        "state": "legacy_unversioned", "current_source_drift": None
+        "state": "legacy_unversioned", "current_display_text_drift": None
     }
 
 
@@ -153,6 +156,121 @@ async def test_blind_second_submission_cannot_replace_first_judgment(
     assert (await client.post(url + f"/annotation?search={blind.id}", json=body)).status_code == 201
     repeat = await client.post(url + f"/annotation?search={blind.id}", json=body)
     assert repeat.status_code == 409
+
+
+async def test_blind_requires_source_token_but_standard_legacy_remains_allowed(
+    client, session, researcher_user, do_login
+):
+    from app.db.models import Search
+
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _make_project_with_article(session, researcher_user)
+    blind = Search(project_id=project.id, name="Blind", kind="blind", question="Q", lot_all=True)
+    session.add(blind)
+    await session.commit()
+    url = f"/api/v1/projects/{project.id}/articles/{article.id}/annotation"
+    response = await client.post(url + f"?search={blind.id}", json=VALID_ANNOTATION)
+    assert response.status_code == 422
+    assert response.json()["detail"] == "source view token required for blind review"
+    legacy = await client.post(url, json=VALID_ANNOTATION)
+    assert legacy.status_code == 201
+    assert legacy.json()["decision_json"]["source_binding"]["state"] == "legacy_unversioned"
+
+
+async def test_blind_review_rejects_article_outside_search_lot(
+    client, session, researcher_user, do_login
+):
+    from app.db.models import Search
+
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _make_project_with_article(session, researcher_user)
+    blind = Search(project_id=project.id, name="Frozen", kind="blind", question="Q", lot_all=False)
+    session.add(blind)
+    await session.commit()
+    url = f"/api/v1/projects/{project.id}/articles/{article.id}"
+    assert (await client.get(url + f"?search={blind.id}")).status_code == 404
+    assert (
+        await client.post(url + f"/annotation?search={blind.id}", json=VALID_ANNOTATION)
+    ).status_code == 404
+
+
+async def test_review_token_rejects_changed_search_definition(
+    client, session, researcher_user, do_login
+):
+    from app.db.models import Search
+
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _make_project_with_article(session, researcher_user)
+    blind = Search(project_id=project.id, name="Blind", kind="blind", question="Q1", lot_all=True)
+    session.add(blind)
+    await session.commit()
+    url = f"/api/v1/projects/{project.id}/articles/{article.id}"
+    token = (await client.get(url + f"?search={blind.id}")).json()["source_view_token"]
+    blind.question = "Q2"
+    await session.commit()
+    response = await client.post(
+        url + f"/annotation?search={blind.id}",
+        json={**VALID_ANNOTATION, "source_view_token": token},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "invalid source view token"
+
+
+async def test_blind_query_on_standard_search_cannot_spoof_blind_record(
+    client, session, researcher_user, do_login
+):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _make_project_with_article(session, researcher_user)
+    url = f"/api/v1/projects/{project.id}/articles/{article.id}/annotation?blind=true"
+    first = await client.post(url, json=VALID_ANNOTATION)
+    second = await client.post(url, json=VALID_ANNOTATION)
+    assert first.status_code == second.status_code == 201
+    ann = await session.get(HumanAnnotation, uuid.UUID(first.json()["id"]))
+    assert ann.blind is False
+
+
+async def test_review_token_is_user_search_and_expiry_scoped(
+    client, session, researcher_user, do_login
+):
+    from app.db.models import Search, UserRole
+    from tests.conftest import _make_user
+
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _make_project_with_article(session, researcher_user)
+    other_search = Search(
+        project_id=project.id, name="Other", kind="standard", question="Q", lot_all=True,
+    )
+    member = await _make_user(
+        session, "second-reviewer@lab.fr", UserRole.RESEARCHER, "member-pass-123", True
+    )
+    session.add_all([
+        other_search,
+        ProjectMember(
+            project_id=project.id, user_id=member.id,
+            role_in_project=ProjectMemberRole.ANNOTATOR,
+        ),
+    ])
+    await session.commit()
+    article_url = f"/api/v1/projects/{project.id}/articles/{article.id}"
+    token = (await client.get(article_url)).json()["source_view_token"]
+    payload = {**VALID_ANNOTATION, "source_view_token": token}
+    wrong_search = await client.post(
+        article_url + f"/annotation?search={other_search.id}", json=payload
+    )
+    assert wrong_search.status_code == 422
+    await do_login("second-reviewer@lab.fr", "member-pass-123", consent=True)
+    wrong_user = await client.post(article_url + "/annotation", json=payload)
+    assert wrong_user.status_code == 422
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    claims = jwt.decode(
+        token, get_settings().jwt_secret, algorithms=["HS256"], options={"verify_exp": False}
+    )
+    claims["exp"] = datetime.now(UTC) - timedelta(seconds=1)
+    expired = jwt.encode(claims, get_settings().jwt_secret, algorithm="HS256")
+    response = await client.post(
+        article_url + "/annotation", json={**payload, "source_view_token": expired}
+    )
+    assert response.status_code == 422
 
 
 async def test_get_article_404_not_found(client, session, researcher_user, do_login):
