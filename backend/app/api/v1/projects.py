@@ -148,17 +148,21 @@ def review_payload(ann: HumanAnnotation | None, user: User | None) -> dict | Non
     }
 
 
-async def latest_reviews(db: AsyncSession, article_ids: list, search: Search) -> dict:
+async def latest_reviews(
+    db: AsyncSession, article_ids: list, search: Search, reviewer_id: uuid.UUID | None = None
+) -> dict:
     """{article_id: (annotation la plus récente, relecteur)} de cette recherche."""
     out: dict = {}
     if not article_ids:
         return out
+    own = [HumanAnnotation.user_id == reviewer_id] if reviewer_id else []
     rows = await db.execute(
         select(HumanAnnotation, User)
         .join(User, User.id == HumanAnnotation.user_id, isouter=True)
         .where(
             HumanAnnotation.article_id.in_(article_ids),
             in_search(HumanAnnotation.search_id, search),
+            *own,
         )
         .order_by(HumanAnnotation.created_at.nulls_first(), HumanAnnotation.id)
     )

@@ -380,6 +380,13 @@ async def test_blind_search_hides_model_and_other_reviewers_everywhere(
     await client.post(f"{base}/gold/from-reviews", params={"search": s["id"]}, json={})
     await _member(session, project, "ann@lab.fr")
     await do_login("ann@lab.fr", "member-pass-123", consent=True)
+    assert (
+        await client.post(
+            f"{base}/gold/from-reviews",
+            params={"search": s["id"]},
+            json={"article_ids": [str(arts[0].id)]},
+        )
+    ).json() == {"added": 0, "updated": 0, "skipped": 1}
     assert (await client.get(f"{base}/gold", params={"search": s["id"]})).json()["items"] == []
     items = (await client.get(f"{base}/articles", params={"search": s["id"]})).json()["items"]
     assert items and all(i["answers"] == [] and i["prediction_status"] is None for i in items)
