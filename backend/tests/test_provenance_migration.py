@@ -47,6 +47,7 @@ from app.provenance import (
     source_from_record,
     source_record,
 )
+from app.provenance_capture import capture_article_source
 
 BACKEND = Path(__file__).resolve().parents[1]
 DATA = json.loads((Path(__file__).parent / "fixtures/provenance_v1.json").read_text("utf-8"))
@@ -512,3 +513,63 @@ async def test_parent_search_and_invocation_insert_serialize(
             with pytest.raises(DBAPIError):
                 async with connection.begin_nested():
                     await connection.execute(child(second_id))
+
+
+async def test_capture_source_serializes_with_article_replacement(postgres_database):
+    """A captured text/PDF revision is complete before a writer replaces it."""
+    url, engine = postgres_database
+    await alembic(url, "upgrade", "head")
+    project_id, article_id = uuid.uuid4(), uuid.uuid4()
+    async with engine.begin() as connection:
+        await connection.execute(
+            text("INSERT INTO projects(id,title) VALUES (:id,'Capture')"),
+            {"id": project_id},
+        )
+        await connection.execute(
+            text(
+                "INSERT INTO articles(id,project_id,methods_text) "
+                "VALUES (:id,:project_id,'old methods')"
+            ),
+            {"id": article_id, "project_id": project_id},
+        )
+        await connection.execute(
+            text("INSERT INTO article_files(id,article_id,data) VALUES (:id,:article_id,:data)"),
+            {"id": uuid.uuid4(), "article_id": article_id, "data": b"old PDF"},
+        )
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as capture_session, engine.connect() as writer:
+        old, _ = await capture_article_source(
+            capture_session,
+            project_id=project_id,
+            article_id=article_id,
+            text_sections=["methods"],
+        )
+        writer_tx = await writer.begin()
+        await writer.execute(text("SET LOCAL lock_timeout = '200ms'"))
+        with pytest.raises(DBAPIError):
+            await writer.execute(
+                update(Article).where(Article.id == article_id).values(methods_text="new methods")
+            )
+        await writer_tx.rollback()
+        await capture_session.commit()
+    async with engine.begin() as writer:
+        await writer.execute(
+            update(Article).where(Article.id == article_id).values(methods_text="new methods")
+        )
+        await writer.execute(
+            text("UPDATE article_files SET data = :data WHERE article_id = :article_id"),
+            {"data": b"new PDF", "article_id": article_id},
+        )
+    async with factory() as capture_session:
+        new, _ = await capture_article_source(
+            capture_session,
+            project_id=project_id,
+            article_id=article_id,
+            text_sections=["methods"],
+        )
+        await capture_session.commit()
+    assert old.components.methods_text == "old methods"
+    assert old.raw_artifact.sha256 == hashlib.sha256(b"old PDF").hexdigest()
+    assert new.components.methods_text == "new methods"
+    assert new.raw_artifact.sha256 == hashlib.sha256(b"new PDF").hexdigest()
+    assert old.id != new.id
