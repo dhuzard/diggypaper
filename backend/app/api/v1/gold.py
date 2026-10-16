@@ -16,13 +16,18 @@ from app.api.deps import get_current_user, get_db
 from app.api.v1.projects import _require_project_member, latest_reviews
 from app.db.models import (
     Article,
+    ArticlePrediction,
+    EvidenceSupportAssessment,
     GoldArticle,
+    GoldRevision,
     HumanAnnotation,
     ProjectMember,
     ProjectMemberRole,
     User,
     UserRole,
 )
+from app.provenance import digest
+from app.pseudonym import anonymized_actor_ref
 from app.schema import project_fields, validate_decision
 from app.searches import get_search, gold_condition, in_search
 
@@ -44,6 +49,7 @@ _GROUND_TRUTH_KEYS = {
 class GoldCreate(BaseModel):
     article_id: uuid.UUID
     ground_truth_json: dict = Field(min_length=1)
+    assessment_refs: list[uuid.UUID] = Field(default_factory=list, max_length=100)
 
 
 class GoldFromReviews(BaseModel):
@@ -51,6 +57,7 @@ class GoldFromReviews(BaseModel):
 
     article_ids: list[uuid.UUID] | None = None  # None : tous les articles relus de la recherche
     refresh: bool = False  # remplace la copie des articles déjà au gold par la relecture actuelle
+    assessment_refs_by_article: dict[uuid.UUID, list[uuid.UUID]] = Field(default_factory=dict)
 
 
 async def _require_lead(db: AsyncSession, project_id: uuid.UUID, user: User) -> None:
@@ -88,22 +95,140 @@ def _answers_of(gt: dict | None, fields: list[dict]) -> dict:
     return {f["key"]: (gt or {}).get(f["key"]) for f in fields}
 
 
+def _revision(
+    gold: GoldArticle,
+    sequence: int,
+    fields: list[dict],
+    *,
+    ann: HumanAnnotation | None,
+    review_actor_ref: str | None,
+    recorded_by_ref: str | None,
+    assessment_refs: list[uuid.UUID] | None = None,
+    legacy: bool = False,
+) -> GoldRevision:
+    """Freeze facts known at copy time; missing links are never inferred."""
+    truth = gold.ground_truth_json
+    return GoldRevision(
+        gold_id=gold.id,
+        sequence=sequence,
+        ground_truth_json=truth,
+        answer_keys_json=[field["key"] for field in fields],
+        answer_sha256=digest(_answers_of(truth, fields)),
+        evidence_sha256=digest(truth.get("evidence_quotes") or []),
+        source_annotation_ref=ann.id if ann else gold.source_annotation_id,
+        source_snapshot_ref=ann.source_snapshot_id if ann else None,
+        source_view_ref=ann.source_view_id if ann else None,
+        source_view_sha256=ann.source_view_sha256 if ann else None,
+        review_actor_ref=review_actor_ref,
+        review_status=(ann.decision_json or {}).get("review_status") if ann else None,
+        review_blind=ann.blind if ann else None,
+        review_created_at=ann.created_at if ann else None,
+        assessment_refs_json=[str(ref) for ref in assessment_refs or []],
+        recorded_by_ref=recorded_by_ref,
+        provenance_state="legacy_unqualified" if legacy else "unqualified",
+    )
+
+
+async def _checked_assessment_refs(
+    db: AsyncSession,
+    refs: list[uuid.UUID],
+    project_id: uuid.UUID,
+    article_id: uuid.UUID,
+    scope,
+    user: User,
+) -> list[uuid.UUID]:
+    if len(refs) != len(set(refs)) or len(refs) > 100:
+        raise HTTPException(status_code=422, detail="duplicate or excessive assessment references")
+    if not refs:
+        return []
+    rows = await db.execute(
+        select(EvidenceSupportAssessment)
+        .join(ArticlePrediction, EvidenceSupportAssessment.prediction_id == ArticlePrediction.id)
+        .where(
+            EvidenceSupportAssessment.id.in_(refs),
+            EvidenceSupportAssessment.project_id == project_id,
+            EvidenceSupportAssessment.article_id == article_id,
+            in_search(ArticlePrediction.search_id, scope),
+        )
+    )
+    found = rows.scalars().all()
+    if len(found) != len(refs) or (
+        scope.kind == "blind" and any(row.actor_id != user.id for row in found)
+    ):
+        raise HTTPException(status_code=422, detail="assessment reference is unavailable in scope")
+    return refs
+
+
+def _dimension(old: str | None, new: str | None) -> str:
+    if old is None or new is None:
+        return "unknown"
+    return "changed" if old != new else "unchanged"
+
+
+def _staleness(revision: GoldRevision | None, latest: HumanAnnotation | None) -> dict[str, str]:
+    if (
+        revision is None
+        or revision.provenance_state == "legacy_unqualified"
+        or revision.source_annotation_ref is None
+        or latest is None
+    ):
+        return {key: "unknown" for key in ("source", "evidence", "answer")}
+    return {
+        "source": _dimension(revision.source_view_sha256, latest.source_view_sha256),
+        "evidence": _dimension(
+            revision.evidence_sha256,
+            digest((latest.decision_json or {}).get("evidence_quotes") or []),
+        ),
+        "answer": _dimension(
+            revision.answer_sha256,
+            digest(
+                {key: (latest.decision_json or {}).get(key) for key in revision.answer_keys_json}
+            ),
+        ),
+    }
+
+
+def _revision_payload(revision: GoldRevision) -> dict:
+    return {
+        "id": str(revision.id),
+        "sequence": revision.sequence,
+        "ground_truth_json": revision.ground_truth_json,
+        "answer_keys": revision.answer_keys_json,
+        "answer_sha256": revision.answer_sha256,
+        "evidence_sha256": revision.evidence_sha256,
+        "source_annotation_ref": str(revision.source_annotation_ref)
+        if revision.source_annotation_ref
+        else None,
+        "source_snapshot_ref": str(revision.source_snapshot_ref)
+        if revision.source_snapshot_ref
+        else None,
+        "source_view_ref": str(revision.source_view_ref) if revision.source_view_ref else None,
+        "source_view_sha256": revision.source_view_sha256,
+        "review_actor_ref": revision.review_actor_ref,
+        "review_status": revision.review_status,
+        "review_blind": revision.review_blind,
+        "review_created_at": revision.review_created_at.isoformat()
+        if revision.review_created_at
+        else None,
+        "assessment_refs": revision.assessment_refs_json,
+        "recorded_by_ref": revision.recorded_by_ref,
+        "qualification": revision.provenance_state,
+        "created_at": revision.created_at.isoformat() if revision.created_at else None,
+    }
+
+
 def _payload(
     g: GoldArticle,
     title: str | None,
-    fields: list[dict],
     ann: HumanAnnotation | None,
     names: dict,
     latest: HumanAnnotation | None,
+    revisions: list[GoldRevision],
 ) -> dict:
     """Une ligne du gold : réponses, lien vers sa fiche source, relecteur, obsolescence."""
     d = (ann.decision_json or {}) if ann else {}
-    stale = bool(
-        latest is not None
-        and ann is not None
-        and latest.id != ann.id
-        and _answers_of(latest.decision_json, fields) != _answers_of(g.ground_truth_json, fields)
-    )
+    current = revisions[-1] if revisions else None
+    staleness = _staleness(current, latest)
     return {
         "id": str(g.id),
         "project_id": str(g.project_id) if g.project_id else None,
@@ -112,16 +237,27 @@ def _payload(
         "ground_truth_json": g.ground_truth_json,
         "search_id": str(g.search_id) if g.search_id else None,
         "source": {
-            "annotation_id": str(ann.id),
+            "annotation_id": str(current.source_annotation_ref)
+            if current and current.source_annotation_ref
+            else str(ann.id),
             "by": names.get(ann.user_id),
-            "at": ann.created_at.isoformat() if ann.created_at else None,
-            "status": d.get("review_status"),
-            "blind": bool(ann.blind),
+            "at": (
+                current.review_created_at.isoformat()
+                if current and current.review_created_at
+                else ann.created_at.isoformat()
+                if ann.created_at
+                else None
+            ),
+            "status": current.review_status if current else d.get("review_status"),
+            "blind": bool(current.review_blind) if current else bool(ann.blind),
         }
         if ann
         else None,
         "added_by": names.get(g.added_by),
-        "stale": stale,  # la relecture a changé depuis la copie : « mettre à jour »
+        "stale": "changed" in staleness.values(),
+        "staleness": staleness,
+        "qualification": current.provenance_state if current else "legacy_unqualified",
+        "revisions": [_revision_payload(revision) for revision in revisions],
     }
 
 
@@ -133,9 +269,8 @@ async def _names(db: AsyncSession, user_ids: set) -> dict:
     return {u.id: u.full_name or u.email for u in rows.scalars()}
 
 
-async def _items(db: AsyncSession, project, scope, rows) -> list[dict]:
+async def _items(db: AsyncSession, project, scope, rows, user: User) -> list[dict]:
     """Lignes du gold + relecture source, relecteurs, dernière relecture (pour « obsolète »)."""
-    fields = project_fields(scope)
     anns = {}
     ann_ids = [g.source_annotation_id for g, _ in rows if g.source_annotation_id]
     if ann_ids:
@@ -144,6 +279,31 @@ async def _items(db: AsyncSession, project, scope, rows) -> list[dict]:
         ).scalars():
             anns[a.id] = a
     latest = await latest_reviews(db, [g.article_id for g, _ in rows if g.article_id], scope)
+    own_annotation_ids: set[uuid.UUID] | None = None
+    if scope.kind == "blind":
+        own_rows = await db.execute(
+            select(HumanAnnotation)
+            .where(
+                HumanAnnotation.user_id == user.id,
+                in_search(HumanAnnotation.search_id, scope),
+            )
+            .order_by(HumanAnnotation.created_at, HumanAnnotation.id)
+        )
+        own_annotations = own_rows.scalars().all()
+        own_latest = {ann.article_id: ann for ann in own_annotations}
+        own_annotation_ids = {ann.id for ann in own_annotations}
+        latest = {article_id: (ann, user) for article_id, ann in own_latest.items()}
+    gold_ids = [g.id for g, _ in rows]
+    revisions: dict[uuid.UUID, list[GoldRevision]] = {gold_id: [] for gold_id in gold_ids}
+    if gold_ids:
+        history = await db.execute(
+            select(GoldRevision)
+            .where(GoldRevision.gold_id.in_(gold_ids))
+            .order_by(GoldRevision.gold_id, GoldRevision.sequence)
+        )
+        for revision in history.scalars():
+            if own_annotation_ids is None or revision.source_annotation_ref in own_annotation_ids:
+                revisions[revision.gold_id].append(revision)
     names = await _names(
         db,
         {a.user_id for a in anns.values()} | {g.added_by for g, _ in rows},
@@ -152,10 +312,10 @@ async def _items(db: AsyncSession, project, scope, rows) -> list[dict]:
         _payload(
             g,
             title,
-            fields,
             anns.get(g.source_annotation_id),
             names,
             (latest.get(g.article_id) or (None, None))[0],
+            revisions[g.id],
         )
         for g, title in rows
     ]
@@ -184,6 +344,9 @@ async def create_gold(
     )
     if dup.first() is not None:
         raise HTTPException(status_code=409, detail="already in the gold standard")
+    assessment_refs = await _checked_assessment_refs(
+        db, payload.assessment_refs, project_id, article.id, scope, user
+    )
     g = GoldArticle(
         project_id=project_id,
         search_id=scope.id,
@@ -192,9 +355,21 @@ async def create_gold(
         added_by=user.id,
     )
     db.add(g)
+    await db.flush()
+    db.add(
+        _revision(
+            g,
+            1,
+            project_fields(scope),
+            ann=None,
+            review_actor_ref=None,
+            recorded_by_ref=anonymized_actor_ref(user.email),
+            assessment_refs=assessment_refs,
+        )
+    )
     await db.commit()
     await db.refresh(g)
-    return (await _items(db, project, scope, [(g, article.title)]))[0]
+    return (await _items(db, project, scope, [(g, article.title)], user))[0]
 
 
 @router.post("/{project_id}/gold/from-reviews", status_code=201)
@@ -220,10 +395,18 @@ async def gold_from_reviews(
         reviewer_id=reviewer_id,
     )
     wanted = set(payload.article_ids) if payload.article_ids else set(reviews)
+    if set(payload.assessment_refs_by_article) - wanted:
+        raise HTTPException(
+            status_code=422, detail="assessment references target an unselected article"
+        )
     existing = {
         g.article_id: g
         for g in (
-            await db.execute(select(GoldArticle).where(await gold_condition(db, project, scope)))
+            await db.execute(
+                select(GoldArticle)
+                .where(await gold_condition(db, project, scope))
+                .with_for_update()
+            )
         ).scalars()
     }
     added = updated = skipped = 0
@@ -236,23 +419,80 @@ async def gold_from_reviews(
         if review is None:
             skipped += 1
             continue
-        ann = review[0]
+        ann, reviewer = review
+        assessment_refs = await _checked_assessment_refs(
+            db,
+            payload.assessment_refs_by_article.get(article_id, []),
+            project_id,
+            article_id,
+            scope,
+            user,
+        )
+        reviewer_ref = ann.annotator_hash or (
+            anonymized_actor_ref(reviewer.email) if reviewer else None
+        )
         g = existing.get(article_id)
         if g is None:
+            g = GoldArticle(
+                project_id=project_id,
+                search_id=scope.id,
+                article_id=article_id,
+                ground_truth_json=_snapshot(ann, fields),
+                source_annotation_id=ann.id,
+                added_by=user.id,
+            )
+            db.add(g)
+            await db.flush()
             db.add(
-                GoldArticle(
-                    project_id=project_id,
-                    search_id=scope.id,
-                    article_id=article_id,
-                    ground_truth_json=_snapshot(ann, fields),
-                    source_annotation_id=ann.id,
-                    added_by=user.id,
+                _revision(
+                    g,
+                    1,
+                    fields,
+                    ann=ann,
+                    review_actor_ref=reviewer_ref,
+                    recorded_by_ref=anonymized_actor_ref(user.email),
+                    assessment_refs=assessment_refs,
                 )
             )
             added += 1
         elif payload.refresh and (is_lead or g.added_by == user.id):
             # pas de réécriture de la référence d'un autre (sauf LEAD) : saisie manuelle, relecteur
+            previous = await db.scalar(
+                select(GoldRevision)
+                .where(GoldRevision.gold_id == g.id)
+                .order_by(GoldRevision.sequence.desc())
+                .limit(1)
+            )
+            sequence = previous.sequence + 1 if previous else 2
+            if previous is None:
+                old_ann = (
+                    await db.get(HumanAnnotation, g.source_annotation_id)
+                    if g.source_annotation_id
+                    else None
+                )
+                db.add(
+                    _revision(
+                        g,
+                        1,
+                        fields,
+                        ann=old_ann,
+                        review_actor_ref=old_ann.annotator_hash if old_ann else None,
+                        recorded_by_ref=None,
+                        legacy=True,
+                    )
+                )
             g.ground_truth_json, g.source_annotation_id = _snapshot(ann, fields), ann.id
+            db.add(
+                _revision(
+                    g,
+                    sequence,
+                    fields,
+                    ann=ann,
+                    review_actor_ref=reviewer_ref,
+                    recorded_by_ref=anonymized_actor_ref(user.email),
+                    assessment_refs=assessment_refs,
+                )
+            )
             updated += 1
         else:
             skipped += 1
@@ -282,29 +522,25 @@ async def list_gold(
     """Références valables pour la recherche (celles de toute recherche de même question)."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
-    visible = []
+    condition = await gold_condition(db, project, scope)
     if scope.kind == "blind":
-        # Gold may be shared across same-question searches. In a blind search,
-        # reveal a reference only after this reviewer has locked a judgment on
-        # that article; another member's review is not sufficient.
-        visible.append(
-            select(HumanAnnotation.id)
-            .where(
-                HumanAnnotation.article_id == GoldArticle.article_id,
+        # The current gold copy must derive from this reviewer's own locked
+        # annotation; an unrelated gold copy must not disclose another review.
+        condition &= GoldArticle.source_annotation_id.in_(
+            select(HumanAnnotation.id).where(
                 HumanAnnotation.user_id == user.id,
                 in_search(HumanAnnotation.search_id, scope),
             )
-            .exists()
         )
     rows = (
         await db.execute(
             select(GoldArticle, Article.title)
             .join(Article, GoldArticle.article_id == Article.id)
-            .where(await gold_condition(db, project, scope), *visible)
+            .where(condition)
             .order_by(GoldArticle.id)
         )
     ).all()
-    return {"items": await _items(db, project, scope, rows)}
+    return {"items": await _items(db, project, scope, rows, user)}
 
 
 @router.delete("/{project_id}/gold/{gold_id}", status_code=204)
