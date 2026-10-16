@@ -1,0 +1,232 @@
+{
+  "$defs": {
+    "AnswerRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "answer_ref": {
+          "pattern": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$",
+          "title": "Answer Ref",
+          "type": "string"
+        },
+        "field_key": {
+          "pattern": "^[a-z][a-z0-9_]{0,39}$",
+          "title": "Field Key",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "maxLength": 16384,
+              "type": "string"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "answer_ref",
+        "field_key",
+        "value"
+      ],
+      "title": "AnswerRecord",
+      "type": "object"
+    },
+    "EnvelopeScope": {
+      "additionalProperties": false,
+      "properties": {
+        "project_ref": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+          "title": "Project Ref",
+          "type": "string"
+        },
+        "article_ref": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+          "title": "Article Ref",
+          "type": "string"
+        },
+        "record_kind": {
+          "enum": [
+            "prediction",
+            "benchmark_prediction",
+            "annotation"
+          ],
+          "title": "Record Kind",
+          "type": "string"
+        },
+        "record_ref": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+          "title": "Record Ref",
+          "type": "string"
+        },
+        "revision_ref": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+          "title": "Revision Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_ref",
+        "article_ref",
+        "record_kind",
+        "record_ref",
+        "revision_ref"
+      ],
+      "title": "EnvelopeScope",
+      "type": "object"
+    },
+    "EvidenceLink": {
+      "additionalProperties": false,
+      "properties": {
+        "answer_ref": {
+          "pattern": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$",
+          "title": "Answer Ref",
+          "type": "string"
+        },
+        "evidence_ref": {
+          "pattern": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$",
+          "title": "Evidence Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "answer_ref",
+        "evidence_ref"
+      ],
+      "title": "EvidenceLink",
+      "type": "object"
+    },
+    "EvidenceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_ref": {
+          "pattern": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$",
+          "title": "Evidence Ref",
+          "type": "string"
+        },
+        "local_ref": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+          "title": "Local Ref",
+          "type": "string"
+        },
+        "quote": {
+          "maxLength": 16384,
+          "title": "Quote",
+          "type": "string"
+        },
+        "origin": {
+          "enum": [
+            "captured_input",
+            "legacy_unversioned"
+          ],
+          "title": "Origin",
+          "type": "string"
+        },
+        "source_binding_ref": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Binding Ref"
+        },
+        "quote_match_ref": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quote Match Ref"
+        }
+      },
+      "required": [
+        "evidence_ref",
+        "local_ref",
+        "quote",
+        "origin"
+      ],
+      "title": "EvidenceRecord",
+      "type": "object"
+    }
+  },
+  "$id": "urn:diggypaper:evidence-envelope:v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "evidence-envelope-v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "structured",
+        "legacy_unlinked"
+      ],
+      "title": "State",
+      "type": "string"
+    },
+    "scope": {
+      "$ref": "#/$defs/EnvelopeScope"
+    },
+    "field_definition_ref": {
+      "anyOf": [
+        {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Field Definition Ref"
+    },
+    "answers": {
+      "items": {
+        "$ref": "#/$defs/AnswerRecord"
+      },
+      "maxItems": 128,
+      "title": "Answers",
+      "type": "array"
+    },
+    "evidence": {
+      "items": {
+        "$ref": "#/$defs/EvidenceRecord"
+      },
+      "maxItems": 512,
+      "title": "Evidence",
+      "type": "array"
+    },
+    "links": {
+      "items": {
+        "$ref": "#/$defs/EvidenceLink"
+      },
+      "maxItems": 4096,
+      "title": "Links",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "state",
+    "scope",
+    "field_definition_ref",
+    "answers",
+    "evidence",
+    "links"
+  ],
+  "title": "EvidenceEnvelopeV1",
+  "type": "object"
+}
