@@ -1,8 +1,8 @@
-"""Offline consistency validator for a bounded, unsigned SEIP evidence manifest.
+"""Offline bounded occurrence replay for an unsigned SEIP evidence manifest.
 
 This module reads no database, mutable article, network service, or export ZIP.
-It establishes internal consistency of frozen artifacts, not service authenticity,
-scientific answer support, or a gold/adjudication decision.
+It checks frozen artifacts and caller-supplied quote occurrence claims, not quote
+emission by the producer, service authenticity, support, or adjudication.
 """
 
 from __future__ import annotations
@@ -189,7 +189,7 @@ def _invocations(entries, sources):
     return out
 
 
-def _results(entries, sources, calls) -> int:
+def _results(entries, sources, calls) -> tuple[int, bool]:
     _require(
         isinstance(entries, list) and len(entries) <= MAX_RESULTS, "result count exceeds bound"
     )
@@ -315,11 +315,11 @@ def _results(entries, sources, calls) -> int:
             except ValueError as exc:
                 raise ReplayError("quote checks cannot replay") from exc
             _require(checks == expected, "quote occurrence claim does not replay")
-    return len(seen)
+    return len(seen), any(entry["quote_state"] == "recorded" for entry in entries)
 
 
 def validate_manifest(manifest: dict) -> dict:
-    """Validate one parsed manifest and return counts; raises ReplayError on mismatch."""
+    """Replay artifact and occurrence claims; producer emission remains unverified."""
     _keys(manifest, {"schema_version", "canonical_encoding", "sources", "invocations", "results"})
     _require(
         manifest["schema_version"] == SCHEMA_VERSION
@@ -341,7 +341,7 @@ def validate_manifest(manifest: dict) -> dict:
         _require(len(canonical_json(manifest)) <= MAX_MANIFEST_BYTES, "manifest exceeds byte bound")
         sources = _sources(manifest["sources"])
         calls = _invocations(manifest["invocations"], sources)
-        results = _results(manifest["results"], sources, calls)
+        results, has_recorded_quotes = _results(manifest["results"], sources, calls)
     except (ValueError, TypeError, KeyError, AttributeError) as exc:
         if isinstance(exc, ReplayError):
             raise
@@ -350,7 +350,8 @@ def validate_manifest(manifest: dict) -> dict:
         "sources": len(sources),
         "invocations": len(calls),
         "results": results,
-        "status": "internally_consistent",
+        "status": "bounded_occurrence_replay",
+        "quotation_emission": "unverified" if has_recorded_quotes else "not_assessed",
     }
 
 

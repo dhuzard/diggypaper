@@ -19,9 +19,13 @@ from app.provenance import (
 )
 from app.quote_checks import check_prediction_quotes
 
-FIXTURE = json.loads((Path(__file__).parents[1] / "fixtures/provenance_v1.json").read_text())
+FIXTURE = json.loads(
+    (Path(__file__).parents[1] / "fixtures/provenance_v1.json").read_text(encoding="utf-8")
+)
 ADVERSARIAL = json.loads(
-    (Path(__file__).parents[1] / "fixtures/portable_replay_adversarial_v1.json").read_text()
+    (Path(__file__).parents[1] / "fixtures/portable_replay_adversarial_v1.json").read_text(
+        encoding="utf-8"
+    )
 )
 EXAMPLE = Path(__file__).parents[3] / "docs/examples/seip-portable-replay-v1.json"
 
@@ -86,14 +90,15 @@ def test_replays_example_from_retained_canonical_bytes():
         "sources": 1,
         "invocations": 1,
         "results": 1,
-        "status": "internally_consistent",
+        "status": "bounded_occurrence_replay",
+        "quotation_emission": "unverified",
     }
     assert validate_manifest_bytes(json.dumps(actual).encode()) == validate_manifest(actual)
     assert actual["results"][0]["quote_checks"]["items"][0]["result"]["status"] == "exact"
 
 
 def test_checked_in_example_and_cli(capsys):
-    assert validate_manifest_bytes(EXAMPLE.read_bytes())["status"] == "internally_consistent"
+    assert validate_manifest_bytes(EXAMPLE.read_bytes())["status"] == "bounded_occurrence_replay"
     assert main([str(EXAMPLE)]) == 0
     assert json.loads(capsys.readouterr().out)["results"] == 1
 
@@ -114,7 +119,7 @@ def test_rejects_ambiguous_or_non_object_manifest_json(raw):
 def test_replays_normalized_occurrence_without_upgrading_to_support():
     actual = manifest("Mice\u00a0α.")
     assert actual["results"][0]["quote_checks"]["items"][0]["result"]["status"] == ("normalized")
-    assert validate_manifest(actual)["status"] == "internally_consistent"
+    assert validate_manifest(actual)["status"] == "bounded_occurrence_replay"
     assert "support" not in json.dumps(actual)
 
 
@@ -217,3 +222,13 @@ def test_missing_quote_field_and_scorer_non_producer_states():
     item["quotation_field"] = {"present": False, "value": ["fabricated"]}
     with pytest.raises(ReplayError, match="missing quotation field"):
         validate_manifest(actual)
+
+
+def test_input_occurrence_does_not_prove_producer_emitted_quote():
+    actual = manifest()
+    response = actual["invocations"][0]["response_capture"]
+    assert json.loads(base64.b64decode(response["raw_base64"])) == {"ok": True}
+    assert actual["results"][0]["quotation_field"]["value"] == ["Mice α."]
+    result = validate_manifest(actual)
+    assert result["status"] == "bounded_occurrence_replay"
+    assert result["quotation_emission"] == "unverified"
