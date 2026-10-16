@@ -228,7 +228,34 @@ def _papers(manifest: dict, base: Path) -> tuple[dict, dict, dict]:
         elif effective["artifact_path"] is not None:
             artifact(base, effective["artifact_path"], effective["sha256"], text=True)
         eligible[paper_id] = paper
-    duplicate_owner = {}
+    # Shared study keys and aliases form identity components through *all*
+    # rows, including exclusions without duplicate_of. A chain of excluded
+    # versions must never connect two eligible papers across pilot splits.
+    parent = {paper_id: paper_id for paper_id in by_id}
+
+    def find(paper_id):
+        while parent[paper_id] != paper_id:
+            parent[paper_id] = parent[parent[paper_id]]
+            paper_id = parent[paper_id]
+        return paper_id
+
+    def union(left, right):
+        parent[find(left)] = find(right)
+
+    identity_owner = {}
+    for paper in rows:
+        identities = {("study", paper["study_key"])} | aliases(paper["aliases"])
+        for identity in identities:
+            prior = identity_owner.setdefault(identity, paper["id"])
+            union(prior, paper["id"])
+    component_eligible = {}
+    for paper_id in eligible:
+        component = find(paper_id)
+        require(
+            component not in component_eligible,
+            "paper identity chain bridges eligible studies/splits",
+        )
+        component_eligible[component] = paper_id
     for paper in rows:
         duplicate_of = paper["duplicate_of"]
         if duplicate_of is None:
@@ -236,15 +263,10 @@ def _papers(manifest: dict, base: Path) -> tuple[dict, dict, dict]:
         require(paper["status"] == "excluded", "duplicate_of requires exclusion")
         require(duplicate_of in eligible and duplicate_of != paper["id"], "invalid duplicate_of")
         original = eligible[duplicate_of]
-        owners = {study_owner[paper["study_key"]]} if paper["study_key"] in study_owner else set()
-        owners.update(
-            alias_owner[alias] for alias in aliases(paper["aliases"]) if alias in alias_owner
+        require(
+            component_eligible.get(find(paper["id"])) == duplicate_of,
+            "excluded duplicate has alien eligible owner",
         )
-        require(owners <= {duplicate_of}, "excluded duplicate bridges eligible studies/splits")
-        identities = {("study", paper["study_key"])} | aliases(paper["aliases"])
-        for identity in identities:
-            prior = duplicate_owner.setdefault(identity, duplicate_of)
-            require(prior == duplicate_of, "excluded duplicates bridge eligible studies/splits")
         require(
             paper["study_key"] == original["study_key"]
             or bool(aliases(paper["aliases"]) & aliases(original["aliases"])),
