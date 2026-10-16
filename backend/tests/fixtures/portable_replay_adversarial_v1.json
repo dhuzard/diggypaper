@@ -1,0 +1,32 @@
+{
+  "schema_version": "seip-portable-replay-adversarial-v1",
+  "cases": [
+    {
+      "name": "altered_source_hash",
+      "path": ["sources", 0, "sha256"],
+      "value": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "name": "cross_article_result",
+      "path": ["results", 0, "article_id"],
+      "value": "00000000-0000-0000-0000-0000000000ff"
+    },
+    {
+      "name": "false_exact_offset_with_rehashed_record",
+      "path": ["results", 0, "quote_checks", "items", 0, "result", "candidates", 0, "input_start"],
+      "value": 0,
+      "recompute_quote_checks_sha256": true
+    },
+    {
+      "name": "wrong_input_ref_with_rehashed_record",
+      "path": ["results", 0, "quote_checks", "input_ref"],
+      "value": "00000000-0000-0000-0000-0000000000fe",
+      "recompute_quote_checks_sha256": true
+    },
+    {
+      "name": "forged_quote_check_digest",
+      "path": ["results", 0, "quote_checks_sha256"],
+      "value": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}
