@@ -212,7 +212,13 @@ async def gold_from_reviews(
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
     fields = project_fields(scope)
-    reviews = await latest_reviews(db, payload.article_ids or await _reviewed_ids(db, scope), scope)
+    reviewer_id = user.id if scope.kind == "blind" else None
+    reviews = await latest_reviews(
+        db,
+        payload.article_ids or await _reviewed_ids(db, scope, reviewer_id),
+        scope,
+        reviewer_id=reviewer_id,
+    )
     wanted = set(payload.article_ids) if payload.article_ids else set(reviews)
     existing = {
         g.article_id: g
@@ -254,11 +260,16 @@ async def gold_from_reviews(
     return {"added": added, "updated": updated, "skipped": skipped}
 
 
-async def _reviewed_ids(db: AsyncSession, scope) -> list:
+async def _reviewed_ids(db: AsyncSession, scope, reviewer_id: uuid.UUID | None = None) -> list:
+    own = [HumanAnnotation.user_id == reviewer_id] if reviewer_id else []
     rows = await db.execute(
         select(HumanAnnotation.article_id)
         .join(Article, Article.id == HumanAnnotation.article_id)
-        .where(Article.project_id == scope.project_id, in_search(HumanAnnotation.search_id, scope))
+        .where(
+            Article.project_id == scope.project_id,
+            in_search(HumanAnnotation.search_id, scope),
+            *own,
+        )
         .distinct()
     )
     return [r for r in rows.scalars() if r]
@@ -271,11 +282,25 @@ async def list_gold(
     """Références valables pour la recherche (celles de toute recherche de même question)."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
+    visible = []
+    if scope.kind == "blind":
+        # Gold may be shared across same-question searches. In a blind search,
+        # reveal a reference only after this reviewer has locked a judgment on
+        # that article; another member's review is not sufficient.
+        visible.append(
+            select(HumanAnnotation.id)
+            .where(
+                HumanAnnotation.article_id == GoldArticle.article_id,
+                HumanAnnotation.user_id == user.id,
+                in_search(HumanAnnotation.search_id, scope),
+            )
+            .exists()
+        )
     rows = (
         await db.execute(
             select(GoldArticle, Article.title)
             .join(Article, GoldArticle.article_id == Article.id)
-            .where(await gold_condition(db, project, scope))
+            .where(await gold_condition(db, project, scope), *visible)
             .order_by(GoldArticle.id)
         )
     ).all()
