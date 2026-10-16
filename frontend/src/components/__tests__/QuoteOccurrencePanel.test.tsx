@@ -4,6 +4,8 @@ import type { QuoteChecks } from "@/lib/api";
 
 jest.mock("next-intl", () => ({
   useTranslations: () => (key: string, values?: { count?: number }) => {
+    // Jest's mock factory loads the JSON after hoisting; this is test-only.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const messages = require("@/messages/en.json").annotate as Record<string, string | Record<string, string>>;
     const parts = key.split(".");
     const group = messages[parts[0]];
