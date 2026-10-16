@@ -94,13 +94,36 @@ def _certainty(answer: dict, fallback) -> float | None:
     return None
 
 
-async def _call(client: httpx.AsyncClient, base: str, body: dict, fields: list[dict]) -> dict:
+async def _call(
+    client: httpx.AsyncClient,
+    base: str,
+    body: dict,
+    fields: list[dict],
+    *,
+    trace=None,
+    kind="systemone_combined",
+    window_index=0,
+    window_count=1,
+    state_start=0,
+    confidence_call_id=None,
+) -> dict:
+    if trace is not None:
+        await trace.before_dispatch(
+            body,
+            kind=kind,
+            window_index=window_index,
+            window_count=window_count,
+            state_start=state_start,
+            confidence_call_id=confidence_call_id,
+        )
     try:
         resp = await client.post(f"{base}/v1/systemone", json=body)
     except httpx.TimeoutException as exc:
         raise InferenceError("timeout") from exc
     except httpx.HTTPError as exc:
         raise InferenceError("connection_error") from exc
+    if trace is not None:
+        await trace.on_http_response(resp.content, resp.status_code)
     if resp.status_code >= 400:
         raise InferenceError(f"HTTP {resp.status_code}")
     return parse_answers(resp.json(), fields)
@@ -114,6 +137,7 @@ async def decide(
     http: httpx.AsyncClient | None = None,
     timeout: float = 600.0,
     windows: int = 1,
+    trace=None,
 ) -> dict:
     """Lit le texte par fenêtres (au plus ``windows``) : P(oui) = maximum sur les fenêtres."""
     base, model = split_identifier(identifier)
@@ -130,9 +154,18 @@ async def decide(
         return b
 
     try:
-        parts = split_windows(text[:_MAX_STATE_CHARS], windows)
+        bounded = text[:_MAX_STATE_CHARS]
+        parts = split_windows(bounded, windows)
+        start = len(bounded) - len(bounded.lstrip())
         if len(parts) == 1:
-            out = await _call(client, base, body(parts[0], questions, False), fields)
+            out = await _call(
+                client,
+                base,
+                body(parts[0], questions, False),
+                fields,
+                trace=trace,
+                state_start=start,
+            )
             out["windows"] = 1
             return out
         # Le serveur recalcule le texte pour CHAQUE question : on cherche d'abord la meilleure
@@ -140,10 +173,23 @@ async def decide(
         # (champs) sur cette fenêtre uniquement.
         rel_only = {"relevance": questions["relevance"]}
         best_p, best_part = -1.0, parts[0]
-        for part in parts:
-            out = await _call(client, base, body(part, rel_only, True), [])
+        best_call_id = None
+        for index, part in enumerate(parts):
+            out = await _call(
+                client,
+                base,
+                body(part, rel_only, True),
+                [],
+                trace=trace,
+                kind="systemone_relevance",
+                window_index=index,
+                window_count=len(parts),
+                state_start=start + index * (WINDOW_CHARS - WINDOW_OVERLAP),
+            )
             if out["confidence_score"] > best_p:
                 best_p, best_part = out["confidence_score"], part
+                best_call_id = trace.producing_invocation.id if trace is not None else None
+                best_index = index
         best = {
             "confidence_score": best_p,
             "decision": "INCLUDED" if best_p >= 0.5 else "EXCLUDED",
@@ -151,10 +197,23 @@ async def decide(
             "reasoning_summary": "",
         }
         if len(questions) > 1:
-            detail = await _call(client, base, body(best_part, questions, True), fields)
+            detail = await _call(
+                client,
+                base,
+                body(best_part, questions, True),
+                fields,
+                trace=trace,
+                kind="systemone_detail",
+                window_index=best_index,
+                window_count=len(parts),
+                state_start=start + best_index * (WINDOW_CHARS - WINDOW_OVERLAP),
+                confidence_call_id=best_call_id,
+            )
             best.update(
                 {k: v for k, v in detail.items() if k not in ("confidence_score", "decision")}
             )
+        elif trace is not None:
+            trace.select_producing(best_call_id)
         best["windows"] = len(parts)
         return best
     finally:
