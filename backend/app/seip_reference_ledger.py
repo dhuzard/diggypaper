@@ -29,7 +29,7 @@ from app.seip_scoring import FieldSpec, Observation, ReferenceField, _validate_f
 
 VERSION = "seip-independent-reference-v1"
 STATUSES = {"reported", "not_reported", "not_accessible", "not_applicable", "unclear"}
-SUPPORT = {"supports", "contradicts", "insufficient", "unclear", "not_assessed"}
+SUPPORT = {"supports", "contradicts", "insufficient", "unclear"}
 MAX_BYTES = 8 * 1024 * 1024
 
 
@@ -334,6 +334,7 @@ def validate_reference_ledger(ledger: dict, manifest: dict, base_dir: Path) -> d
             "pilot_manifest_sha256",
             "protocol_version",
             "codebook_version",
+            "codebook_approval",
             "actors",
             "stage_a",
             "stage_b",
@@ -346,6 +347,7 @@ def validate_reference_ledger(ledger: dict, manifest: dict, base_dir: Path) -> d
             pilot["state"] == "draft"
             and ledger["reference_set_id"] is None
             and ledger["pilot_manifest_sha256"] is None
+            and ledger["codebook_approval"] is None
             and ledger["actors"] == ledger["stage_a"] == ledger["stage_b"] == [],
             "draft ledger cannot claim independent references",
         )
@@ -353,6 +355,13 @@ def validate_reference_ledger(ledger: dict, manifest: dict, base_dir: Path) -> d
     _require(pilot["state"] == "frozen", "locked ledger requires frozen pilot manifest")
     freeze = manifest["freeze"]
     nonempty(freeze["reference_set_id"], "locked reference set ID")
+    _require(
+        not any(
+            marker in freeze["codebook_version"].casefold()
+            for marker in ("pending", "draft", "unapproved", "tbd")
+        ),
+        "locked ledger cannot use pending codebook version",
+    )
     _require(
         ledger["pilot_manifest_sha256"] == digest(manifest)
         and ledger["reference_set_id"] == freeze["reference_set_id"]
@@ -375,6 +384,19 @@ def validate_reference_ledger(ledger: dict, manifest: dict, base_dir: Path) -> d
     actors, initial = _actors(
         ledger, set(papers), manifest["protocol_version"], freeze["codebook_version"]
     )
+    approval = ledger["codebook_approval"]
+    keys(approval, {"state", "approved_at", "approved_by", "approval_record_sha256"})
+    _require(approval["state"] == "approved", "locked codebook approval missing")
+    _require(
+        isinstance(approval["approved_by"], list)
+        and len(approval["approved_by"]) == len(actors)
+        and set(approval["approved_by"]) == set(actors),
+        "codebook approval must name all three qualified actors",
+    )
+    timestamp(approval["approved_at"], "codebook approval")
+    sha(approval["approval_record_sha256"], "codebook approval record")
+    for actor in actors.values():
+        _later(actor["qualification"]["signed_at"], approval["approved_at"], "qualification")
     actors = {
         ident: {
             **actor,
@@ -395,6 +417,12 @@ def validate_reference_ledger(ledger: dict, manifest: dict, base_dir: Path) -> d
         _stage_a(row, papers[paper_id], specs, actors, initial, Path(base_dir))
         a_by_id[paper_id] = row
     _require(set(a_by_id) == set(papers), "Stage A misses held-out paper")
+    global_stage_a_lock = max(
+        (row["lock"]["at"] for row in a_by_id.values()),
+        key=lambda value: timestamp(value, "Stage A lock"),
+    )
+    for attempt in manifest["attempts"]:
+        _later(attempt["recorded_at"], global_stage_a_lock, "held-out model attempt")
     attempts = {row["paper_id"]: row for row in manifest["attempts"] if row["selected"]}
     b_seen = set()
     for row in ledger["stage_b"]:
@@ -404,9 +432,7 @@ def validate_reference_ledger(ledger: dict, manifest: dict, base_dir: Path) -> d
         )
         b_seen.add(paper_id)
         a = a_by_id[paper_id]
-        for attempt in manifest["attempts"]:
-            if attempt["paper_id"] == paper_id:
-                _later(attempt["recorded_at"], a["lock"]["at"], "model attempt")
+        _later(row["lock"]["at"], global_stage_a_lock, "Stage B lock")
         text = artifact(
             Path(base_dir),
             papers[paper_id]["effective_input"]["artifact_path"],

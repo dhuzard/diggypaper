@@ -9,6 +9,7 @@ from app.seip_pilot_manifest import PilotManifestError, digest
 from app.seip_reference_ledger import _strict_json, validate_reference_ledger
 
 QUALIFIED = "2026-02-01T01:00:00Z"
+APPROVED = "2026-02-01T00:30:00Z"
 CLEARED = "2026-02-02T00:00:00Z"
 INITIAL = "2026-02-03T00:00:00Z"
 ADJUDICATED = "2026-02-04T00:00:00Z"
@@ -98,6 +99,12 @@ def ledger_for(manifest):
         "pilot_manifest_sha256": digest(manifest),
         "protocol_version": manifest["protocol_version"],
         "codebook_version": manifest["freeze"]["codebook_version"],
+        "codebook_approval": {
+            "state": "approved",
+            "approved_at": APPROVED,
+            "approved_by": ["reviewer-a", "reviewer-b", "adjudicator-c"],
+            "approval_record_sha256": "a" * 64,
+        },
         "actors": actors,
         "stage_a": stage_a,
         "stage_b": stage_b,
@@ -126,6 +133,7 @@ def test_draft_template_is_explicitly_pending(tmp_path):
         "pilot_manifest_sha256": None,
         "protocol_version": manifest["protocol_version"],
         "codebook_version": "pending",
+        "codebook_approval": None,
         "actors": [],
         "stage_a": [],
         "stage_b": [],
@@ -157,6 +165,7 @@ def test_rejects_ambiguous_or_nonfinite_wire_json(raw):
     [
         ("missing_reviewer", "two initial"),
         ("missing_qualification", "entry has missing"),
+        ("missing_codebook_approval", "entry has missing"),
         ("conflict", "case has conflict"),
         ("prior_model_exposure", "case has conflict"),
         ("alien_paper", "Stage A paper is unknown"),
@@ -178,6 +187,8 @@ def test_rejects_missing_roles_exposure_scope_and_locks(tmp_path, change, messag
         a["initial"].pop()
     elif change == "missing_qualification":
         ledger["actors"][0]["qualification"].pop("expertise")
+    elif change == "missing_codebook_approval":
+        ledger.pop("codebook_approval")
     elif change == "conflict":
         ledger["actors"][0]["case_clearance"][0]["conflict"] = "conflicted"
     elif change == "prior_model_exposure":
@@ -236,6 +247,31 @@ def test_disagreement_requires_third_actor_and_keeps_both_originals(tmp_path):
         validate_reference_ledger(bad, manifest, tmp_path)
 
 
+def test_pending_codebook_cannot_claim_locked_reference(tmp_path):
+    manifest = frozen_manifest(tmp_path)
+    ledger = ledger_for(manifest)
+    manifest["freeze"]["codebook_version"] = "pending-domain-approval"
+    ledger["codebook_version"] = "pending-domain-approval"
+    ledger["pilot_manifest_sha256"] = digest(manifest)
+    for actor in ledger["actors"]:
+        actor["qualification"]["codebook_version"] = "pending-domain-approval"
+    with pytest.raises(PilotManifestError, match="pending codebook"):
+        validate_reference_ledger(ledger, manifest, tmp_path)
+
+
+def test_all_stage_a_papers_must_lock_before_any_held_out_attempt(tmp_path):
+    manifest = frozen_manifest(tmp_path)
+    ledger = ledger_for(manifest)
+    a = ledger["stage_a"][1]
+    b = ledger["stage_b"][1]
+    a["lock"]["at"] = "2026-03-01T01:00:00Z"
+    a["lock"]["sha256"] = digest({key: value for key, value in a.items() if key != "lock"})
+    b["stage_a_lock_sha256"] = a["lock"]["sha256"]
+    b["lock"]["sha256"] = digest({key: value for key, value in b.items() if key != "lock"})
+    with pytest.raises(PilotManifestError, match="held-out model attempt predates lock"):
+        validate_reference_ledger(ledger, manifest, tmp_path)
+
+
 def test_exact_occurrence_cannot_infer_support(tmp_path):
     manifest = frozen_manifest(tmp_path)
     ledger = ledger_for(manifest)
@@ -283,6 +319,14 @@ def test_exact_occurrence_cannot_infer_support(tmp_path):
     bad = copy.deepcopy(ledger)
     bad["stage_b"][0]["links"][0]["adjudication"]["actor_id"] = "reviewer-a"
     with pytest.raises(PilotManifestError, match="self-adjudication"):
+        validate_reference_ledger(bad, manifest, tmp_path)
+    bad = copy.deepcopy(ledger)
+    bad["stage_b"][0]["links"][0]["initial"][0]["support"] = "not_assessed"
+    with pytest.raises(PilotManifestError, match="invalid independent support"):
+        validate_reference_ledger(bad, manifest, tmp_path)
+    bad = copy.deepcopy(ledger)
+    bad["stage_b"][0]["links"][0]["adjudication"]["support"] = "not_assessed"
+    with pytest.raises(PilotManifestError, match="invalid adjudicated support"):
         validate_reference_ledger(bad, manifest, tmp_path)
 
 
