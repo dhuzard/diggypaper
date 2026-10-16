@@ -58,6 +58,12 @@ def export_dir() -> str:
     return os.environ.get("EXPORT_DIR", "/app/exports")
 
 
+async def _require_blind_export_access(db, project_id, user, scope) -> None:
+    """Project-wide exports can disclose other blind reviewers' work or counts."""
+    if scope.kind == "blind":
+        await _require_lead_or_admin(db, project_id, user)
+
+
 _MAX_CELL = 32000  # limite Excel : 32 767 caractères par cellule
 
 
@@ -298,6 +304,7 @@ async def export_xlsx(
 ) -> Response:
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
+    await _require_blind_export_access(db, project_id, user, scope)
     articles, preds, annos, import_jobs, inf_job = await _load(db, project, search=scope)
     project = ScopedProject(project, scope)
     data = await asyncio.to_thread(
@@ -327,6 +334,7 @@ def _notes(articles, preds: dict, fields: list[dict]) -> dict:
 async def _references(project_id, db, user, status, answers, fmt: str, search=None) -> Response:
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
+    await _require_blind_export_access(db, project_id, user, scope)
     where = article_filter(scope, status, answers)[0]
     articles, preds, *_ = await _load(db, project, where, scope)
     project = ScopedProject(project, scope)
@@ -352,6 +360,7 @@ async def get_prisma(
     """Effectifs du diagramme de flux PRISMA 2020 d'une recherche."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
+    await _require_blind_export_access(db, project_id, user, scope)
     articles, preds, annos, import_jobs, _ = await _load(db, project, search=scope)
     return prisma.prisma_counts(articles, preds, annos, import_jobs)
 
@@ -367,6 +376,7 @@ async def get_prisma_svg(
     """Diagramme PRISMA 2020 en SVG (langue : ``lang`` sinon celle du projet)."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
+    await _require_blind_export_access(db, project_id, user, scope)
     articles, preds, annos, import_jobs, _ = await _load(db, project, search=scope)
     counts = prisma.prisma_counts(articles, preds, annos, import_jobs)
     svg = prisma.render_svg(counts, lang or project.default_language or "fr")
@@ -388,6 +398,7 @@ async def get_prisma_pdf(
     """Diagramme PRISMA 2020 en PDF vectoriel (même contenu que le SVG)."""
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
+    await _require_blind_export_access(db, project_id, user, scope)
     articles, preds, annos, import_jobs, _ = await _load(db, project, search=scope)
     counts = prisma.prisma_counts(articles, preds, annos, import_jobs)
     pdf = prisma.svg_to_pdf(prisma.render_svg(counts, lang or project.default_language or "fr"))

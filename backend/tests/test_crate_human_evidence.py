@@ -82,6 +82,9 @@ async def test_crate_preserves_all_human_quotes_ids_times_and_existing_tables(
     assert [h["created_at"] for h in human] == [h.created_at.isoformat() for h in annotations]
     assert [h["evidence_quotes"] for h in human] == [quotes, [], None]
     assert [h["answers"] for h in human] == [{"ai": True}, {"ai": False}, {"ai": True}]
+    assert [h["decision_json"] for h in human] == [h.decision_json for h in annotations]
+    assert {h["decision_schema_status"] for h in human} == {"legacy_unversioned"}
+    assert {h["answers_projection"] for h in human} == {"current_fields_only"}
     assert [h["notes"] for h in human] == ["Review 0", "Review 1", "Review 2"]
     assert human[0]["reviewer_ref"] and len({h["reviewer_ref"] for h in human}) == 1
     assert researcher_user.email not in json.dumps(human)
@@ -90,7 +93,10 @@ async def test_crate_preserves_all_human_quotes_ids_times_and_existing_tables(
         "annotation_id",
         "created_at",
         "reviewer_ref",
+        "decision_json",
+        "decision_schema_status",
         "answers",
+        "answers_projection",
         "evidence_quotes",
         "notes",
     }
@@ -103,7 +109,26 @@ async def test_crate_preserves_all_human_quotes_ids_times_and_existing_tables(
     assert row[header.index("Annotations humaines")] == 3
     assert row[header.index("Relu par")] == researcher_user.email
     assert row[header.index("Notes humaines")] == "Review 2"
+    assert "exporter@example.org" in str(list(workbook["Projet"].values))
     assert b"source" in files["README.md"]
+    assert b"results.xlsx" in files["README.md"]
+
+
+async def test_crate_preserves_legacy_answer_after_project_field_changes(session, corpus):
+    project, article = corpus
+    original = {"ai": True, "review_status": "VALIDATED", "evidence_quotes": ["Old quote"]}
+    session.add(HumanAnnotation(article_id=article.id, decision_json=original))
+    await session.commit()
+    project.fields = [{"key": "new_field", "label": "New field", "type": "boolean"}]
+    await session.commit()
+
+    files = await _export(session, project)
+    human = json.loads(files["articles/pmid-42/metadata.json"])["human"][0]
+    assert human["decision_json"] == original
+    assert human["decision_schema_status"] == "legacy_unversioned"
+    assert human["answers"] == {"new_field": None}
+    assert human["answers_projection"] == "current_fields_only"
+    assert b"legacy_unversioned" in files["README.md"]
 
 
 async def test_reviewer_reference_survives_account_deletion_and_is_project_scoped(
@@ -253,6 +278,24 @@ async def test_stored_blind_crate_with_two_reviewers_requires_lead_to_download(
     assert (await client.get(status_url, params={"search": str(blind.id)})).status_code == 403
     assert (await client.get(url)).status_code == 403
     assert (await client.get(url, params={"search": "ignored"})).status_code == 403
+    for route in (
+        "export.xlsx",
+        "export.ris",
+        "export.bib",
+        "prisma",
+        "prisma.svg",
+        "prisma.pdf",
+    ):
+        response = await client.get(
+            f"/api/v1/projects/{project.id}/{route}", params={"search": str(blind.id)}
+        )
+        assert response.status_code == 403, route
+    assert (
+        await client.get(
+            f"/api/v1/projects/{project.id}/export.ris",
+            params={"search": str(blind.id), "status": "TO_REVIEW"},
+        )
+    ).status_code == 403
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     status = await client.get(status_url, params={"search": str(blind.id)})
     assert status.status_code == 200 and status.json()["download"] is True
@@ -264,3 +307,14 @@ async def test_stored_blind_crate_with_two_reviewers_requires_lead_to_download(
         "Lead private quote",
         "Annotator private quote",
     }
+    xlsx = await client.get(
+        f"/api/v1/projects/{project.id}/export.xlsx", params={"search": str(blind.id)}
+    )
+    assert xlsx.status_code == 200
+    workbook = load_workbook(io.BytesIO(xlsx.content))
+    header, row = list(workbook["Résultats"].values)
+    assert row[header.index("Annotations humaines")] == 2
+    assert row[header.index("Relu par")] in {annotator.email, researcher_user.email}
+    assert (
+        await client.get(f"/api/v1/projects/{project.id}/prisma", params={"search": str(blind.id)})
+    ).status_code == 200
