@@ -51,9 +51,16 @@ class FakeChat:
 async def test_prefilter_rejects_before_llm(engine, session, monkeypatch):
     scores = {"low": 0.05, "mid": 0.6}
 
-    async def fake_score(identifier, text):
+    async def fake_score(identifier, text, **kwargs):
         assert identifier == "models/laya.onnx"
-        return scores[text.split("\n")[0]]
+        score = scores[text.split("\n")[0]]
+        trace = kwargs["trace"]
+        np = pytest.importorskip("numpy")
+        await trace.before_run(
+            {"input_ids": np.array([[1]], dtype=np.int64)}, identifier=identifier
+        )
+        await trace.on_run_result(score)
+        return score
 
     monkeypatch.setattr(scoring, "score_relevance", fake_score)
     project = Project(title="P", status=ProjectStatus.FROZEN)

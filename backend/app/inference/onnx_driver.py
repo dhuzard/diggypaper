@@ -58,7 +58,7 @@ def _load(identifier: str) -> tuple:
     return _SESSIONS[identifier]
 
 
-def _score(identifier: str, text: str) -> float:
+def _prepare(identifier: str, text: str):
     import numpy as np
 
     session, tokenizer, input_names = _load(identifier)
@@ -68,7 +68,13 @@ def _score(identifier: str, text: str) -> float:
         "attention_mask": np.array([enc.attention_mask], dtype=np.int64),
         "token_type_ids": np.zeros((1, len(enc.ids)), dtype=np.int64),
     }
-    out = np.asarray(session.run(None, {k: v for k, v in feeds.items() if k in input_names})[0])
+    return session, {k: v for k, v in feeds.items() if k in input_names}
+
+
+def _run(session, feeds):
+    import numpy as np
+
+    out = np.asarray(session.run(None, feeds)[0])
     logits = out.reshape(-1)
     if logits.size == 1:
         return 1 / (1 + math.exp(-float(logits[0])))
@@ -76,9 +82,26 @@ def _score(identifier: str, text: str) -> float:
     return float((e / e.sum())[-1])
 
 
-async def score_relevance(identifier: str, text: str) -> float:
+def _score(identifier: str, text: str) -> float:
+    """Synchronous scorer retained for benchmark and offline callers."""
+    session, feeds = _prepare(identifier, text)
+    return _run(session, feeds)
+
+
+async def score_relevance(identifier: str, text: str, *, trace=None) -> float:
     """Probabilité de pertinence [0, 1] (calcul CPU hors boucle asyncio)."""
-    return await asyncio.to_thread(_score, identifier, text)
+    session, feeds = await asyncio.to_thread(_prepare, identifier, text)
+    if trace is not None:
+        await trace.before_run(feeds, identifier=identifier)
+    try:
+        score = await asyncio.to_thread(_run, session, feeds)
+    except Exception:
+        if trace is not None:
+            await trace.on_run_failure()
+        raise
+    if trace is not None:
+        await trace.on_run_result(score)
+    return score
 
 
 def unload(identifier: str | None = None) -> None:
