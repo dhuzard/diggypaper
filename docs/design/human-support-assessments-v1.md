@@ -1,7 +1,7 @@
 # Human support assessments v1
 
-Draft SEIP #4 slice, stacked on the answer/evidence graph in PR #27. A qualified
-project reviewer can record `supports`, `contradicts`, `insufficient`, `unclear`,
+Draft SEIP #4 slice, stacked on the answer/evidence graph in PR #27. An authorized
+project member can record `supports`, `contradicts`, `insufficient`, `unclear`,
 or `not_assessed` for one **existing answer–evidence link** in one prediction
 revision. The server stamps a durable salted actor pseudonym, time and
 `seip-support-v1`; a nonempty rationale
@@ -22,6 +22,12 @@ remain separate; this slice does not adjudicate or aggregate them.
 Both endpoints enforce project membership and article/search scope. For a blind
 search, the prediction and assessments are unavailable until the caller has
 submitted their own annotation; then GET returns only that caller's assessments.
+This own-annotation gate does not establish the required Stage A lock, reviewer
+qualification, or independent review. Those remain protocol controls outside this
+slice. After account anonymization/deletion clears `actor_id`, the retained
+pseudonymous judgment is no longer returned by this blind GET. A separately
+governed phase/export view is needed to retrieve such history for adjudication;
+this endpoint must not reveal it to another blinded reviewer.
 POST locks the article row before checking the current prediction so a concurrent
 prediction insert cannot silently retarget the judgment on PostgreSQL. The
 database checks the exact stored link, revision, project, article, actor and

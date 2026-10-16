@@ -4,6 +4,10 @@ import uuid
 from datetime import timedelta
 from types import SimpleNamespace
 
+import pytest
+from sqlalchemy import insert, update
+from sqlalchemy.exc import IntegrityError
+
 from app.db.models import (
     Article,
     ArticlePrediction,
@@ -226,6 +230,15 @@ async def test_member_and_blind_boundaries(client, session, researcher_user, adm
     assert (await client.post(url, json=payload)).status_code == 201
     own = (await client.get(url)).json()["assessments"]
     assert len(own) == 1 and own[0]["actor_ref"] == anonymized_actor_ref(researcher_user.email)
+    # After account cleanup clears the actor FK, blind GET cannot identify this
+    # preserved pseudonymous judgment as the caller's own record.
+    await session.execute(
+        update(EvidenceSupportAssessment)
+        .where(EvidenceSupportAssessment.id == uuid.UUID(own[0]["id"]))
+        .values(actor_id=None)
+    )
+    await session.commit()
+    assert (await client.get(url)).json()["assessments"] == []
     foreign = Project(title="Foreign")
     session.add(foreign)
     await session.flush()
@@ -272,3 +285,60 @@ async def test_admin_deletion_preserves_pseudonymous_assessment(
     assert await session.get(ArticlePrediction, prediction.id) is not None
     history = (await client.get(_url(project, article, prediction))).json()
     assert history["assessments"][0]["actor_ref"] == prior_ref
+
+
+async def test_sqlite_direct_writes_require_exact_scope_revision_and_link(session, researcher_user):
+    project, article = await _project_article(session, researcher_user)
+    prediction, payload = await _prediction(session, project, article)
+    valid = {
+        "id": uuid.uuid4(),
+        "prediction_id": prediction.id,
+        "project_id": project.id,
+        "article_id": article.id,
+        "graph_revision_ref": uuid.UUID(payload["graph_revision_ref"]),
+        "answer_ref": uuid.UUID(payload["answer_ref"]),
+        "evidence_ref": uuid.UUID(payload["evidence_ref"]),
+        "actor_id": researcher_user.id,
+        "actor_ref": anonymized_actor_ref(researcher_user.email),
+        "status": "supports",
+        "rationale": "Inspected context.",
+        "protocol_version": "seip-support-v1",
+    }
+    for forged in (
+        {"project_id": uuid.uuid4()},
+        {"article_id": uuid.uuid4()},
+        {"graph_revision_ref": uuid.uuid4()},
+        {"answer_ref": uuid.uuid4()},
+        {"evidence_ref": uuid.uuid4()},
+        {"actor_id": None},
+    ):
+        with pytest.raises(IntegrityError):
+            async with session.begin_nested():
+                await session.execute(
+                    insert(EvidenceSupportAssessment).values(valid | forged | {"id": uuid.uuid4()})
+                )
+
+    await session.execute(insert(EvidenceSupportAssessment).values(**valid))
+    await session.commit()
+    for changed in (
+        {"status": "contradicts"},
+        {"rationale": "Changed after review."},
+        {"actor_ref": "a" * 64},
+        {"answer_ref": uuid.uuid4()},
+        {"actor_id": None, "status": "unclear"},
+    ):
+        with pytest.raises(IntegrityError):
+            async with session.begin_nested():
+                await session.execute(
+                    update(EvidenceSupportAssessment)
+                    .where(EvidenceSupportAssessment.id == valid["id"])
+                    .values(**changed)
+                )
+    await session.execute(
+        update(EvidenceSupportAssessment)
+        .where(EvidenceSupportAssessment.id == valid["id"])
+        .values(actor_id=None)
+    )
+    await session.commit()
+    retained = await session.get(EvidenceSupportAssessment, valid["id"])
+    assert retained.actor_id is None and retained.actor_ref == valid["actor_ref"]
