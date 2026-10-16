@@ -698,6 +698,54 @@ class GoldArticle(Base):
     article: Mapped["Article | None"] = relationship(back_populates="gold_articles")
 
 
+class GoldRevision(Base):
+    """Frozen gold copy; earlier revisions survive every refresh of the current row."""
+
+    __tablename__ = "gold_revisions"
+    __table_args__ = (
+        UniqueConstraint("gold_id", "sequence", name="uq_gold_revisions_sequence"),
+        CheckConstraint("sequence > 0", name="ck_gold_revisions_sequence"),
+        CheckConstraint(
+            "provenance_state IN ('unqualified','legacy_unqualified')",
+            name="ck_gold_revisions_provenance",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
+    gold_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("gold_articles.id", ondelete="CASCADE"), nullable=False
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    ground_truth_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    answer_keys_json: Mapped[list] = mapped_column(JSONB, nullable=False)
+    answer_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_annotation_ref: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    source_snapshot_ref: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    source_view_ref: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    source_view_sha256: Mapped[str | None] = mapped_column(String(64))
+    review_actor_ref: Mapped[str | None] = mapped_column(String(64))
+    review_status: Mapped[str | None] = mapped_column(String(30))
+    review_blind: Mapped[bool | None] = mapped_column(Boolean)
+    review_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    assessment_refs_json: Mapped[list] = mapped_column(JSONB, nullable=False)
+    recorded_by_ref: Mapped[str | None] = mapped_column(String(64))
+    provenance_state: Mapped[str] = mapped_column(String(25), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+event.listen(
+    GoldRevision.__table__,
+    "after_create",
+    DDL(
+        "CREATE TRIGGER gold_revisions_immutable BEFORE UPDATE ON gold_revisions "
+        "BEGIN SELECT RAISE(ABORT, 'gold revisions are immutable'); END"
+    ).execute_if(dialect="sqlite"),
+)
+
+
 class ArticlePrediction(_ProvenanceState, Base):
     __tablename__ = "article_predictions"
     __table_args__ = (
