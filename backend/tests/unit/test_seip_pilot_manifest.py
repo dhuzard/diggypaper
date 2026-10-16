@@ -285,6 +285,27 @@ def test_excluded_duplicate_cannot_bridge_development_and_held_out(tmp_path):
         validate_pilot_manifest(manifest, tmp_path)
 
 
+def test_two_excluded_duplicates_cannot_bridge_through_novel_alias(tmp_path):
+    manifest = frozen_manifest(tmp_path)
+    for index, original in enumerate((manifest["papers"][0], manifest["papers"][6])):
+        excluded = copy.deepcopy(original)
+        excluded.update(
+            id=f"synthetic-excluded-{index}",
+            status="excluded",
+            split=None,
+            stratum=None,
+            source=None,
+            effective_input=None,
+            exclusion_reason="duplicate version",
+            duplicate_of=original["id"],
+            aliases=[{"kind": "doi", "value": "10.9999/novel-bridge"}],
+        )
+        manifest["papers"].append(excluded)
+    refreeze(manifest)
+    with pytest.raises(PilotManifestError, match="bridge"):
+        validate_pilot_manifest(manifest, tmp_path)
+
+
 @pytest.mark.parametrize(
     "raw", [b"not JSON", b"[]", b'{"x":NaN}', b'{"x":1e999}', b'{"x":1,"x":2}']
 )
