@@ -5,6 +5,7 @@
   "pilot_manifest_sha256": null,
   "protocol_version": "seip-qualification-v0.1",
   "codebook_version": "pending-domain-approval",
+  "codebook_approval": null,
   "actors": [],
   "stage_a": [],
   "stage_b": []
