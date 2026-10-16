@@ -1037,11 +1037,11 @@ async def test_support_assessment_sql_guard_and_guarded_downgrade(postgres_datab
                         EvidenceSupportAssessment.id == assessment.id
                     )
                 )
-    refused = await alembic(url, "downgrade", "0025", success=False)
+    refused = await alembic(url, "downgrade", "0026", success=False)
     assert "refusing to discard human support assessments" in refused.stderr
 
 
 async def test_empty_support_assessment_migration_downgrades(postgres_database):
     url, _ = postgres_database
     await alembic(url, "upgrade", "head")
-    await alembic(url, "downgrade", "0025")
+    await alembic(url, "downgrade", "0026")
