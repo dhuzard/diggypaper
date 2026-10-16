@@ -1,8 +1,9 @@
-"""Offline bounded occurrence replay for an unsigned SEIP evidence manifest.
+"""Offline bounded replay for an unsigned SEIP evidence manifest.
 
 This module reads no database, mutable article, network service, or export ZIP.
-It checks frozen artifacts and caller-supplied quote occurrence claims, not quote
-emission by the producer, service authenticity, support, or adjudication.
+It checks frozen artifacts and quote occurrences. Only retained raw legacy
+OpenAI-compatible chat JSON can verify quote-list emission; it does not assess
+service authenticity, scientific support, or adjudication.
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ MAX_MANIFEST_BYTES = 128 * 1024 * 1024
 MAX_SOURCES = 10_000
 MAX_INVOCATIONS = 20_000
 MAX_RESULTS = 20_000
+MAX_CHAT_RESPONSE_BYTES = 8 * 1024 * 1024
 _HASH = re.compile(r"[0-9a-f]{64}\Z")
 
 
@@ -171,8 +173,8 @@ def _invocations(entries, sources):
                 _sha(response_hash, "response sha256") == digest(response),
                 "response capture hash mismatch",
             )
-        out[call.id] = (call, outcome)
-    for call, _ in out.values():
+        out[call.id] = (call, outcome, response)
+    for call, _, _ in out.values():
         for name in ("parent_id", "winning_call_id", "confidence_call_id", "answers_call_id"):
             peer_id = call.parent_id if name == "parent_id" else getattr(call.execution, name)
             if peer_id is None:
@@ -189,11 +191,60 @@ def _invocations(entries, sources):
     return out
 
 
-def _results(entries, sources, calls) -> tuple[int, bool]:
+def _emitted_quotes(response: dict | None) -> list[str] | None:
+    """Read the exact legacy decision path used by OpenAICompatibleService.infer.
+
+    Duplicate keys, nonfinite numbers, alternate message formats, and repaired
+    JSON are deliberately outside this verifier. None means unverified, not an
+    assertion that the producer emitted no quote.
+    """
+    if (
+        not isinstance(response, dict)
+        or response.get("origin") != "driver_raw"
+        or response.get("raw_availability") != "retained"
+    ):
+        return None
+    try:
+        raw = base64.b64decode(response["raw_base64"], validate=True)
+        if len(raw) > MAX_CHAT_RESPONSE_BYTES:
+            return None
+
+        def unique_pairs(pairs):
+            value = {}
+            for key, item in pairs:
+                if key in value:
+                    raise ValueError("duplicate response JSON key")
+                value[key] = item
+            return value
+
+        def reject_constant(value):
+            raise ValueError(f"nonfinite response JSON value: {value}")
+
+        options = {"object_pairs_hook": unique_pairs, "parse_constant": reject_constant}
+        body = json.loads(raw, **options)
+        if not isinstance(body, dict):
+            return None
+        choices = body.get("choices")
+        if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+            return None
+        message = choices[0].get("message")
+        if not isinstance(message, dict) or not isinstance(message.get("content"), str):
+            return None
+        decision = json.loads(message["content"], **options)
+        if not isinstance(decision, dict):
+            return None
+        quotes = decision.get("evidence_quotes")
+        return quotes if isinstance(quotes, list) and all(type(q) is str for q in quotes) else None
+    except (ValueError, TypeError, KeyError, UnicodeDecodeError, binascii.Error, RecursionError):
+        return None
+
+
+def _results(entries, sources, calls) -> tuple[int, dict[str, str]]:
     _require(
         isinstance(entries, list) and len(entries) <= MAX_RESULTS, "result count exceeds bound"
     )
     seen = set()
+    emission = {}
     for entry in entries:
         _keys(
             entry,
@@ -215,6 +266,7 @@ def _results(entries, sources, calls) -> tuple[int, bool]:
         result_id = _id(entry["id"], "result id")
         _require(result_id not in seen, "duplicate result ID")
         seen.add(result_id)
+        emission[str(result_id)] = "unverified"
         project_id = _id(entry["project_id"], "result project")
         article_id = _id(entry["article_id"], "result article")
         state = entry["capture_state"]
@@ -258,7 +310,7 @@ def _results(entries, sources, calls) -> tuple[int, bool]:
         source = sources.get(source_id)
         call_row = calls.get(call_id)
         _require(source is not None and call_row is not None, "result reference is dangling")
-        call, outcome = call_row
+        call, outcome, response = call_row
         _require(outcome == "succeeded", "result requires a succeeded producing invocation")
         _require(
             (project_id, article_id, source_id)
@@ -315,11 +367,20 @@ def _results(entries, sources, calls) -> tuple[int, bool]:
             except ValueError as exc:
                 raise ReplayError("quote checks cannot replay") from exc
             _require(checks == expected, "quote occurrence claim does not replay")
-    return len(seen), any(entry["quote_state"] == "recorded" for entry in entries)
+            if (
+                call.call_kind == "chat"
+                and call.quotation_producer == "may_produce"
+                and field["present"]
+                and isinstance(field["value"], list)
+                and all(type(q) is str for q in field["value"])
+                and _emitted_quotes(response) == field["value"]
+            ):
+                emission[str(result_id)] = "verified"
+    return len(seen), emission
 
 
 def validate_manifest(manifest: dict) -> dict:
-    """Replay artifact and occurrence claims; producer emission remains unverified."""
+    """Replay artifacts/occurrences and bounded raw chat quote-list emission."""
     _keys(manifest, {"schema_version", "canonical_encoding", "sources", "invocations", "results"})
     _require(
         manifest["schema_version"] == SCHEMA_VERSION
@@ -341,7 +402,7 @@ def validate_manifest(manifest: dict) -> dict:
         _require(len(canonical_json(manifest)) <= MAX_MANIFEST_BYTES, "manifest exceeds byte bound")
         sources = _sources(manifest["sources"])
         calls = _invocations(manifest["invocations"], sources)
-        results, has_recorded_quotes = _results(manifest["results"], sources, calls)
+        results, emission = _results(manifest["results"], sources, calls)
     except (ValueError, TypeError, KeyError, AttributeError) as exc:
         if isinstance(exc, ReplayError):
             raise
@@ -351,7 +412,14 @@ def validate_manifest(manifest: dict) -> dict:
         "invocations": len(calls),
         "results": results,
         "status": "bounded_occurrence_replay",
-        "quotation_emission": "unverified" if has_recorded_quotes else "not_assessed",
+        "quotation_emission": (
+            "verified"
+            if emission and all(state == "verified" for state in emission.values())
+            else "unverified"
+            if emission
+            else "not_assessed"
+        ),
+        "quotation_emission_by_result": emission,
     }
 
 

@@ -1,4 +1,4 @@
-"""Offline replay rejects internally inconsistent scientific-evidence artifacts."""
+"""Offline replay rejects inconsistent artifacts and bounds quote emission claims."""
 
 import base64
 import copy
@@ -16,6 +16,7 @@ from app.provenance import (
     SourceSnapshotV1,
     canonical_json,
     digest,
+    prepare_invocation,
 )
 from app.quote_checks import check_prediction_quotes
 
@@ -41,6 +42,24 @@ def frozen(envelope):
 
 def replace_envelope(entry, envelope):
     entry.update(frozen(envelope))
+
+
+def replace_raw_response(actual, raw):
+    response = ResponseCapture(
+        origin="driver_raw",
+        raw_availability="retained",
+        raw_base64=base64.b64encode(raw).decode(),
+        raw_sha256=hashlib.sha256(raw).hexdigest(),
+    ).model_dump(mode="json")
+    actual["invocations"][0]["response_capture"] = response
+    actual["invocations"][0]["response_sha256"] = digest(response)
+
+
+def chat_response(decision):
+    return json.dumps(
+        {"choices": [{"message": {"content": json.dumps(decision, ensure_ascii=False)}}]},
+        ensure_ascii=False,
+    ).encode("utf-8")
 
 
 def manifest(quote="Mice α."):
@@ -92,6 +111,7 @@ def test_replays_example_from_retained_canonical_bytes():
         "results": 1,
         "status": "bounded_occurrence_replay",
         "quotation_emission": "unverified",
+        "quotation_emission_by_result": {actual["results"][0]["id"]: "unverified"},
     }
     assert validate_manifest_bytes(json.dumps(actual).encode()) == validate_manifest(actual)
     assert actual["results"][0]["quote_checks"]["items"][0]["result"]["status"] == "exact"
@@ -231,4 +251,135 @@ def test_input_occurrence_does_not_prove_producer_emitted_quote():
     assert actual["results"][0]["quotation_field"]["value"] == ["Mice α."]
     result = validate_manifest(actual)
     assert result["status"] == "bounded_occurrence_replay"
+    assert result["quotation_emission"] == "unverified"
+
+
+def test_exact_legacy_chat_quote_list_emission_is_verified():
+    actual = manifest()
+    replace_raw_response(actual, chat_response({"evidence_quotes": ["Mice α."]}))
+    result = validate_manifest(actual)
+    assert result["quotation_emission"] == "verified"
+    assert result["quotation_emission_by_result"][actual["results"][0]["id"]] == "verified"
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        chat_response({"evidence_quotes": []}),
+        chat_response({"evidence_quotes": ["changed"]}),
+        b'{"choices":',
+        b'{"choices":[{"message":{"content":"not JSON"}}]}',
+        b'{"choices":[{"message":{"content":{"evidence_quotes":["Mice \\u03b1."]}}}]}',
+        json.dumps(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"evidence_quotes":["Mice α."],"evidence_quotes":["Mice α."]}'
+                            )
+                        }
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+    ],
+    ids=[
+        "input_quote_absent_from_response",
+        "changed_emitted_quote",
+        "malformed_response_body",
+        "invalid_decision_json",
+        "structured_content_uncovered",
+        "duplicate_decision_key",
+    ],
+)
+def test_unmatched_or_uncovered_chat_response_stays_unverified(response):
+    actual = manifest()
+    replace_raw_response(actual, response)
+    assert validate_manifest(actual)["quotation_emission"] == "unverified"
+
+
+def test_duplicate_claimed_quote_stays_unverified_against_single_emission():
+    actual = manifest()
+    result = actual["results"][0]
+    quotes = ["Mice α.", "Mice α."]
+    call = InvocationV1.model_validate(FIXTURE["invocations"][4]["envelope"])
+    checks = json.loads(json.dumps(check_prediction_quotes(call, {"evidence_quotes": quotes})))
+    result["quotation_field"]["value"] = quotes
+    result["quote_checks"] = checks
+    result["quote_checks_sha256"] = digest(checks)
+    replace_raw_response(actual, chat_response({"evidence_quotes": ["Mice α."]}))
+    assert validate_manifest(actual)["quotation_emission"] == "unverified"
+
+
+def test_unavailable_raw_chat_response_stays_unverified():
+    actual = manifest()
+    response = ResponseCapture(
+        origin="unavailable", raw_availability="unavailable", reason="raw excluded"
+    ).model_dump(mode="json")
+    actual["invocations"][0]["response_capture"] = response
+    actual["invocations"][0]["response_sha256"] = digest(response)
+    assert validate_manifest(actual)["quotation_emission"] == "unverified"
+
+
+def test_chat_shaped_response_cannot_verify_scorer_emission():
+    actual = manifest()
+    source = SourceSnapshotV1.model_validate(FIXTURE["snapshot"])
+    values = copy.deepcopy(FIXTURE["invocations"][0]["envelope"])
+    for key in ("project_id", "article_id", "source_snapshot_id", "request_sha256"):
+        values.pop(key)
+    values.update(
+        call_kind="onnx",
+        quotation_producer="not_produced",
+        source_view_ids=[],
+        input_spans=[],
+        request={
+            "feeds": {"features": {"shape": [1], "dtype": "int64", "values": [1]}},
+            "output_names": None,
+        },
+    )
+    call = prepare_invocation(source, **values)
+    replace_envelope(actual["invocations"][0], call.model_dump(mode="json"))
+    replace_raw_response(actual, chat_response({"evidence_quotes": ["Mice α."]}))
+    item = actual["results"][0]
+    item.update(
+        invocation_ref=str(call.id),
+        quote_state="not_produced",
+        quotation_field=None,
+        quote_checks=None,
+        quote_checks_sha256=None,
+    )
+    assert validate_manifest(actual)["quotation_emission_by_result"][item["id"]] == "unverified"
+
+
+def test_emitted_quote_cannot_verify_cross_scope_result():
+    actual = manifest()
+    replace_raw_response(actual, chat_response({"evidence_quotes": ["Mice α."]}))
+    actual["results"][0]["article_id"] = "00000000-0000-0000-0000-0000000000ff"
+    with pytest.raises(ReplayError, match="scope mismatch"):
+        validate_manifest(actual)
+
+
+def test_aggregate_stays_unverified_when_another_result_is_legacy():
+    actual = manifest()
+    replace_raw_response(actual, chat_response({"evidence_quotes": ["Mice α."]}))
+    legacy = copy.deepcopy(actual["results"][0])
+    legacy.update(
+        id="00000000-0000-0000-0000-000000000098",
+        capture_state="legacy_unversioned",
+        source_snapshot_ref=None,
+        invocation_ref=None,
+        reason="historical result has no retained invocation",
+        quote_state="legacy_unversioned",
+        quotation_field=None,
+        quote_checks=None,
+        quote_checks_sha256=None,
+    )
+    actual["results"].append(legacy)
+    result = validate_manifest(actual)
+    assert result["quotation_emission_by_result"] == {
+        actual["results"][0]["id"]: "verified",
+        legacy["id"]: "unverified",
+    }
     assert result["quotation_emission"] == "unverified"

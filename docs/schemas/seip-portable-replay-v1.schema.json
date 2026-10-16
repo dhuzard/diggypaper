@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dhuzard/diggypaper/blob/seip/portable-replay/docs/schemas/seip-portable-replay-v1.schema.json",
   "title": "SEIP portable replay manifest v1",
-  "description": "Unsigned offline artifact and quote occurrence replay manifest. The quotation_field is caller-supplied; retained-response emission is unverified. Nested canonical envelopes and quote checks require semantic replay by app.portable_replay; this schema alone does not validate origins, hashes, or occurrence claims.",
+  "description": "Unsigned offline artifact and quote occurrence replay manifest. The quotation_field is caller-supplied; emission can be verified only by parsing a scoped retained raw legacy OpenAI-compatible chat response and exact quote-list equality. Nested canonical envelopes and quote checks require semantic replay by app.portable_replay; this schema alone does not validate origins, hashes, occurrences, or emission.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "canonical_encoding", "sources", "invocations", "results"],
@@ -54,7 +54,7 @@
         "quote_state": {"enum": ["recorded", "not_produced", "legacy_unversioned", "unavailable"]},
         "quote_reason": {"type": ["string", "null"]},
         "quotation_field": {
-          "description": "Caller-supplied quote-field observation. No binding to retained response is asserted or verified.",
+          "description": "Caller-supplied quote-field observation. The offline validator reports whether a retained raw legacy chat response exactly emitted this list; this schema itself cannot prove emission.",
           "anyOf": [
             {"type": "null"},
             {
