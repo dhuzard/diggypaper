@@ -14,15 +14,38 @@ import json
 import math
 import re
 import sys
+import uuid
 from collections.abc import Iterable
+from datetime import datetime
 from pathlib import Path
 from zipfile import BadZipFile, ZipFile
 
-from app.evidence_links import EvidenceEnvelopeV1, FrozenFieldDefinition
+from app.evidence_links import (
+    EnvelopeScope,
+    EvidenceEnvelopeV1,
+    ExpectedAnswer,
+    FrozenFieldDefinition,
+    QuoteMatchReceipt,
+    SourceBindingReceipt,
+    ValidationContext,
+    validate_envelope,
+)
 from app.portable_replay import SCHEMA_VERSION, validate_manifest, validate_manifest_bytes
 from app.provenance import digest, invocation_from_record, source_from_record
+from app.provenance_render import composed_view, legacy_methods_view, title_abstract_view
 
 _PRIVATE = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|\b(?:bearer|api[_ -]?key|secret)\b", re.I)
+_ACTOR_REF = re.compile(r"[0-9a-f]{64}\Z")
+_SUPPORT_STATUSES = {"supports", "contradicts", "insufficient", "unclear", "not_assessed"}
+_HISTORY_KEYS = {
+    "prediction_id", "article_id", "search_id", "capture_state", "graph_state",
+    "evidence_graph", "support_assessments", "support_assessments_state",
+    "support_assessments_withheld_count", "decision_state", "decision_json",
+}
+_ASSESSMENT_KEYS = {
+    "id", "graph_revision_ref", "answer_ref", "evidence_ref", "actor_ref",
+    "status", "created_at", "protocol_version", "rationale_state",
+}
 
 
 def _frozen(row, checksum: str) -> dict:
@@ -39,6 +62,22 @@ def _permitted(snapshot, call) -> bool:
         return False
     if snapshot.raw_artifact.availability == "retained":
         return False
+    # A snapshot can retain additional views whose text is absent from components.
+    # Regenerate every exported view, including synthetic spans, from the two
+    # distributable components and reject any unfamiliar or altered view.
+    for view in snapshot.views:
+        if view.availability != "retained":
+            return False
+        if view.kind == "title_abstract":
+            expected = title_abstract_view(snapshot.components)
+        elif view.kind == "legacy_methods":
+            expected = legacy_methods_view(snapshot.components)
+        elif view.kind == "composed":
+            expected = composed_view(snapshot.components, list(view.selection))
+        else:
+            return False
+        if view.model_dump(exclude={"id"}) != expected.model_dump(exclude={"id"}):
+            return False
     if any(span.origin == "example" for span in call.input_spans):
         return False
     if any(
@@ -226,7 +265,10 @@ def validate_bundle(manifest: dict, history: list[dict]) -> dict:
     if len(by_id) != len(history):
         raise ValueError("prediction history and replay result counts differ")
     seen = set()
+    assessment_ids = set()
     for entry in history:
+        if not isinstance(entry, dict) or set(entry) != _HISTORY_KEYS:
+            raise ValueError("prediction history has missing or unsupported fields")
         ident = entry["prediction_id"]
         if ident in seen or ident not in by_id:
             raise ValueError("prediction history references unknown/duplicate result")
@@ -251,14 +293,30 @@ def validate_bundle(manifest: dict, history: list[dict]) -> dict:
         elif entry["decision_state"] != "legacy_or_withheld" or decision is not None:
             raise ValueError("uncaptured prediction cannot disclose a decision")
         graph = entry["evidence_graph"]
+        if not isinstance(entry["support_assessments"], list):
+            raise ValueError("support assessments must be a list")
+        if (
+            type(entry["support_assessments_withheld_count"]) is not int
+            or entry["support_assessments_withheld_count"] < 0
+        ):
+            raise ValueError("invalid support-assessment withheld count")
         if graph is None:
             if entry["graph_state"] == "recorded":
                 raise ValueError("recorded graph is missing")
             if entry["support_assessments"]:
                 raise ValueError("support assessments require a distributed graph")
+            if entry["support_assessments_state"] != "withheld_or_unavailable":
+                raise ValueError("undistributed support-assessment state is inconsistent")
             continue
         if entry["graph_state"] != "recorded":
             raise ValueError("distributed graph has an unavailable state")
+        if not isinstance(graph, dict) or set(graph) != {"envelope", "field_definition"}:
+            raise ValueError("distributed graph has unsupported fields")
+        if (
+            entry["support_assessments_state"] != "recorded"
+            or entry["support_assessments_withheld_count"] != 0
+        ):
+            raise ValueError("distributed support-assessment state is inconsistent")
         envelope = EvidenceEnvelopeV1.model_validate(graph["envelope"])
         if (
             replay["capture_state"] != "captured"
@@ -268,39 +326,74 @@ def validate_bundle(manifest: dict, history: list[dict]) -> dict:
             or envelope.scope.project_ref != replay["project_id"]
         ):
             raise ValueError("distributed graph scope disagrees with replay result")
-        definition = graph.get("field_definition")
-        if definition is None:
-            if envelope.field_definition_ref is not None:
-                raise ValueError("distributed graph has a dangling field definition")
-        elif (
-            FrozenFieldDefinition.model_validate(definition).identity
-            != envelope.field_definition_ref
-        ):
-            raise ValueError("distributed graph field definition hash mismatch")
-        answers = {answer.answer_ref for answer in envelope.answers}
-        evidence = {item.evidence_ref for item in envelope.evidence}
-        if len(answers) != len(envelope.answers) or len(evidence) != len(envelope.evidence):
-            raise ValueError("distributed graph has duplicate node references")
-        if any(decision.get(answer.field_key) != answer.value for answer in envelope.answers):
-            raise ValueError("distributed answer disagrees with recorded decision")
-        links = {(link.answer_ref, link.evidence_ref) for link in envelope.links}
-        if any(answer not in answers or quote not in evidence for answer, quote in links):
-            raise ValueError("distributed graph has a dangling link")
+        definition_raw = graph.get("field_definition")
+        definition = (
+            FrozenFieldDefinition.model_validate(definition_raw)
+            if definition_raw is not None else None
+        )
+        scope = EnvelopeScope(
+            project_ref=replay["project_id"],
+            article_ref=replay["article_id"],
+            record_kind="prediction",
+            record_ref=ident,
+            revision_ref=ident,
+        )
         checks = replay["quote_checks"]
-        matches = {
-            item["match_ref"]: item["result"]["quote"]
-            for item in checks["items"]
-        } if checks is not None else {}
-        for item in envelope.evidence:
-            if item.origin == "captured_input_context":
-                if item.source_binding_ref != replay["invocation_ref"]:
-                    raise ValueError("distributed evidence has an alien input binding")
-                if (
-                    item.quote_match_ref is not None
-                    and matches.get(item.quote_match_ref) != item.quote
-                ):
-                    raise ValueError("distributed evidence has a dangling quote match")
+        context = ValidationContext(
+            scope=scope,
+            field_definition=definition,
+            answers=tuple(
+                ExpectedAnswer(field_key=field.key, value=decision[field.key])
+                for field in definition.fields
+            ) if definition else (),
+            allowed_input_refs=(replay["invocation_ref"],),
+            source_bindings=(SourceBindingReceipt(
+                binding_ref=replay["invocation_ref"],
+                project_ref=replay["project_id"],
+                article_ref=replay["article_id"],
+                snapshot_ref=replay["source_snapshot_ref"],
+                input_ref=replay["invocation_ref"],
+                input_kind="invocation",
+            ),),
+            quote_matches=tuple(
+                QuoteMatchReceipt(
+                    match_ref=item["match_ref"],
+                    project_ref=replay["project_id"],
+                    article_ref=replay["article_id"],
+                    snapshot_ref=replay["source_snapshot_ref"],
+                    input_ref=replay["invocation_ref"],
+                    quote=item["result"]["quote"],
+                    status=item["result"]["status"],
+                ) for item in (checks or {}).get("items", [])
+            ),
+        )
+        validate_envelope(envelope, context)
+        if envelope.state == "legacy_unlinked" and [
+            item.quote for item in envelope.evidence
+        ] != decision.get("evidence_quotes"):
+            raise ValueError("legacy graph quotation list disagrees with decision")
+        links = {(link.answer_ref, link.evidence_ref) for link in envelope.links}
         for assessment in entry["support_assessments"]:
+            if not isinstance(assessment, dict) or set(assessment) != _ASSESSMENT_KEYS:
+                raise ValueError("support assessment has missing or unsupported fields")
+            try:
+                assessment_id = str(uuid.UUID(assessment["id"]))
+                created = datetime.fromisoformat(assessment["created_at"])
+            except (ValueError, TypeError, AttributeError) as exc:
+                raise ValueError("support assessment has invalid ID or time") from exc
+            if (
+                assessment_id != assessment["id"]
+                or assessment_id in assessment_ids
+                or created.tzinfo is None
+                or created.utcoffset() is None
+                or not isinstance(assessment["actor_ref"], str)
+                or _ACTOR_REF.fullmatch(assessment["actor_ref"]) is None
+                or assessment["status"] not in _SUPPORT_STATUSES
+                or assessment["protocol_version"] != "seip-support-v1"
+                or assessment["rationale_state"] != "withheld_from_portable_export"
+            ):
+                raise ValueError("support assessment has invalid identity, status, or protocol")
+            assessment_ids.add(assessment_id)
             if (
                 assessment["graph_revision_ref"] != ident
                 or (assessment["answer_ref"], assessment["evidence_ref"]) not in links
