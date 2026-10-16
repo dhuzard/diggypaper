@@ -1,0 +1,210 @@
+{
+  "context": {
+    "scope": {
+      "project_ref": "project-A",
+      "article_ref": "article-A",
+      "record_kind": "prediction",
+      "record_ref": "prediction-A",
+      "revision_ref": "revision-1"
+    },
+    "field_definition": {
+      "schema_version": "field-definition-v1",
+      "question": "Which design and blinding were reported?",
+      "fields": [
+        {
+          "key": "design",
+          "label": "Design",
+          "type": "choice",
+          "options": [
+            "RCT",
+            "COHORT"
+          ]
+        },
+        {
+          "key": "blinded",
+          "label": "Blinding",
+          "type": "boolean"
+        }
+      ]
+    },
+    "allowed_input_refs": ["invocation-A"],
+    "answers": [
+      {
+        "field_key": "design",
+        "value": "RCT"
+      },
+      {
+        "field_key": "blinded",
+        "value": true
+      }
+    ],
+    "source_bindings": [
+      {
+        "binding_ref": "binding-A",
+        "project_ref": "project-A",
+        "article_ref": "article-A",
+        "snapshot_ref": "snapshot-A",
+        "input_ref": "invocation-A",
+        "input_kind": "invocation"
+      }
+    ],
+    "quote_matches": [
+      {
+        "match_ref": "match-A",
+        "project_ref": "project-A",
+        "article_ref": "article-A",
+        "snapshot_ref": "snapshot-A",
+        "input_ref": "invocation-A",
+        "quote": "Mice were randomized.",
+        "status": "exact"
+      },
+      {
+        "match_ref": "match-B",
+        "project_ref": "project-A",
+        "article_ref": "article-A",
+        "snapshot_ref": "snapshot-A",
+        "input_ref": "invocation-A",
+        "quote": "Allocation was blinded.",
+        "status": "not_checked"
+      }
+    ]
+  },
+  "passages": [
+    {
+      "local_ref": "p-randomization",
+      "quote": "Mice were randomized.",
+      "source_binding_ref": "binding-A",
+      "quote_match_ref": "match-A"
+    },
+    {
+      "local_ref": "p-blinding",
+      "quote": "Allocation was blinded.",
+      "source_binding_ref": "binding-A",
+      "quote_match_ref": "match-B"
+    }
+  ],
+  "links": [
+    {
+      "field_key": "design",
+      "local_ref": "p-randomization"
+    },
+    {
+      "field_key": "design",
+      "local_ref": "p-blinding"
+    },
+    {
+      "field_key": "blinded",
+      "local_ref": "p-blinding"
+    }
+  ],
+  "legacy_quotes": [
+    "same",
+    "same",
+    "",
+    "😀 passage"
+  ],
+  "expected_envelope": {
+    "schema_version": "evidence-envelope-v1",
+    "state": "structured",
+    "scope": {
+      "project_ref": "project-A",
+      "article_ref": "article-A",
+      "record_kind": "prediction",
+      "record_ref": "prediction-A",
+      "revision_ref": "revision-1"
+    },
+    "field_definition_ref": "sha256:9872d5f5220100bea85dbfcece0ecb98af679df2d613470b8219ea90b9afcb8f",
+    "answers": [
+      {
+        "answer_ref": "3c92a3a0-e7eb-5a56-864f-76877df76d27",
+        "field_key": "design",
+        "value": "RCT"
+      },
+      {
+        "answer_ref": "52452df0-648d-57b2-956c-0dbfc3591532",
+        "field_key": "blinded",
+        "value": true
+      }
+    ],
+    "evidence": [
+      {
+        "evidence_ref": "4ab7c54b-a4cb-50db-9bff-a3b171d6aebf",
+        "local_ref": "p-randomization",
+        "quote": "Mice were randomized.",
+        "origin": "captured_input",
+        "source_binding_ref": "binding-A",
+        "quote_match_ref": "match-A"
+      },
+      {
+        "evidence_ref": "8fefec25-cf3c-5bb6-9493-0dd8ecb4748e",
+        "local_ref": "p-blinding",
+        "quote": "Allocation was blinded.",
+        "origin": "captured_input",
+        "source_binding_ref": "binding-A",
+        "quote_match_ref": "match-B"
+      }
+    ],
+    "links": [
+      {
+        "answer_ref": "3c92a3a0-e7eb-5a56-864f-76877df76d27",
+        "evidence_ref": "4ab7c54b-a4cb-50db-9bff-a3b171d6aebf"
+      },
+      {
+        "answer_ref": "3c92a3a0-e7eb-5a56-864f-76877df76d27",
+        "evidence_ref": "8fefec25-cf3c-5bb6-9493-0dd8ecb4748e"
+      },
+      {
+        "answer_ref": "52452df0-648d-57b2-956c-0dbfc3591532",
+        "evidence_ref": "8fefec25-cf3c-5bb6-9493-0dd8ecb4748e"
+      }
+    ]
+  },
+  "expected_legacy": {
+    "schema_version": "evidence-envelope-v1",
+    "state": "legacy_unlinked",
+    "scope": {
+      "project_ref": "project-A",
+      "article_ref": "article-A",
+      "record_kind": "prediction",
+      "record_ref": "prediction-A",
+      "revision_ref": "revision-1"
+    },
+    "field_definition_ref": null,
+    "answers": [],
+    "evidence": [
+      {
+        "evidence_ref": "2a93fa2c-ca7d-55fd-9930-3a0147dca559",
+        "local_ref": "legacy-0",
+        "quote": "same",
+        "origin": "legacy_unversioned",
+        "source_binding_ref": null,
+        "quote_match_ref": null
+      },
+      {
+        "evidence_ref": "d5d02975-eb4e-58fa-99be-3ad64957fb26",
+        "local_ref": "legacy-1",
+        "quote": "same",
+        "origin": "legacy_unversioned",
+        "source_binding_ref": null,
+        "quote_match_ref": null
+      },
+      {
+        "evidence_ref": "2da48821-cb1c-5d49-a442-19cc7f1b73b8",
+        "local_ref": "legacy-2",
+        "quote": "",
+        "origin": "legacy_unversioned",
+        "source_binding_ref": null,
+        "quote_match_ref": null
+      },
+      {
+        "evidence_ref": "cfc33190-3033-59a3-aa6d-f7555718e04e",
+        "local_ref": "legacy-3",
+        "quote": "😀 passage",
+        "origin": "legacy_unversioned",
+        "source_binding_ref": null,
+        "quote_match_ref": null
+      }
+    ],
+    "links": []
+  }
+}
