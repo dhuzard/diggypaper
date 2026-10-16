@@ -413,7 +413,7 @@ async def test_populated_postgres_upgrade_downgrade_and_storage_guards(postgres_
     blocked = await alembic(url, "downgrade", "0021", success=False)
     assert "refusing to discard retained provenance" in blocked.stderr
     async with engine.begin() as connection:
-        assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "0023"
+        assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "0024"
         assert await connection.scalar(text("SELECT count(*) FROM source_snapshots")) == 2
         # Explicit ownership deletion remains the documented retention boundary.
         await connection.execute(delete(Project).where(Project.id == pid))
@@ -611,6 +611,18 @@ async def test_quote_checks_upgrade_keeps_legacy_null_and_guarded_downgrade(post
         call = invocation_record(prepared(source))
         session.add(call)
         await session.commit()
+        with pytest.raises(DBAPIError):
+            async with session.begin_nested():
+                await session.execute(
+                    insert(ArticlePrediction).values(
+                        article_id=article_id,
+                        model_used="prepared-without-checks",
+                        provenance_project_id=project_id,
+                        source_snapshot_id=source.id,
+                        invocation_id=call.id,
+                        invocation_group_id=call.group_id,
+                    )
+                )
         decision = {"evidence_quotes": ["Mice α."]}
         pending_check = ArticlePrediction(
             article_id=article_id,
