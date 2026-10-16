@@ -189,19 +189,27 @@ async def create_support_assessment(
         or envelope.scope.revision_ref != str(payload.graph_revision_ref)
     ):
         raise HTTPException(status_code=409, detail="Evidence graph revision mismatch")
-    pair = (str(payload.answer_ref), str(payload.evidence_ref))
-    if pair not in {(link.answer_ref, link.evidence_ref) for link in envelope.links}:
-        raise HTTPException(status_code=422, detail="Answer/evidence link not in this revision")
-    # Pydantic checks record shape, but the graph contract forbids giving a
-    # legacy, unversioned passage an answer link. Stored JSON may predate or
-    # bypass the producer's validation; never turn such a link into a judgment.
+    # Pydantic checks record shape, not graph referential integrity. Stored
+    # JSON may predate or bypass the producer's validation; reject ambiguous,
+    # dangling, duplicate, or legacy links before assigning a judgment.
+    answers = {item.answer_ref: item for item in envelope.answers}
     evidence = {item.evidence_ref: item for item in envelope.evidence}
-    if len(evidence) != len(envelope.evidence) or any(
-        evidence.get(link.evidence_ref) is None
-        or evidence[link.evidence_ref].origin != "captured_input_context"
-        for link in envelope.links
+    pairs = [(link.answer_ref, link.evidence_ref) for link in envelope.links]
+    if (
+        len(answers) != len(envelope.answers)
+        or len(evidence) != len(envelope.evidence)
+        or len(set(pairs)) != len(pairs)
+        or any(
+            answer_ref not in answers
+            or evidence_ref not in evidence
+            or evidence[evidence_ref].origin != "captured_input_context"
+            for answer_ref, evidence_ref in pairs
+        )
     ):
         raise HTTPException(status_code=409, detail="Evidence graph has unassessable links")
+    pair = (str(payload.answer_ref), str(payload.evidence_ref))
+    if pair not in set(pairs):
+        raise HTTPException(status_code=422, detail="Answer/evidence link not in this revision")
     row = EvidenceSupportAssessment(
         prediction_id=prediction.id,
         project_id=project_id,
