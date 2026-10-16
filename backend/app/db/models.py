@@ -783,6 +783,48 @@ class ArticlePrediction(_ProvenanceState, Base):
     )
 
 
+class EvidenceSupportAssessment(Base):
+    """Append-only human judgment on one exact prediction answer/evidence link."""
+
+    __tablename__ = "evidence_support_assessments"
+    __table_args__ = (
+        Index("ix_support_assessments_prediction_created", "prediction_id", "created_at"),
+        CheckConstraint(
+            "status IN ('supports','contradicts','insufficient','unclear','not_assessed')",
+            name="ck_support_assessments_status",
+        ),
+        CheckConstraint(
+            "length(rationale) <= 5000 AND "
+            "(status = 'not_assessed' OR length(trim(rationale)) > 0)",
+            name="ck_support_assessments_rationale",
+        ),
+        CheckConstraint(
+            "protocol_version = 'seip-support-v1'",
+            name="ck_support_assessments_protocol",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
+    prediction_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("article_predictions.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    article_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    graph_revision_ref: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    answer_ref: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    evidence_ref: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    actor_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    actor_ref: Mapped[str] = mapped_column(String(36), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    protocol_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class HumanAnnotation(_ProvenanceState, Base):
     __tablename__ = "human_annotations"
     __table_args__ = (

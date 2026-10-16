@@ -72,6 +72,7 @@ EXPECTED_TABLES = {
     "benchmark_predictions",  # réponses de chaque variante du banc d'essai
     "source_snapshots",
     "invocations",
+    "evidence_support_assessments",
 }
 
 
