@@ -13,7 +13,16 @@ import pytest
 
 from app.evidence_crate import build_bundle, validate_archive, validate_bundle
 from app.evidence_prediction import prediction_envelope
-from app.provenance import Components, InvocationV1, SourceSnapshotV1, canonical_json, digest
+from app.provenance import (
+    Components,
+    InvocationV1,
+    OriginSpan,
+    SourceSnapshotV1,
+    TextView,
+    canonical_json,
+    digest,
+    text_digest,
+)
 from app.provenance_render import legacy_methods_view, render_chat, title_abstract_view
 from app.quote_checks import check_prediction_quotes
 
@@ -226,8 +235,21 @@ def test_archive_consumer_detects_hash_and_link_tampering(tmp_path):
     wrong_match[0]["evidence_graph"]["envelope"]["evidence"][0]["quote_match_ref"] = str(
         uuid.uuid4()
     )
-    with pytest.raises(ValueError, match="quote match"):
+    with pytest.raises(ValueError, match="quote_match"):
         validate_archive(archive("match.zip", manifest, wrong_match))
+    wrong_kind = copy.deepcopy(history)
+    wrong_kind[0]["evidence_graph"]["envelope"]["scope"]["record_kind"] = "annotation"
+    with pytest.raises(ValueError, match="scope_mismatch"):
+        validate_archive(archive("kind.zip", manifest, wrong_kind))
+    wrong_state = copy.deepcopy(history)
+    wrong_state[0]["evidence_graph"]["envelope"]["state"] = "legacy_unlinked"
+    with pytest.raises(ValueError, match="legacy_must_remain_unlinked"):
+        validate_archive(archive("state.zip", manifest, wrong_state))
+    for field, value in (("status", "verified_gold"), ("actor_ref", "person@example.org")):
+        wrong_assessment = copy.deepcopy(history)
+        wrong_assessment[0]["support_assessments"][0][field] = value
+        with pytest.raises(ValueError, match="invalid identity, status, or protocol"):
+            validate_archive(archive(f"assessment-{field}.zip", manifest, wrong_assessment))
 
 
 def test_replacement_source_text_cannot_replay_old_invocation():
@@ -243,3 +265,27 @@ def test_replacement_source_text_cannot_replay_old_invocation():
     changed.snapshot_sha256 = digest(changed.payload)
     with pytest.raises(ValueError, match="origin replay|replay"):
         build_bundle(source.project_id, [pred], {source.id: changed}, {call.id: call}, {})
+
+
+def test_extra_synthetic_retained_view_is_withheld_even_with_abstract_only_components():
+    pred, source, call, _ = fixture()
+    hidden = "Licensed full text absent from components"
+    extra = TextView(
+        kind="review",
+        availability="retained",
+        text=hidden,
+        sha256=text_digest(hidden),
+        selection=("abstract",),
+        fallback=None,
+        composition_version="synthetic-test",
+        origins=(OriginSpan(start=0, end=len(hidden), origin="synthetic"),),
+    )
+    source.payload["views"].append(extra.model_dump(mode="json"))
+    source.canonical_bytes = canonical_json(source.payload)
+    source.snapshot_sha256 = digest(source.payload)
+    manifest, history = build_bundle(
+        source.project_id, [pred], {source.id: source}, {call.id: call}, {}
+    )
+    assert manifest["results"][0]["capture_state"] == "source_unavailable"
+    assert manifest["sources"] == manifest["invocations"] == []
+    assert hidden not in json.dumps([manifest, history])

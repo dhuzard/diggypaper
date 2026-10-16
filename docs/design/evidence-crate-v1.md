@@ -10,9 +10,10 @@ the Python path to check canonical source and invocation hashes, input origins,
 quotation occurrences, result scopes, graph links, and support-assessment refs
 without a database or network connection.
 
-Only frozen title/abstract captures are distributed when the captured request
-has no prompt examples, peer invocation, retained raw artifact, full-text
-section, or obvious contact/credential text. Other captured runs keep an
+Only frozen title/abstract captures are distributed when every retained view
+regenerates exactly from those components and the captured request has no
+prompt examples, peer invocation, retained raw artifact, full-text section, or
+obvious contact/credential text. Other captured runs keep an
 explicit `source_unavailable` result; runs without frozen refs remain
 `legacy_unversioned`. The companion never reads a mutable current article to
 reconstruct older input. The provider response is deliberately withheld, so
@@ -24,7 +25,9 @@ archives contain no prediction evidence companion records.
 The archive is unsigned. Its checks detect internal damage or inconsistency,
 not the authenticity of the original source, the truth of an answer, or
 scientific support for a claim. Existing RO-Crate article files and tables keep
-their established access rules and licensing notices; this new companion does
-not add a PDF or full text. A later governed export can cover licensed source
-text, complete multi-call invocations, responses, reviewer rationale, and
+their established access rules and licensing notices. The overall ZIP can
+still contain article PDFs and full text under that policy; only the new
+companion excludes them. This work does not qualify the entire ZIP for
+redistribution under article licenses. A later governed export can cover
+licensed source text, complete multi-call invocations, responses, reviewer rationale, and
 qualified gold lineage after their distribution policies are defined.
