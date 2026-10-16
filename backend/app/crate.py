@@ -210,6 +210,7 @@ def build_graph(project, articles, keys: dict, files: dict, info: dict, now: str
     """Graphe JSON-LD RO-Crate. ``files`` : {clé d'article: [chemins de fichiers présents]}."""
     top = ["README.md", "project.json", "extraction.csv", "results.xlsx"]
     top += ["references.ris", "references.bib", "prisma.svg"]
+    top += ["evidence/portable-replay.json", "evidence/prediction-history.json"]
     mime = {
         "md": "text/markdown",
         "json": "application/json",
@@ -266,6 +267,8 @@ def build_graph(project, articles, keys: dict, files: dict, info: dict, now: str
         "references.ris": "Références (RIS : Zotero, EndNote, Mendeley)",
         "references.bib": "Références (BibTeX)",
         "prisma.svg": "Diagramme de flux PRISMA 2020",
+        "evidence/portable-replay.json": "Preuves figées et vérification hors ligne",
+        "evidence/prediction-history.json": "Historique des graphes et évaluations humaines",
     }
     graph += [file_entity(p, labels[p]) for p in top]
 
@@ -377,6 +380,11 @@ Export RO-Crate (Diggypaper) — {datetime.now(UTC):%Y-%m-%d}.
 - `prisma.svg` : diagramme de flux PRISMA 2020 (effectifs aussi dans `project.json`)
 - `references.ris` / `references.bib` : références à importer dans Zotero, EndNote, JabRef…
 - `extraction.csv` / `results.xlsx` : tableau d'extraction (réponses IA, certitudes, relecture)
+- `evidence/portable-replay.json` : manifeste de relecture hors ligne des sources,
+  appels et citations distribuables ; les anciens cas et sources non distribuables
+  portent un état explicite. Aucun PDF brut ni réponse brute du fournisseur n'y figure.
+- `evidence/prediction-history.json` : historique des graphes de réponse/preuve
+  et évaluations de soutien ; les raisons des évaluateurs sont retenues hors archive.
 - Licence : {get_settings().crate_license_name} pour les métadonnées, réponses et relectures ;
   les textes intégraux et PDF conservent la licence de leurs ayants droit.
 - `articles/<clé>/` : un dossier par article ({n_articles}) — `metadata.json`, `fulltext.md`
