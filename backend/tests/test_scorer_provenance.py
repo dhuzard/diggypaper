@@ -26,7 +26,7 @@ from app.provenance_scorer import PersistedScorerTrace
 from app.tasks.inference import _run_inference
 
 
-async def context(session, backend, text):
+async def context(session, backend, text, *, model_identifier=None):
     project = Project(title="P", question="Relevant?")
     session.add(project)
     await session.flush()
@@ -35,9 +35,8 @@ async def context(session, backend, text):
     model = ModelRegistry(
         name="scorer",
         backend_type=backend,
-        model_identifier="http://service#checkpoint"
-        if backend == BackendType.SYSTEMONE
-        else "model.onnx",
+        model_identifier=model_identifier
+        or ("http://service#checkpoint" if backend == BackendType.SYSTEMONE else "model.onnx"),
     )
     session.add_all([article, prompt, model])
     await session.flush()
@@ -128,6 +127,25 @@ async def test_systemone_transport_loss_keeps_unknown_call(session):
             await decide("http://service#checkpoint", text, "Relevant?", [], http=http, trace=trace)
     call = (await session.execute(select(Invocation))).scalar_one()
     assert call.outcome == "outcome_unknown" and trace.producing_invocation is None
+
+
+async def test_systemone_without_checkpoint_records_unknown_server_default(session):
+    trace, text = await context(
+        session, BackendType.SYSTEMONE, "abstract", model_identifier="http://service"
+    )
+    sent = []
+
+    def handler(request):
+        sent.append(json.loads(request.read()))
+        return httpx.Response(200, json={"answers": {"relevance": {"noul": 0.8}}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        await decide("http://service", text, "Relevant?", [], http=http, trace=trace)
+    call = (await session.execute(select(Invocation))).scalar_one()
+    envelope = invocation_from_record(call)
+    assert "model" not in sent[0] and envelope.request == sent[0]
+    assert envelope.model.identifier == "systemone-server-default-unknown"
+    assert envelope.model.revision is None
 
 
 async def test_onnx_retains_only_actual_named_token_feeds(session, monkeypatch):

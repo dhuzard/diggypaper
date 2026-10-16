@@ -118,6 +118,7 @@ class PersistedScorerTrace:
             call_kind=kind,
             sequence=self.sequence,
             attempt=1,
+            # Job configuration only; scorer wire inputs are in request/input_spans.
             prompt=PromptIdentity(
                 template_id=self.prompt.id,
                 version=self.prompt.version_number,
@@ -150,7 +151,7 @@ class PersistedScorerTrace:
             body,
             kind=kind,
             state_start=state_start,
-            model_identifier=body.get("model") or self.model.name,
+            model_identifier=body.get("model") or "systemone-server-default-unknown",
             execution=ExecutionDetails(
                 window_index=window_index,
                 window_count=window_count,
