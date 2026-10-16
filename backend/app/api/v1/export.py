@@ -1,6 +1,7 @@
 """Export XLSX d'un projet : corpus + résultats d'analyse + relecture humaine + paramètres."""
 
 import asyncio
+import hashlib
 import io
 import json
 import os
@@ -28,6 +29,7 @@ from app.api.v1.projects import (
     _require_project_member,
     article_filter,
 )
+from app.core.config import get_settings
 from app.db.models import (
     Article,
     ArticleFile,
@@ -231,8 +233,8 @@ async def _load(db: AsyncSession, project, where=None, search=None):
             )
         ).scalars():
             annos.setdefault(h.article_id, []).append(h)
-        names = {
-            u.id: u.full_name or u.email
+        reviewers = {
+            u.id: u
             for u in (
                 await db.execute(
                     select(User).where(
@@ -243,7 +245,17 @@ async def _load(db: AsyncSession, project, where=None, search=None):
         }
         for hs in annos.values():
             for h in hs:
-                h.reviewer = names.get(h.user_id)  # nom du relecteur pour l'export
+                reviewer = reviewers.get(h.user_id)
+                h.reviewer = (reviewer.full_name or reviewer.email) if reviewer else None
+                actor_hash = h.annotator_hash
+                if not actor_hash and reviewer:
+                    actor_hash = (
+                        reviewer.anonymized_hash
+                        or hashlib.sha256(
+                            (get_settings().anon_salt + reviewer.email).encode("utf-8")
+                        ).hexdigest()
+                    )
+                h.reviewer_ref = crate.reviewer_reference(project.id, actor_hash)
     import_jobs = (
         (
             await db.execute(
@@ -273,7 +285,7 @@ async def _load(db: AsyncSession, project, where=None, search=None):
         .scalars()
         .first()
     )
-    return articles, preds, annos, import_jobs, inf_job
+    return articles, preds, annos, import_jobs, None if search.kind == "blind" else inf_job
 
 
 def _slug(project) -> str:
@@ -548,7 +560,10 @@ async def get_crate_export(
 ) -> dict | None:
     """Dernier export RO-Crate de la recherche (statut, progression, téléchargeable ?)."""
     project = await _require_project_member(db, project_id, user)
-    job = await _latest_export(db, project_id, await get_search(db, project, search))
+    scope = await get_search(db, project, search)
+    if scope.kind == "blind":
+        await _require_lead_or_admin(db, project_id, user)
+    job = await _latest_export(db, project_id, scope)
     return _export_payload(job) if job else None
 
 
@@ -560,6 +575,11 @@ async def download_crate(
     job = await db.get(ExportJob, job_id)
     if job is None or job.project_id != project.id or job.status != "COMPLETED" or not job.filename:
         raise HTTPException(status_code=404, detail="export not found")
+    scope = await get_search(db, project, job.search_id)
+    if scope.kind == "blind":
+        # A project-wide archive includes every review, including those hidden from an annotator.
+        # Check the stored scope so older archives and direct download URLs are protected too.
+        await _require_lead_or_admin(db, project_id, user)
     path = Path(export_dir()) / job.filename
     if not path.is_file():  # purgé (plus de 7 jours) : à relancer
         raise HTTPException(status_code=410, detail="export expired")

@@ -55,6 +55,13 @@ def sha256_json(obj) -> str:
     return hashlib.sha256(json.dumps(obj, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
+def reviewer_reference(project_id, annotator_hash: str | None) -> str | None:
+    """Project-scoped pseudonym from the salted digest retained on account deletion."""
+    if not annotator_hash:
+        return None
+    return "reviewer-" + sha256_json(["diggypaper-reviewer", str(project_id), annotator_hash])
+
+
 def fulltext_markdown(a) -> str:
     """Titre + abstract + sections du texte intégral, en Markdown."""
     out = [f"# {a.title or a.pmid or a.id}", ""]
@@ -100,7 +107,11 @@ def article_record(a, key: str, pred, annos: list, fields: list[dict]) -> dict:
         },
         "human": [
             {
+                "annotation_id": str(h.id),
+                "created_at": h.created_at.isoformat() if h.created_at else None,
+                "reviewer_ref": getattr(h, "reviewer_ref", None),
                 "answers": {f["key"]: (h.decision_json or {}).get(f["key"]) for f in fields},
+                "evidence_quotes": (h.decision_json or {}).get("evidence_quotes"),
                 "notes": h.notes,
             }
             for h in annos
@@ -364,4 +375,12 @@ Export RO-Crate (Diggypaper) — {datetime.now(UTC):%Y-%m-%d}.
   les textes intégraux et PDF conservent la licence de leurs ayants droit.
 - `articles/<clé>/` : un dossier par article ({n_articles}) — `metadata.json`, `fulltext.md`
   ({n_text} avec texte intégral, sinon `abstract.md`) et `fulltext.pdf` ({n_pdf} conservés)
+
+Dans `metadata.json`, chaque entrée `human` conserve l'identifiant et la date de l'annotation,
+les réponses, les notes et les `evidence_quotes` enregistrés (null si absents).
+`reviewer_ref` est un pseudonyme propre au projet, dérivé de l'empreinte salée utilisée lors
+de la suppression du compte ; il reste stable après cette suppression si l'e-mail et le sel
+n'ont pas changé. Il est null si l'identité n'est plus disponible. Aucun nom ou e-mail n'est
+ajouté à ces entrées. Ces citations ne constituent ni une vérification de source ni une
+évaluation de leur soutien aux réponses ; les textes exportés sont les textes actuels.
 """
