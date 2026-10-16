@@ -1,0 +1,10 @@
+{
+  "schema_version": "seip-pilot-manifest-v1",
+  "state": "draft",
+  "protocol_version": "seip-qualification-v0.1",
+  "selection_rule": "PENDING: qualified reviewers must approve a reproducible selection rule before candidate selection",
+  "seed": 0,
+  "papers": [],
+  "freeze": null,
+  "attempts": []
+}
