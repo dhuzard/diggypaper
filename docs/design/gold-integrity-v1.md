@@ -9,7 +9,8 @@ The first refresh of a pre-existing gold row captures its then-current values as
 `legacy_unqualified` before adding the new revision. Earlier changes to that
 legacy row cannot be reconstructed. Deleting the owning gold row, article, or
 project cascades the revisions under the existing cleanup lifecycle; individual
-revision updates are blocked in PostgreSQL and SQLite.
+revision updates and direct deletes are blocked in PostgreSQL and SQLite while
+the owning gold row exists.
 
 Each revision freezes its answer field keys and records a digest over those
 fields, along with a

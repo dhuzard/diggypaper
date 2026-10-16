@@ -744,6 +744,15 @@ event.listen(
         "BEGIN SELECT RAISE(ABORT, 'gold revisions are immutable'); END"
     ).execute_if(dialect="sqlite"),
 )
+event.listen(
+    GoldRevision.__table__,
+    "after_create",
+    DDL(
+        "CREATE TRIGGER gold_revisions_delete_guard BEFORE DELETE ON gold_revisions "
+        "WHEN EXISTS (SELECT 1 FROM gold_articles WHERE id = OLD.gold_id) "
+        "BEGIN SELECT RAISE(ABORT, 'gold revisions require owner deletion'); END"
+    ).execute_if(dialect="sqlite"),
+)
 
 
 class ArticlePrediction(_ProvenanceState, Base):
