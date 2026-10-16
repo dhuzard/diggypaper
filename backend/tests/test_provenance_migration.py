@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from sqlalchemy import delete, insert, select, text, update
 from sqlalchemy.engine import make_url
@@ -26,15 +27,20 @@ from test_provenance import numeric_envelopes, prepared
 from app.db.models import (
     Article,
     ArticlePrediction,
+    BenchmarkPrediction,
     BenchmarkRun,
+    BenchmarkStatus,
     HumanAnnotation,
     InferenceJob,
     Invocation,
+    ModelRegistry,
     Project,
+    PromptTemplate,
     Search,
     SourceSnapshot,
 )
 from app.evidence_prediction import prediction_envelope
+from app.inference import OpenAICompatibleService
 from app.provenance import (
     MAX_RAW_BYTES,
     Reconciliation,
@@ -51,6 +57,7 @@ from app.provenance import (
 )
 from app.provenance_capture import capture_article_source
 from app.quote_checks import check_prediction_quotes
+from app.tasks.benchmark import _run_benchmark
 
 BACKEND = Path(__file__).resolve().parents[1]
 DATA = json.loads((Path(__file__).parent / "fixtures/provenance_v1.json").read_text("utf-8"))
@@ -95,6 +102,110 @@ async def postgres_database():
             )
             await connection.exec_driver_sql(f'DROP DATABASE "{name}"')
         await admin.dispose()
+
+
+async def test_postgres_bound_benchmark_variant_and_decision_immutable(
+    postgres_database, monkeypatch
+):
+    url, engine = postgres_database
+    await alembic(url, "upgrade", "0025")
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        project = Project(title="Bound benchmark")
+        session.add(project)
+        await session.flush()
+        article = Article(project_id=project.id, title="Article", abstract="Mice")
+        prompt = PromptTemplate(
+            project_id=project.id, version_number="v1", system_prompt="Classify",
+            user_prompt_schema="{article_text}",
+        )
+        model = ModelRegistry(name="benchmark-model", model_identifier="model-x")
+        run = BenchmarkRun(
+            project_id=project.id, prompt_template_id=prompt.id,
+            models_tested=["benchmark-model"], status=BenchmarkStatus.PENDING,
+        )
+        session.add_all([article, prompt, model])
+        await session.flush()
+        session.add(run)
+        await session.commit()
+
+    async def skip_unload(*_args):
+        pass
+
+    monkeypatch.setattr("app.tasks.benchmark.unload_ollama", skip_unload)
+    transport = httpx.MockTransport(
+        lambda _request: httpx.Response(
+            200, json={"choices": [{"message": {"content": '{"use_ai_behavior": true}'}}]}
+        )
+    )
+    async with httpx.AsyncClient(transport=transport) as http:
+        await _run_benchmark(
+            str(run.id), session_factory=factory,
+            inference=OpenAICompatibleService("http://test/v1", http=http),
+        )
+    # Upgrade with a real, already-bound benchmark row in the database.
+    await alembic(url, "upgrade", "head")
+    async with factory() as session:
+        bound = (await session.execute(select(BenchmarkPrediction))).scalar_one()
+        call = await session.get(Invocation, bound.invocation_id)
+        assert call.outcome == "succeeded" and bound.variant == call.variant
+        for change in (
+            {"variant": "another"},
+            {"decision_json": {"use_ai_behavior": False}},
+            {"model_name": "another"},
+            {"error": "fabricated"},
+        ):
+            with pytest.raises(DBAPIError):
+                async with session.begin_nested():
+                    await session.execute(
+                        update(BenchmarkPrediction)
+                        .where(BenchmarkPrediction.id == bound.id)
+                        .values(**change)
+                    )
+        with pytest.raises(DBAPIError):
+            async with session.begin_nested():
+                session.add(
+                    BenchmarkPrediction(
+                        benchmark_run_id=run.id, article_id=article.id,
+                        model_name=bound.model_name, variant="another",
+                        decision_json=bound.decision_json,
+                        search_id=bound.search_id,
+                        provenance_project_id=bound.provenance_project_id,
+                        source_snapshot_id=bound.source_snapshot_id,
+                        invocation_id=bound.invocation_id,
+                        invocation_group_id=bound.invocation_group_id,
+                    )
+                )
+                await session.flush()
+        with pytest.raises(DBAPIError):
+            async with session.begin_nested():
+                session.add(
+                    BenchmarkPrediction(
+                        benchmark_run_id=run.id, article_id=article.id,
+                        model_name=bound.model_name, variant=bound.variant,
+                        decision_json={"use_ai_behavior": False},
+                        search_id=bound.search_id,
+                        provenance_project_id=bound.provenance_project_id,
+                        source_snapshot_id=bound.source_snapshot_id,
+                        invocation_id=bound.invocation_id,
+                        invocation_group_id=bound.invocation_group_id,
+                    )
+                )
+                await session.flush()
+        legacy = BenchmarkPrediction(
+            benchmark_run_id=run.id, article_id=article.id,
+            model_name="legacy", variant="old", decision_json={"old": True},
+        )
+        session.add(legacy)
+        await session.commit()
+        await session.execute(
+            update(BenchmarkPrediction)
+            .where(BenchmarkPrediction.id == legacy.id)
+            .values(variant="revised", decision_json={"old": False})
+        )
+        await session.commit()
+        await session.refresh(legacy)
+        assert legacy.variant == "revised" and legacy.decision_json == {"old": False}
 
 
 async def test_populated_postgres_upgrade_downgrade_and_storage_guards(postgres_database):
@@ -415,7 +526,7 @@ async def test_populated_postgres_upgrade_downgrade_and_storage_guards(postgres_
     blocked = await alembic(url, "downgrade", "0021", success=False)
     assert "refusing to discard retained provenance" in blocked.stderr
     async with engine.begin() as connection:
-        assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "0025"
+        assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "0026"
         assert await connection.scalar(text("SELECT count(*) FROM source_snapshots")) == 2
         # Explicit ownership deletion remains the documented retention boundary.
         await connection.execute(delete(Project).where(Project.id == pid))

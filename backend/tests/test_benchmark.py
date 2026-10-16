@@ -2,7 +2,8 @@
 
 import httpx
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import (
@@ -279,6 +280,104 @@ async def test_real_benchmark_chat_retains_actual_call_and_source(engine, sessio
     assert captured.request["messages"][1]["content"] == "Article text:\nabstract 0"
     assert invocation.outcome == "succeeded"
     assert any(span.origin == "target" for span in captured.input_spans)
+
+
+async def test_bound_benchmark_result_rejects_variant_and_result_rewrite(
+    engine, session, monkeypatch
+):
+    project, prompt, arts = await _project_with_articles(session, 1)
+    run = BenchmarkRun(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        models_tested=["Kev-4B"],
+        options={},
+        status=BenchmarkStatus.PENDING,
+    )
+    session.add(run)
+    await session.commit()
+
+    async def skip_unload(*_args):
+        pass
+
+    monkeypatch.setattr("app.tasks.benchmark.unload_ollama", skip_unload)
+    transport = httpx.MockTransport(
+        lambda _request: httpx.Response(
+            200, json={"choices": [{"message": {"content": '{"use_ai_behavior": true}'}}]}
+        )
+    )
+    async with httpx.AsyncClient(transport=transport) as http:
+        factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        await _run_benchmark(
+            str(run.id), session_factory=factory,
+            inference=OpenAICompatibleService("http://test/v1", http=http),
+        )
+    bound = (await session.execute(select(BenchmarkPrediction))).scalar_one()
+    assert bound.invocation_id is not None
+
+    for values in (
+        {"variant": "another prompt"},
+        {"decision_json": {"use_ai_behavior": False}},
+        {"model_name": "another model"},
+        {"error": "fabricated"},
+        {"confidence_score": 0.1},
+        {"seconds": 999.0},
+    ):
+        with pytest.raises(DBAPIError):
+            async with session.begin_nested():
+                await session.execute(
+                    update(BenchmarkPrediction).where(BenchmarkPrediction.id == bound.id).values(
+                        **values
+                    )
+                )
+    with pytest.raises(DBAPIError):
+        async with session.begin_nested():
+            session.add(
+                BenchmarkPrediction(
+                    benchmark_run_id=run.id,
+                    article_id=arts[0].id,
+                    model_name=bound.model_name,
+                    variant="wrong variant",
+                    decision_json=bound.decision_json,
+                    search_id=bound.search_id,
+                    provenance_project_id=bound.provenance_project_id,
+                    source_snapshot_id=bound.source_snapshot_id,
+                    invocation_id=bound.invocation_id,
+                    invocation_group_id=bound.invocation_group_id,
+                )
+            )
+            await session.flush()
+    with pytest.raises(DBAPIError):
+        async with session.begin_nested():
+            session.add(
+                BenchmarkPrediction(
+                    benchmark_run_id=run.id,
+                    article_id=arts[0].id,
+                    model_name=bound.model_name,
+                    variant=bound.variant,
+                    decision_json={"use_ai_behavior": False},
+                    search_id=bound.search_id,
+                    provenance_project_id=bound.provenance_project_id,
+                    source_snapshot_id=bound.source_snapshot_id,
+                    invocation_id=bound.invocation_id,
+                    invocation_group_id=bound.invocation_group_id,
+                )
+            )
+            await session.flush()
+
+    legacy = BenchmarkPrediction(
+        benchmark_run_id=run.id, article_id=arts[0].id,
+        model_name="legacy", variant="old", decision_json={"old": True},
+    )
+    session.add(legacy)
+    await session.commit()
+    await session.execute(
+        update(BenchmarkPrediction).where(BenchmarkPrediction.id == legacy.id).values(
+            variant="revised", decision_json={"old": False}
+        )
+    )
+    await session.commit()
+    await session.refresh(legacy)
+    assert legacy.variant == "revised" and legacy.decision_json == {"old": False}
 
 
 async def test_failed_benchmark_http_retains_failure_without_prediction(engine, session):
