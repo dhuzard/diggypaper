@@ -12,8 +12,13 @@ without a database or network connection.
 
 Only frozen title/abstract captures are distributed when every retained view
 regenerates exactly from those components and the captured request has no
-prompt examples, peer invocation, retained raw artifact, full-text section, or
-obvious contact/credential text. Other captured runs keep an
+separately mapped example input spans, peer invocation, retained raw artifact,
+full-text section, or obvious contact/credential text. The canonical invocation
+copies prompt metadata (`system_template`, `user_template`) and the rendered
+request. Text in those fields can include material whose redistribution rights
+or privacy status this validator cannot determine, even when there is no
+`origin=example` span. The default export cannot certify redistribution rights
+for those fields or the overall archive. Other captured runs keep an
 explicit `source_unavailable` result; runs without frozen refs remain
 `legacy_unversioned`. The companion never reads a mutable current article to
 reconstruct older input. The provider response is deliberately withheld, so
