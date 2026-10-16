@@ -213,6 +213,8 @@ All six implementation issues are native GitHub sub-issues of the epic:
 
 Each issue includes code evidence, scope/non-goals, minimal implementation, files, compatibility, acceptance criteria, tests, dependencies, effort, agent suitability and Definition of Done. The epic and issues link back to this report. Documentation branch: `docs/seip-audit-2026-10`.
 
+The [autonomous implementation plan](../plans/2026-10-seip-autonomous-implementation.md) assigns agent roles/models, exclusive file ownership, small PR waves and independent engineering/scientific review gates. It is planning documentation; no application change or issue closure is implied.
+
 ## 15. Adjacent issues added after the audit baseline
 
 Issues [#9](https://github.com/dhuzard/diggypaper/issues/9), [#10](https://github.com/dhuzard/diggypaper/issues/10) and [#11](https://github.com/dhuzard/diggypaper/issues/11) were created after the issue preflight in §1. They were reviewed as planning inputs on 2026-10-16. Their contents are proposals, not verified behavior or findings from the audited commit, and they do not change E1–E8 verdicts or the 22–33 developer-day SEIP estimate.
