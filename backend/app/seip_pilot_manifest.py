@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 import re
+import stat
 import sys
 from collections import Counter, defaultdict
 from datetime import datetime
@@ -93,7 +94,7 @@ def timestamp(value, label: str) -> datetime:
     return parsed
 
 
-def artifact(base: Path, path, expected_hash: str, *, text: bool = False) -> None:
+def artifact(base: Path, path, expected_hash: str, *, text: bool = False) -> bytes:
     sha(expected_hash, "artifact")
     require(isinstance(path, str) and bool(path), "artifact path required")
     relative = Path(path)
@@ -102,7 +103,9 @@ def artifact(base: Path, path, expected_hash: str, *, text: bool = False) -> Non
     resolved = (root / relative).resolve()
     require(resolved.is_relative_to(root), "artifact escapes manifest directory")
     try:
-        require(resolved.stat().st_size <= MAX_ARTIFACT_BYTES, "artifact exceeds byte bound")
+        details = resolved.stat()
+        require(stat.S_ISREG(details.st_mode), "artifact must be a regular file")
+        require(details.st_size <= MAX_ARTIFACT_BYTES, "artifact exceeds byte bound")
         data = resolved.read_bytes()
     except OSError as exc:
         raise PilotManifestError("artifact cannot be read") from exc
@@ -112,6 +115,7 @@ def artifact(base: Path, path, expected_hash: str, *, text: bool = False) -> Non
             data.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise PilotManifestError("effective input is not UTF-8") from exc
+    return data
 
 
 def aliases(values) -> set[tuple[str, str]]:
@@ -231,6 +235,11 @@ def _papers(manifest: dict, base: Path) -> tuple[dict, dict, dict]:
         require(paper["status"] == "excluded", "duplicate_of requires exclusion")
         require(duplicate_of in eligible and duplicate_of != paper["id"], "invalid duplicate_of")
         original = eligible[duplicate_of]
+        owners = {study_owner[paper["study_key"]]} if paper["study_key"] in study_owner else set()
+        owners.update(
+            alias_owner[alias] for alias in aliases(paper["aliases"]) if alias in alias_owner
+        )
+        require(owners <= {duplicate_of}, "excluded duplicate bridges eligible studies/splits")
         require(
             paper["study_key"] == original["study_key"]
             or bool(aliases(paper["aliases"]) & aliases(original["aliases"])),
@@ -352,11 +361,27 @@ def _freeze(manifest: dict, eligible: dict, base: Path) -> tuple[dict, datetime]
         or bool(nonempty(freeze["reference_set_id"], "reference set ID")),
         "invalid reference set",
     )
-    require(
-        freeze["retry_rule"] in {"first_attempt", "first_valid_else_last"}, "invalid retry rule"
-    )
+    require(freeze["retry_rule"] == "first_attempt", "unverified validity cannot choose retries")
     name(freeze["attempt_manifest_id"], "attempt manifest ID")
     return freeze, frozen_at
+
+
+def _unique_output_pairs(pairs):
+    result = {}
+    for key, value in pairs:
+        require(key not in result, "duplicate declared-valid output JSON key")
+        result[key] = value
+    return result
+
+
+def _reject_output_constant(value):
+    raise PilotManifestError(f"nonfinite declared-valid output JSON value: {value}")
+
+
+def _finite_output_float(value):
+    number = float(value)
+    require(math.isfinite(number), "nonfinite declared-valid output JSON number")
+    return number
 
 
 def _attempts(manifest: dict, eligible: dict, freeze: dict, frozen_at: datetime, base: Path) -> str:
@@ -388,7 +413,8 @@ def _attempts(manifest: dict, eligible: dict, freeze: dict, frozen_at: datetime,
         require(type(row["index"]) is int and row["index"] >= 1, "invalid attempt index")
         require(timestamp(row["recorded_at"], "attempt") >= frozen_at, "attempt predates freeze")
         require(
-            row["state"] in {"valid", "invalid_json", "invalid_schema", "error", "missing_call"},
+            row["state"]
+            in {"declared_valid", "invalid_json", "invalid_schema", "error", "missing_call"},
             "invalid attempt state",
         )
         require(type(row["selected"]) is bool, "selected must be boolean")
@@ -400,10 +426,21 @@ def _attempts(manifest: dict, eligible: dict, freeze: dict, frozen_at: datetime,
             row["configuration_sha256"] == freeze["configuration_sha256"],
             "attempt configuration drift",
         )
-        if row["state"] in {"valid", "invalid_json", "invalid_schema"}:
+        if row["state"] in {"declared_valid", "invalid_json", "invalid_schema"}:
             name(row["invocation_id"], "invocation ID")
-            artifact(base, row["output_path"], sha(row["output_sha256"], "output"))
+            raw_output = artifact(base, row["output_path"], sha(row["output_sha256"], "output"))
             require(row["error_code"] is None, "output attempt has error code")
+            if row["state"] == "declared_valid":
+                try:
+                    parsed = json.loads(
+                        raw_output.decode("utf-8"),
+                        object_pairs_hook=_unique_output_pairs,
+                        parse_constant=_reject_output_constant,
+                        parse_float=_finite_output_float,
+                    )
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise PilotManifestError("declared-valid output is not UTF-8 JSON") from exc
+                require(isinstance(parsed, dict), "declared-valid output must be a JSON object")
         else:
             require(
                 row["output_path"] is None and row["output_sha256"] is None,
@@ -431,10 +468,7 @@ def _attempts(manifest: dict, eligible: dict, freeze: dict, frozen_at: datetime,
             not any(item["state"] == "missing_call" for item in ordered) or len(ordered) == 1,
             "missing call cannot have retries",
         )
-        if freeze["retry_rule"] == "first_attempt":
-            chosen = ordered[0]
-        else:
-            chosen = next((item for item in ordered if item["state"] == "valid"), ordered[-1])
+        chosen = ordered[0]
         require(
             sum(item["selected"] for item in ordered) == 1 and chosen["selected"],
             "selected retry violates frozen rule",
@@ -497,6 +531,7 @@ def validate_pilot_manifest(manifest: dict, base_dir: Path) -> dict:
         "attempt_manifest_sha256": attempts_hash,
         **availability,
         "qualification": "not_assessed",
+        "output_schema_validation": "unverified",
     }
 
 

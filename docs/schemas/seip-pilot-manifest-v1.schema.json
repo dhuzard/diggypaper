@@ -96,7 +96,7 @@
         "fields": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/field"}},
         "codebook_version": {"type": "string", "minLength": 1},
         "reference_set_id": {"type": ["string", "null"]},
-        "retry_rule": {"enum": ["first_attempt", "first_valid_else_last"]},
+        "retry_rule": {"const": "first_attempt"},
         "attempt_manifest_id": {"$ref": "#/$defs/id"},
         "stratum_deviation_reason": {"type": "string", "minLength": 1}
       }
@@ -108,7 +108,7 @@
         "paper_id": {"$ref": "#/$defs/id"},
         "index": {"type": "integer", "minimum": 1},
         "recorded_at": {"type": "string", "format": "date-time"},
-        "state": {"enum": ["valid", "invalid_json", "invalid_schema", "error", "missing_call"]},
+        "state": {"enum": ["declared_valid", "invalid_json", "invalid_schema", "error", "missing_call"]},
         "invocation_id": {"type": ["string", "null"]},
         "input_sha256": {"$ref": "#/$defs/sha256"},
         "configuration_sha256": {"$ref": "#/$defs/sha256"},
