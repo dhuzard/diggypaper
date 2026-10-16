@@ -90,17 +90,16 @@ def _score(identifier: str, text: str) -> float:
 
 async def score_relevance(identifier: str, text: str, *, trace=None) -> float:
     """Probabilité de pertinence [0, 1] (calcul CPU hors boucle asyncio)."""
+    if trace is None:
+        return await asyncio.to_thread(_score, identifier, text)
     session, feeds = await asyncio.to_thread(_prepare, identifier, text)
-    if trace is not None:
-        await trace.before_run(feeds, identifier=identifier)
+    await trace.before_run(feeds, identifier=identifier)
     try:
         score = await asyncio.to_thread(_run, session, feeds)
     except Exception:
-        if trace is not None:
-            await trace.on_run_failure()
+        await trace.on_run_failure()
         raise
-    if trace is not None:
-        await trace.on_run_result(score)
+    await trace.on_run_result(score)
     return score
 
 
