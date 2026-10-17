@@ -34,6 +34,7 @@ from app.db.base import make_engine
 from app.db.models import (
     Article,
     ArticlePrediction,
+    BackendType,
     GoldArticle,
     InferenceJob,
     InferenceJobStatus,
@@ -57,6 +58,7 @@ from app.provenance import invocation_from_record
 from app.provenance_capture import capture_article_source
 from app.provenance_chat import PersistedChatTrace
 from app.provenance_render import render_chat
+from app.provenance_scorer import PersistedScorerTrace
 from app.quote_checks import check_prediction_quotes
 from app.schema import project_fields
 from app.searches import ScopedProject, get_search, gold_condition, in_search, lot_condition
@@ -298,11 +300,10 @@ async def _do_inference(
 
     frozen: dict = {}
     invocation_groups: dict = {}
+    invocation_sequences: dict = {}
 
-    async def predict(model, article, *, light: bool) -> tuple[dict, PersistedChatTrace | None]:
+    async def predict(model, article, *, light: bool):
         """Scoreur (Laya…) ou LLM génératif ; ``light`` = étage 1 (abstract seulement)."""
-        if is_scorer(model):
-            return await score_prediction(model, project, article, light=light), None
         if article.id not in frozen:
             snapshot, main_view_id = await capture_article_source(
                 session,
@@ -313,6 +314,36 @@ async def _do_inference(
             await session.commit()  # No source row lock crosses the model request.
             frozen[article.id] = (snapshot, main_view_id)
         snapshot, main_view_id = frozen[article.id]
+        if is_scorer(model):
+            view_id = (
+                next(v.id for v in snapshot.views if v.kind == "title_abstract")
+                if light or model.backend_type == BackendType.ONNX_LOCAL
+                else main_view_id
+            )
+            view = next(v for v in snapshot.views if v.id == view_id)
+            trace = PersistedScorerTrace(
+                session,
+                snapshot=snapshot,
+                view_id=view_id,
+                job=job,
+                prompt=prompt,
+                model=model,
+                field_schema=(
+                    project_fields(project)
+                    if not light and model.backend_type == BackendType.SYSTEMONE
+                    else []
+                ),
+                group_id=invocation_groups.setdefault(article.id, uuid.uuid4()),
+                stage="prefilter" if light else "main",
+                sequence=invocation_sequences.get(article.id, 0),
+            )
+            out = await score_prediction(
+                model, project, article, light=light, trace=trace, text=view.text
+            )
+            if trace.producing_invocation is None:
+                raise InferenceError("scorer_call_not_captured")
+            invocation_sequences[article.id] = trace.sequence
+            return out, trace
         view_id = (
             next(
                 view.id
@@ -340,7 +371,7 @@ async def _do_inference(
             field_schema=project_fields(project),
             group_id=invocation_groups.setdefault(article.id, uuid.uuid4()),
             stage="prefilter" if light else "main",
-            sequence=0 if light else 1,
+            sequence=invocation_sequences.get(article.id, 0),
         )
         out = await infer_with(
             model,
@@ -352,6 +383,7 @@ async def _do_inference(
         )
         if not isinstance(out, dict):
             raise InferenceError("invalid_json")  # JSON valide mais pas un objet
+        invocation_sequences[article.id] = invocation_sequences.get(article.id, 0) + 1
         return out, trace
 
     async def cancelled() -> bool:
@@ -393,6 +425,7 @@ async def _do_inference(
             await _progress(session, job, processed, len(articles), invalid, counts())
             frozen.pop(article.id, None)
             invocation_groups.pop(article.id, None)
+            invocation_sequences.pop(article.id, None)
             continue
         confidence = prediction.get("confidence_score")
         status = _triage(confidence)
@@ -403,10 +436,11 @@ async def _do_inference(
         else:
             needs_review += 1
         processed += 1
+        bound = producing.producing_invocation if producing else None
         prediction_id = uuid.uuid4()
         quote_checks = (
-            check_prediction_quotes(invocation_from_record(producing.row), prediction)
-            if producing
+            check_prediction_quotes(invocation_from_record(bound), prediction)
+            if bound and not is_scorer(registry.get(model_name))
             else None
         )
         evidence_graph = (
@@ -416,18 +450,18 @@ async def _do_inference(
                 article_id=article.id,
                 project=project,
                 decision=prediction,
-                invocation_id=producing.row.id,
+                invocation_id=bound.id,
                 source_snapshot_id=producing.snapshot.id,
                 quote_checks=quote_checks,
             )
-            if producing
+            if bound and quote_checks is not None
             else None
         )
         session.add(
             ArticlePrediction(
                 id=prediction_id,
                 article_id=article.id,
-                search_id=job.search_id if producing else search.id,
+                search_id=job.search_id if bound else search.id,
                 prompt_template_id=prompt.id,
                 model_used=model_name,
                 decision_json=prediction,
@@ -436,15 +470,16 @@ async def _do_inference(
                 quote_checks_json=quote_checks,
                 evidence_graph_json=evidence_graph,
                 status=status,
-                provenance_project_id=job.project_id if producing else None,
-                source_snapshot_id=producing.snapshot.id if producing else None,
-                invocation_id=producing.row.id if producing else None,
-                invocation_group_id=producing.group_id if producing else None,
+                provenance_project_id=job.project_id if bound else None,
+                source_snapshot_id=producing.snapshot.id if bound else None,
+                invocation_id=bound.id if bound else None,
+                invocation_group_id=producing.group_id if bound else None,
             )
         )
         await _progress(session, job, processed, len(articles), invalid, counts())
         frozen.pop(article.id, None)
         invocation_groups.pop(article.id, None)
+        invocation_sequences.pop(article.id, None)
 
     duration = time.monotonic() - start
     validation = None

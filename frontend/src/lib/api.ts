@@ -55,6 +55,7 @@ export interface Project {
 
 export interface Article {
   id: string;
+  source_view_token?: string;
   pmid: string | null;
   pmcid: string | null;
   doi: string | null;
@@ -623,11 +624,12 @@ export async function submitAnnotation(
   articleId: string,
   annotation: AnnotationPayload,
   searchId?: string,
-  blind = false
+  blind = false,
+  sourceViewToken?: string
 ): Promise<Review> {
   return request<Review>(`/projects/${projectId}/articles/${articleId}/annotation${qs({ search: searchId, blind })}`, {
     method: "POST",
-    body: JSON.stringify(annotation),
+    body: JSON.stringify({ ...annotation, ...(sourceViewToken ? { source_view_token: sourceViewToken } : {}) }),
   });
 }
 
