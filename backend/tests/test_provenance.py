@@ -376,14 +376,26 @@ async def test_sqlite_storage_immutability_lifecycle_and_legacy(session, stored)
     invocation = invocation_record(prepared(source))
     session.add(invocation)
     await session.commit()
+    completed = invocation_record(prepared(source, id=uuid.uuid4(), group_id=uuid.uuid4()))
+    session.add(completed)
+    await session.commit()
+    complete_invocation(
+        completed,
+        "succeeded",
+        response=ResponseCapture(
+            origin="driver_parsed", raw_availability="unavailable",
+            parsed={"answer": True}, reason="parsed driver only",
+        ),
+    )
+    await session.commit()
     legacy = ArticlePrediction(article_id=source.article_id, model_used="legacy")
     bound = ArticlePrediction(
         article_id=source.article_id,
         model_used="captured",
         provenance_project_id=source.project_id,
         source_snapshot_id=source.id,
-        invocation_id=invocation.id,
-        invocation_group_id=invocation.group_id,
+        invocation_id=completed.id,
+        invocation_group_id=completed.group_id,
     )
     review = HumanAnnotation(
         article_id=source.article_id, **review_binding(source, source.views[1].id)
@@ -458,6 +470,38 @@ async def test_sqlite_storage_immutability_lifecycle_and_legacy(session, stored)
                 update(Invocation).where(Invocation.id == invocation.id).values(outcome="failed")
             )
     assert await session.scalar(select(SourceSnapshot.snapshot_sha256)) == source.sha256
+
+
+async def test_prediction_rejects_unfinished_call_without_quote_checks(session, stored):
+    source, _ = stored
+    call = invocation_record(prepared(source))
+    session.add(call)
+    await session.commit()
+
+    async def reject_prediction():
+        with pytest.raises(IntegrityError):
+            async with session.begin_nested():
+                await session.execute(
+                    insert(ArticlePrediction).values(
+                        article_id=source.article_id,
+                        model_used="false-attribution",
+                        provenance_project_id=source.project_id,
+                        source_snapshot_id=source.id,
+                        invocation_id=call.id,
+                        invocation_group_id=call.group_id,
+                    )
+                )
+
+    await reject_prediction()
+    complete_invocation(
+        call,
+        "failed",
+        response=ResponseCapture(
+            origin="unavailable", raw_availability="unavailable", reason="provider rejected call"
+        ),
+    )
+    await session.commit()
+    await reject_prediction()
 
 
 @pytest.mark.parametrize("owner", ["job", "benchmark"])

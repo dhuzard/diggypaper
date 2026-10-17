@@ -1152,6 +1152,32 @@ event.listen(
         "BEGIN SELECT RAISE(ABORT, 'quotation checks require a completed producing call'); END"
     ).execute_if(dialect="sqlite"),
 )
+for _table in (ArticlePrediction.__table__, BenchmarkPrediction.__table__):
+    event.listen(
+        _table,
+        "after_create",
+        DDL(
+            f"CREATE TRIGGER {_table.name}_result_guard BEFORE INSERT ON {_table.name} "
+            "WHEN NEW.invocation_id IS NOT NULL AND NOT EXISTS ("
+            "SELECT 1 FROM invocations i WHERE i.id = NEW.invocation_id "
+            "AND i.outcome = 'succeeded') "
+            "BEGIN SELECT RAISE(ABORT, 'prediction requires a succeeded producing invocation'); "
+            "END"
+        ).execute_if(dialect="sqlite"),
+    )
+    event.listen(
+        _table,
+        "after_create",
+        DDL(
+            f"CREATE TRIGGER {_table.name}_result_guard_update "
+            f"BEFORE UPDATE ON {_table.name} "
+            "WHEN NEW.invocation_id IS NOT NULL AND NOT EXISTS ("
+            "SELECT 1 FROM invocations i WHERE i.id = NEW.invocation_id "
+            "AND i.outcome = 'succeeded') "
+            "BEGIN SELECT RAISE(ABORT, 'prediction requires a succeeded producing invocation'); "
+            "END"
+        ).execute_if(dialect="sqlite"),
+    )
 event.listen(
     ArticlePrediction.__table__,
     "after_create",
