@@ -1,5 +1,7 @@
 # Persisted quotation checks v1
 
+> Status update 2026-10-17: the API payload and UI wording are now on `main`; benchmark matching, UTF-16 conversion and the `not_produced` producer state in the API remain open. See the [merge audit](../audits/2026-10-17-seip-merge-audit.md).
+
 This draft slice stores occurrence checks on normal chat `article_predictions` in
 `quote_checks_json`. It depends on a retained `SourceSnapshotV1` and the final
 successful `InvocationV1`. Historical predictions and scorer-only outputs retain
