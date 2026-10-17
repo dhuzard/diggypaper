@@ -27,7 +27,7 @@ from app.db.models import (
     UserRole,
 )
 from app.provenance import digest
-from app.pseudonym import anonymized_actor_ref
+from app.pseudonym import anonymized_actor_ref, reviewer_reference
 from app.schema import project_fields, validate_decision
 from app.searches import get_search, gold_condition, in_search
 
@@ -188,7 +188,9 @@ def _staleness(revision: GoldRevision | None, latest: HumanAnnotation | None) ->
     }
 
 
-def _revision_payload(revision: GoldRevision) -> dict:
+def _revision_payload(revision: GoldRevision, project_id) -> dict:
+    """Stored actor refs are the durable global digests; only their project-scoped
+    derivation (shared with annotations and support assessments) is exposed."""
     return {
         "id": str(revision.id),
         "sequence": revision.sequence,
@@ -204,14 +206,14 @@ def _revision_payload(revision: GoldRevision) -> dict:
         else None,
         "source_view_ref": str(revision.source_view_ref) if revision.source_view_ref else None,
         "source_view_sha256": revision.source_view_sha256,
-        "review_actor_ref": revision.review_actor_ref,
+        "review_actor_ref": reviewer_reference(project_id, revision.review_actor_ref),
         "review_status": revision.review_status,
         "review_blind": revision.review_blind,
         "review_created_at": revision.review_created_at.isoformat()
         if revision.review_created_at
         else None,
         "assessment_refs": revision.assessment_refs_json,
-        "recorded_by_ref": revision.recorded_by_ref,
+        "recorded_by_ref": reviewer_reference(project_id, revision.recorded_by_ref),
         "qualification": revision.provenance_state,
         "created_at": revision.created_at.isoformat() if revision.created_at else None,
     }
@@ -258,7 +260,7 @@ def _payload(
         "stale": "changed" in staleness.values(),
         "staleness": staleness,
         "qualification": current.provenance_state if current else "legacy_unqualified",
-        "revisions": [_revision_payload(revision) for revision in revisions],
+        "revisions": [_revision_payload(revision, g.project_id) for revision in revisions],
     }
 
 

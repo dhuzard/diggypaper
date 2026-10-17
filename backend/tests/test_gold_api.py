@@ -19,7 +19,7 @@ from app.db.models import (
 )
 from app.provenance import review_binding
 from app.provenance_capture import capture_article_source
-from app.pseudonym import anonymized_actor_ref
+from app.pseudonym import anonymized_actor_ref, reviewer_reference
 from tests.test_support_assessments_api import _prediction, _url
 
 VALID_GT = {
@@ -432,8 +432,10 @@ async def test_gold_revision_keeps_actor_pseudonym_after_account_anonymization(
     )
     revision = uuid.UUID(created.json()["revisions"][0]["id"])
     prior_ref = created.json()["revisions"][0]["recorded_by_ref"]
-    assert prior_ref == anonymized_actor_ref(researcher_user.email)
+    digest = anonymized_actor_ref(researcher_user.email)
+    assert prior_ref == reviewer_reference(project.id, digest) != digest
     assert (await client.delete("/api/v1/users/me/anonymize")).status_code == 204
     retained = await session.get(GoldRevision, revision)
     await session.refresh(retained)
-    assert retained.recorded_by_ref == prior_ref
+    assert retained.recorded_by_ref == digest
+    assert reviewer_reference(project.id, retained.recorded_by_ref) == prior_ref

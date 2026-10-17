@@ -17,6 +17,7 @@ import re
 from datetime import UTC, datetime
 
 from app.core.config import get_settings
+from app.pseudonym import reviewer_reference as reviewer_reference
 
 CRATE_CONTEXT = "https://w3id.org/ro/crate/1.1/context"
 CONFORMS = "https://w3id.org/ro/crate/1.1"
@@ -53,13 +54,6 @@ def assign_keys(articles) -> dict:
 
 def sha256_json(obj) -> str:
     return hashlib.sha256(json.dumps(obj, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
-
-
-def reviewer_reference(project_id, annotator_hash: str | None) -> str | None:
-    """Project-scoped pseudonym from the salted digest retained on account deletion."""
-    if not annotator_hash:
-        return None
-    return "reviewer-" + sha256_json(["diggypaper-reviewer", str(project_id), annotator_hash])
 
 
 def fulltext_markdown(a) -> str:
@@ -398,10 +392,14 @@ vérifiables. `answers` est seulement une projection sur les champs actuels et p
 clés historiques ; `decision_json` reste la donnée enregistrée à utiliser pour l'audit.
 `reviewer_ref` est un pseudonyme propre au projet, dérivé de l'empreinte salée utilisée lors
 de la suppression du compte ; il reste stable après cette suppression si l'e-mail et le sel
-n'ont pas changé. Il est null si l'identité n'est plus disponible. Aucun nom ou e-mail n'est
-ajouté à ces entrées JSON. L'archive entière n'est pas pseudonyme : `results.xlsx` contient
-les noms ou e-mails de relecteurs disponibles et l'e-mail du compte qui exporte. Ne la partagez
-qu'avec les personnes autorisées à voir ces identités. Ces citations ne constituent ni une
-vérification de source ni une évaluation de leur soutien aux réponses ; les textes exportés sont
-les textes actuels.
+n'ont pas changé. Il est null si l'identité n'est plus disponible. C'est l'unique politique de
+pseudonymisation des relecteurs : le même `reviewer-…` désigne la même personne dans les
+annotations (`reviewer_ref`), les jugements de soutien (`actor_ref` dans
+`evidence/prediction-history.json`) et les révisions gold de ce projet, et deux projets donnent
+des pseudonymes sans lien. L'empreinte globale conservée en base n'est jamais exportée. Aucun
+nom ou e-mail n'est ajouté à ces entrées JSON. L'archive entière n'est pas pseudonyme :
+`results.xlsx` contient les noms ou e-mails de relecteurs disponibles et l'e-mail du compte qui
+exporte. Ne la partagez qu'avec les personnes autorisées à voir ces identités. Ces citations ne
+constituent ni une vérification de source ni une évaluation de leur soutien aux réponses ; les
+textes exportés sont les textes actuels.
 """

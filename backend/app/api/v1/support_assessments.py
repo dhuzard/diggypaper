@@ -18,7 +18,7 @@ from app.db.models import (
     User,
 )
 from app.evidence_links import EvidenceEnvelopeV1
-from app.pseudonym import anonymized_actor_ref
+from app.pseudonym import anonymized_actor_ref, reviewer_reference
 from app.searches import in_search
 
 router = APIRouter(prefix="/projects", tags=["support assessments"])
@@ -44,13 +44,15 @@ class AssessmentCreate(BaseModel):
 
 
 def _payload(row: EvidenceSupportAssessment) -> dict:
+    """The stored ``actor_ref`` is the durable global digest; expose only its
+    project-scoped derivation (the same one annotations and gold use)."""
     return {
         "id": str(row.id),
         "prediction_id": str(row.prediction_id),
         "graph_revision_ref": str(row.graph_revision_ref),
         "answer_ref": str(row.answer_ref),
         "evidence_ref": str(row.evidence_ref),
-        "actor_ref": row.actor_ref,
+        "actor_ref": reviewer_reference(row.project_id, row.actor_ref),
         "status": row.status,
         "rationale": row.rationale,
         "protocol_version": row.protocol_version,

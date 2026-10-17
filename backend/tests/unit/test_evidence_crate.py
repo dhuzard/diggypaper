@@ -24,6 +24,7 @@ from app.provenance import (
     text_digest,
 )
 from app.provenance_render import legacy_methods_view, render_chat, title_abstract_view
+from app.pseudonym import reviewer_reference
 from app.quote_checks import check_prediction_quotes
 
 DATA = json.loads(
@@ -160,6 +161,12 @@ def test_abstract_capture_replays_without_pdf_response_or_actor_identity():
     assert manifest["results"][0]["quote_state"] == "recorded"
     assert history[0]["evidence_graph"] == pred.evidence_graph_json
     assert history[0]["support_assessments"][0]["status"] == "unclear"
+    # The stored global digest is replaced by the project-scoped reviewer pseudonym,
+    # the same derivation annotations use in ``articles/*/metadata.json``.
+    exported_ref = history[0]["support_assessments"][0]["actor_ref"]
+    assert exported_ref == reviewer_reference(source.project_id, "a" * 64)
+    assert exported_ref != reviewer_reference(uuid.uuid4(), "a" * 64)
+    assert "a" * 64 not in json.dumps(history)
     assert "Private reviewer note" not in json.dumps([manifest, history])
     assert manifest["invocations"][0]["response_capture"]["raw_availability"] == "unavailable"
     assert validate_bundle(manifest, history)["quotation_emission"] == "unverified"
@@ -261,6 +268,9 @@ def test_archive_consumer_detects_hash_and_link_tampering(tmp_path):
     wrong_state[0]["evidence_graph"]["envelope"]["state"] = "legacy_unlinked"
     with pytest.raises(ValueError, match="legacy_must_remain_unlinked"):
         validate_archive(archive("state.zip", manifest, wrong_state))
+    legacy_ref = copy.deepcopy(history)
+    legacy_ref[0]["support_assessments"][0]["actor_ref"] = "a" * 64
+    assert validate_archive(archive("legacy-ref.zip", manifest, legacy_ref))
     for field, value in (("status", "verified_gold"), ("actor_ref", "person@example.org")):
         wrong_assessment = copy.deepcopy(history)
         wrong_assessment[0]["support_assessments"][0][field] = value
