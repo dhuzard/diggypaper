@@ -783,6 +783,100 @@ class ArticlePrediction(_ProvenanceState, Base):
     )
 
 
+class EvidenceSupportAssessment(Base):
+    """Append-only human judgment on one exact prediction answer/evidence link."""
+
+    __tablename__ = "evidence_support_assessments"
+    __table_args__ = (
+        Index("ix_support_assessments_prediction_created", "prediction_id", "created_at"),
+        CheckConstraint(
+            "status IN ('supports','contradicts','insufficient','unclear','not_assessed')",
+            name="ck_support_assessments_status",
+        ),
+        CheckConstraint(
+            "length(rationale) <= 5000 AND "
+            "(status = 'not_assessed' OR length(trim(rationale)) > 0)",
+            name="ck_support_assessments_rationale",
+        ),
+        CheckConstraint(
+            "protocol_version = 'seip-support-v1'",
+            name="ck_support_assessments_protocol",
+        ),
+        CheckConstraint("length(actor_ref) = 64", name="ck_support_assessments_actor_ref"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
+    prediction_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("article_predictions.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    article_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    graph_revision_ref: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    answer_ref: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    evidence_ref: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    actor_ref: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    protocol_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+event.listen(
+    EvidenceSupportAssessment.__table__,
+    "after_create",
+    DDL(
+        "CREATE TRIGGER evidence_support_assessments_guard_insert "
+        "BEFORE INSERT ON evidence_support_assessments WHEN NEW.actor_id IS NULL OR "
+        "NOT EXISTS (SELECT 1 FROM article_predictions p "
+        "JOIN articles a ON a.id = p.article_id "
+        "JOIN json_each(p.evidence_graph_json, '$.envelope.links') link "
+        "WHERE p.id = NEW.prediction_id AND p.article_id = NEW.article_id "
+        "AND a.project_id = NEW.project_id "
+        "AND json_extract(p.evidence_graph_json, '$.envelope.schema_version') "
+        "= 'evidence-envelope-v1' "
+        "AND json_extract(p.evidence_graph_json, '$.envelope.state') = 'structured' "
+        "AND json_extract(p.evidence_graph_json, '$.envelope.scope.record_kind') "
+        "= 'prediction' "
+        "AND replace(json_extract(p.evidence_graph_json, "
+        "'$.envelope.scope.record_ref'), '-', '') = p.id "
+        "AND replace(json_extract(p.evidence_graph_json, "
+        "'$.envelope.scope.revision_ref'), '-', '') = NEW.graph_revision_ref "
+        "AND NEW.graph_revision_ref = p.id "
+        "AND replace(json_extract(p.evidence_graph_json, "
+        "'$.envelope.scope.project_ref'), '-', '') = NEW.project_id "
+        "AND replace(json_extract(p.evidence_graph_json, "
+        "'$.envelope.scope.article_ref'), '-', '') = NEW.article_id "
+        "AND replace(json_extract(link.value, '$.answer_ref'), '-', '') = NEW.answer_ref "
+        "AND replace(json_extract(link.value, '$.evidence_ref'), '-', '') = NEW.evidence_ref) "
+        "BEGIN SELECT RAISE(ABORT, 'support assessment requires an exact retained "
+        "answer/evidence link'); END"
+    ).execute_if(dialect="sqlite"),
+)
+event.listen(
+    EvidenceSupportAssessment.__table__,
+    "after_create",
+    DDL(
+        "CREATE TRIGGER evidence_support_assessments_guard_update "
+        "BEFORE UPDATE ON evidence_support_assessments WHEN NOT ("
+        "OLD.actor_id IS NOT NULL AND NEW.actor_id IS NULL "
+        "AND NEW.id IS OLD.id AND NEW.prediction_id IS OLD.prediction_id "
+        "AND NEW.project_id IS OLD.project_id AND NEW.article_id IS OLD.article_id "
+        "AND NEW.graph_revision_ref IS OLD.graph_revision_ref "
+        "AND NEW.answer_ref IS OLD.answer_ref AND NEW.evidence_ref IS OLD.evidence_ref "
+        "AND NEW.actor_ref IS OLD.actor_ref AND NEW.status IS OLD.status "
+        "AND NEW.rationale IS OLD.rationale "
+        "AND NEW.protocol_version IS OLD.protocol_version "
+        "AND NEW.created_at IS OLD.created_at) "
+        "BEGIN SELECT RAISE(ABORT, 'support assessments are append-only'); END"
+    ).execute_if(dialect="sqlite"),
+)
+
+
 class HumanAnnotation(_ProvenanceState, Base):
     __tablename__ = "human_annotations"
     __table_args__ = (

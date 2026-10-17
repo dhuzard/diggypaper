@@ -19,6 +19,7 @@ from app.api.v1 import (
     projects,
     prompts,
     searches,
+    support_assessments,
     team,
     users,
 )
@@ -71,6 +72,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_users.router, prefix="/api/v1")
     app.include_router(projects.router, prefix="/api/v1")
     app.include_router(annotations.router, prefix="/api/v1")
+    app.include_router(support_assessments.router, prefix="/api/v1")
     app.include_router(team.router, prefix="/api/v1")
     app.include_router(searches.router, prefix="/api/v1")
     app.include_router(export.router, prefix="/api/v1")

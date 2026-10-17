@@ -1,6 +1,5 @@
 """Routes RGPD : anonymisation (DELETE /users/me/anonymize) + export (GET /users/me/export-data)."""
 
-import hashlib
 import uuid
 from datetime import datetime
 from typing import Annotated
@@ -11,8 +10,8 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_current_user_or_anonymized, get_db
-from app.core.config import get_settings
-from app.db.models import HumanAnnotation, ProjectMember, User, UserRole
+from app.db.models import EvidenceSupportAssessment, HumanAnnotation, ProjectMember, User, UserRole
+from app.pseudonym import anonymized_actor_ref
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -64,12 +63,16 @@ async def anonymize(
     if user.anonymized_hash is not None:
         # Déjà anonymisé → idempotent, on ne touche à rien.
         return Response(status_code=204)
-    settings = get_settings()
-    anonymized_hash = hashlib.sha256((settings.anon_salt + user.email).encode("utf-8")).hexdigest()
+    anonymized_hash = anonymized_actor_ref(user.email)
     await db.execute(
         update(HumanAnnotation)
         .where(HumanAnnotation.user_id == user.id)
         .values(user_id=None, annotator_hash=anonymized_hash)
+    )
+    await db.execute(
+        update(EvidenceSupportAssessment)
+        .where(EvidenceSupportAssessment.actor_id == user.id)
+        .values(actor_id=None)
     )
     user.email = f"anonymized-{uuid.uuid4().hex[:12]}@invalid.local"  # m5 : 12 hex
     user.hashed_password = ""

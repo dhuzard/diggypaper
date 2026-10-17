@@ -7,7 +7,6 @@ perd sa dernière appartenance. Les créateurs et les admins ne sont jamais supp
 
 from __future__ import annotations
 
-import hashlib
 import os
 import uuid
 from pathlib import Path
@@ -15,8 +14,8 @@ from pathlib import Path
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
 from app.db.models import (
+    EvidenceSupportAssessment,
     ExportJob,
     HumanAnnotation,
     Invitation,
@@ -25,15 +24,21 @@ from app.db.models import (
     User,
     UserRole,
 )
+from app.pseudonym import anonymized_actor_ref
 
 
 async def delete_user(db: AsyncSession, user: User) -> None:
     """Supprime le compte ; ses annotations restent, anonymisées (hash). Commit à l'appelant."""
-    anon = hashlib.sha256((get_settings().anon_salt + user.email).encode("utf-8")).hexdigest()
+    anon = anonymized_actor_ref(user.email)
     await db.execute(
         update(HumanAnnotation)
         .where(HumanAnnotation.user_id == user.id)
         .values(user_id=None, annotator_hash=anon)
+    )
+    await db.execute(
+        update(EvidenceSupportAssessment)
+        .where(EvidenceSupportAssessment.actor_id == user.id)
+        .values(actor_id=None)
     )
     await db.execute(delete(Invitation).where(func.lower(Invitation.email) == user.email.lower()))
     await db.delete(user)
