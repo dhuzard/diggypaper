@@ -14,6 +14,7 @@ import sys
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import delete, insert, select, text, update
@@ -33,6 +34,7 @@ from app.db.models import (
     Search,
     SourceSnapshot,
 )
+from app.evidence_prediction import prediction_envelope
 from app.provenance import (
     MAX_RAW_BYTES,
     Reconciliation,
@@ -413,7 +415,7 @@ async def test_populated_postgres_upgrade_downgrade_and_storage_guards(postgres_
     blocked = await alembic(url, "downgrade", "0021", success=False)
     assert "refusing to discard retained provenance" in blocked.stderr
     async with engine.begin() as connection:
-        assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "0024"
+        assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "0025"
         assert await connection.scalar(text("SELECT count(*) FROM source_snapshots")) == 2
         # Explicit ownership deletion remains the documented retention boundary.
         await connection.execute(delete(Project).where(Project.id == pid))
@@ -692,3 +694,99 @@ async def test_quote_checks_upgrade_keeps_legacy_null_and_guarded_downgrade(post
         await session.execute(delete(ArticlePrediction).where(ArticlePrediction.id == checked.id))
         await session.commit()
     await alembic(url, "downgrade", "0022")
+
+
+async def test_prediction_evidence_graph_scope_immutability_and_guarded_downgrade(
+    postgres_database,
+):
+    url, engine = postgres_database
+    await alembic(url, "upgrade", "head")
+    source = SourceSnapshotV1.model_validate(DATA["snapshot"])
+    async with engine.begin() as connection:
+        await connection.execute(
+            text("INSERT INTO projects(id,title) VALUES (:id,'Evidence')"),
+            {"id": source.project_id},
+        )
+        await connection.execute(
+            text("INSERT INTO articles(id,project_id) VALUES (:id,:project_id)"),
+            {"id": source.article_id, "project_id": source.project_id},
+        )
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        session.add(source_record(source))
+        await session.commit()
+        call = invocation_record(prepared(source))
+        session.add(call)
+        await session.commit()
+        complete_invocation(
+            call,
+            "succeeded",
+            response=ResponseCapture(
+                origin="driver_parsed", raw_availability="not_captured", parsed={"actual": True}
+            ),
+        )
+        await session.commit()
+        decision = {"evidence_quotes": ["Mice α."]}
+        checks = check_prediction_quotes(invocation_from_record(call), decision)
+        prediction_id = uuid.uuid4()
+        graph = prediction_envelope(
+            prediction_id=prediction_id,
+            project_id=source.project_id,
+            article_id=source.article_id,
+            project=SimpleNamespace(question=None, fields=None),
+            decision=decision,
+            invocation_id=call.id,
+            source_snapshot_id=source.id,
+            quote_checks=checks,
+        )
+        assert graph["envelope"]["state"] == "legacy_unlinked"
+        row = ArticlePrediction(
+            id=prediction_id,
+            article_id=source.article_id,
+            model_used="chat",
+            decision_json=decision,
+            evidence_quotes=decision["evidence_quotes"],
+            quote_checks_json=checks,
+            evidence_graph_json=graph,
+            provenance_project_id=source.project_id,
+            source_snapshot_id=source.id,
+            invocation_id=call.id,
+            invocation_group_id=call.group_id,
+        )
+        session.add(row)
+        await session.commit()
+        for mutation in (
+            {"evidence_graph_json": None},
+            {"decision_json": {"evidence_quotes": []}},
+        ):
+            with pytest.raises(DBAPIError):
+                async with session.begin_nested():
+                    await session.execute(
+                        update(ArticlePrediction)
+                        .where(ArticlePrediction.id == prediction_id)
+                        .values(**mutation)
+                    )
+        forged = copy.deepcopy(graph)
+        forged["envelope"]["scope"]["article_ref"] = str(uuid.uuid4())
+        with pytest.raises(DBAPIError):
+            async with session.begin_nested():
+                await session.execute(
+                    insert(ArticlePrediction).values(
+                        article_id=source.article_id,
+                        model_used="forged",
+                        quote_checks_json=checks,
+                        evidence_graph_json=forged,
+                        provenance_project_id=source.project_id,
+                        source_snapshot_id=source.id,
+                        invocation_id=call.id,
+                        invocation_group_id=call.group_id,
+                    )
+                )
+    refused = await alembic(url, "downgrade", "0024", success=False)
+    assert "refusing to discard persisted answer/evidence graphs" in refused.stderr
+    async with factory() as session:
+        await session.execute(
+            delete(ArticlePrediction).where(ArticlePrediction.id == prediction_id)
+        )
+        await session.commit()
+    await alembic(url, "downgrade", "0024")

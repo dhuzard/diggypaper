@@ -107,6 +107,8 @@ def _prediction_payload(p: ArticlePrediction) -> dict:
         # Null means this historical/scorer prediction was not checked against
         # a captured model input. Do not infer a result from today's article.
         "quote_checks": p.quote_checks_json,
+        # Context binding is separate from quote occurrence and answer support.
+        "evidence_graph": p.evidence_graph_json,
         "status": p.status,
         "created_at": p.created_at.isoformat() if p.created_at else None,
     }
@@ -271,7 +273,12 @@ async def get_prediction(
     user: UserDep,
     search: uuid.UUID | None = None,
 ) -> dict | None:
-    """Prédiction la plus récente de l'article dans cette recherche (null si aucune)."""
+    """Prédiction la plus récente de l'article dans cette recherche (null si aucune).
+
+    `evidence_graph.envelope.evidence[].origin == captured_input_context` means
+    only that source input was retained. Consult quote_checks for occurrence;
+    neither occurrence nor an answer link establishes scientific support.
+    """
     article = await _require_article(db, project_id, article_id, user)
     scope = await _scope(db, project_id, search)
     if scope.kind == "blind":

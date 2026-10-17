@@ -108,6 +108,7 @@ def build_system_prompt(question: str | None, fields: list[dict]) -> str:
             '  "field_confidence": { one float (0.0 to 1.0) per answer above, keyed by the '
             "answer's field name: how certain you are of THAT answer },",
             '  "evidence_quotes": [ string (exact verbatim quotes from the text) ],',
+            '  "evidence_links": [ { "field_key": string, "quote_index": integer } ],',
             '  "reasoning_summary": string',
             "}",
         ]
@@ -118,7 +119,9 @@ def build_system_prompt(question: str | None, fields: list[dict]) -> str:
         f"{(question or DEFAULT_QUESTION).strip()}\n\n"
         f"Return ONLY a valid JSON object matching this schema:\n{schema}\n"
         "No markdown wrappers, no text outside the JSON. If the text does not allow "
-        "an answer, lower confidence_score."
+        "an answer, lower confidence_score. Use zero-based quote_index values to "
+        "link each quote only to answer fields it addresses; leave evidence_links "
+        "empty when a link is uncertain."
     )
 
 
