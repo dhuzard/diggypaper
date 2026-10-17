@@ -1,6 +1,7 @@
 """Human support labels stay scoped to authorized, exact graph revisions."""
 
 import uuid
+from copy import deepcopy
 from datetime import timedelta
 from types import SimpleNamespace
 
@@ -131,6 +132,59 @@ async def test_unknown_link_revision_and_rationale_rejected(
     assert (await client.post(url, json=wrong_revision)).status_code == 409
     assert (await client.post(url, json={**payload, "rationale": " "})).status_code == 422
     assert (await client.get(url)).json()["state"] == "not_assessed"
+
+
+async def test_forged_structured_link_to_legacy_evidence_is_not_assessable(
+    client, session, researcher_user, do_login
+):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _project_article(session, researcher_user)
+    prediction, payload = await _prediction(session, project, article)
+    graph = deepcopy(prediction.evidence_graph_json)
+    evidence = graph["envelope"]["evidence"][0]
+    evidence.update(origin="legacy_unversioned", source_binding_ref=None, quote_match_ref=None)
+    prediction.evidence_graph_json = graph
+    await session.commit()
+    url = _url(project, article, prediction)
+    response = await client.post(url, json=payload)
+    assert response.status_code == 409, response.text
+    assert (await client.get(url)).json()["assessments"] == []
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "missing_answer",
+        "duplicate_answer",
+        "missing_evidence",
+        "duplicate_evidence",
+        "duplicate_link",
+    ],
+)
+async def test_forged_graph_nodes_or_links_cannot_receive_judgment(
+    client, session, researcher_user, do_login, fault
+):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _project_article(session, researcher_user)
+    prediction, payload = await _prediction(session, project, article)
+    graph = deepcopy(prediction.evidence_graph_json)
+    envelope = graph["envelope"]
+    if fault == "missing_answer":
+        envelope["answers"] = []
+    elif fault == "duplicate_answer":
+        envelope["answers"].append(deepcopy(envelope["answers"][0]))
+    elif fault == "missing_evidence":
+        envelope["evidence"] = []
+    elif fault == "duplicate_evidence":
+        envelope["evidence"].append(deepcopy(envelope["evidence"][0]))
+    else:
+        envelope["links"].append(deepcopy(envelope["links"][0]))
+    prediction.evidence_graph_json = graph
+    await session.commit()
+    url = _url(project, article, prediction)
+    response = await client.post(url, json=payload)
+    assert response.status_code == 409, response.text
+    assert (await client.get(url)).json()["assessments"] == []
 
 
 async def test_explicit_not_assessed_is_not_a_support_verdict(
