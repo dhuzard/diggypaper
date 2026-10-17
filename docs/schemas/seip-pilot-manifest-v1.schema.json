@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dhuzard/diggypaper/blob/seip/pilot-manifest/docs/schemas/seip-pilot-manifest-v1.schema.json",
+  "title": "SEIP qualification pilot manifest v1",
+  "description": "Shape only. app.seip_pilot_manifest validates local artifact bytes, hashes, cohort counts, aliases, leakage declarations, freeze and attempts. An unsigned manifest cannot prove chronology, scientific eligibility or blinding.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "state", "protocol_version", "selection_rule", "seed", "papers", "freeze", "attempts"],
+  "properties": {
+    "schema_version": {"const": "seip-pilot-manifest-v1"},
+    "state": {"enum": ["draft", "frozen"]},
+    "protocol_version": {"type": "string", "minLength": 1},
+    "selection_rule": {"type": "string", "minLength": 1},
+    "seed": {"type": "integer"},
+    "papers": {"type": "array", "maxItems": 1000, "items": {"$ref": "#/$defs/paper"}},
+    "freeze": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/freeze"}]},
+    "attempts": {"type": "array", "maxItems": 1000, "items": {"$ref": "#/$defs/attempt"}}
+  },
+  "allOf": [
+    {"if": {"properties": {"state": {"const": "draft"}}}, "then": {"properties": {"freeze": {"type": "null"}, "attempts": {"maxItems": 0}}}},
+    {"if": {"properties": {"state": {"const": "frozen"}}}, "then": {"properties": {"freeze": {"$ref": "#/$defs/freeze"}}}}
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "alias": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "value"],
+      "properties": {"kind": {"enum": ["doi", "pmid", "pmcid"]}, "value": {"type": "string", "minLength": 1}}
+    },
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["url", "retrieved_at", "type", "license", "access", "artifact_path", "sha256"],
+      "properties": {
+        "url": {"type": "string", "pattern": "^https?://"},
+        "retrieved_at": {"type": "string", "format": "date-time"},
+        "type": {"enum": ["jats", "pdf", "abstract"]},
+        "license": {"type": "string", "minLength": 1},
+        "access": {"const": "permitted_local"},
+        "artifact_path": {"type": ["string", "null"]},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "effective_input": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifact_path", "sha256"],
+      "properties": {"artifact_path": {"type": ["string", "null"]}, "sha256": {"$ref": "#/$defs/sha256"}}
+    },
+    "paper": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "study_key", "aliases", "status", "split", "stratum", "selection_reason", "exclusion_reason", "duplicate_of", "source", "effective_input"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "study_key": {"$ref": "#/$defs/id"},
+        "aliases": {"type": "array", "items": {"$ref": "#/$defs/alias"}},
+        "status": {"enum": ["candidate", "eligible", "excluded"]},
+        "split": {"enum": ["development", "held_out", null]},
+        "stratum": {"enum": ["jats", "pdf", "abstract", null]},
+        "selection_reason": {"type": "string", "minLength": 1},
+        "exclusion_reason": {"type": ["string", "null"]},
+        "duplicate_of": {"anyOf": [{"$ref": "#/$defs/id"}, {"type": "null"}]},
+        "source": {"anyOf": [{"$ref": "#/$defs/source"}, {"type": "null"}]},
+        "effective_input": {"anyOf": [{"$ref": "#/$defs/effective_input"}, {"type": "null"}]}
+      }
+    },
+    "configuration": {
+      "type": "object", "additionalProperties": false,
+      "required": ["model_identifier", "model_revision", "prompt_id", "prompt_version", "prompt_sha256", "output_schema_version", "software_commit", "decoding", "input_policy"],
+      "properties": {
+        "model_identifier": {"type": "string", "minLength": 1},
+        "model_revision": {"type": ["string", "null"]},
+        "prompt_id": {"type": "string", "minLength": 1},
+        "prompt_version": {"type": "string", "minLength": 1},
+        "prompt_sha256": {"$ref": "#/$defs/sha256"},
+        "output_schema_version": {"type": "string", "minLength": 1},
+        "software_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "decoding": {"type": "object", "minProperties": 1},
+        "input_policy": {"type": "string", "minLength": 1}
+      }
+    },
+    "field": {
+      "type": "object", "additionalProperties": false,
+      "required": ["key", "kind"],
+      "properties": {"key": {"$ref": "#/$defs/id"}, "kind": {"enum": ["categorical", "numeric", "binary"]}}
+    },
+    "freeze": {
+      "type": "object", "additionalProperties": false,
+      "required": ["frozen_at", "cohort_sha256", "configuration", "configuration_sha256", "prompt_artifact_path", "prompt_example_paper_ids", "fields", "codebook_version", "reference_set_id", "retry_rule", "attempt_manifest_id"],
+      "properties": {
+        "frozen_at": {"type": "string", "format": "date-time"},
+        "cohort_sha256": {"$ref": "#/$defs/sha256"},
+        "configuration": {"$ref": "#/$defs/configuration"},
+        "configuration_sha256": {"$ref": "#/$defs/sha256"},
+        "prompt_artifact_path": {"type": "string", "minLength": 1},
+        "prompt_example_paper_ids": {"type": "array", "items": {"$ref": "#/$defs/id"}},
+        "fields": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/field"}},
+        "codebook_version": {"type": "string", "minLength": 1},
+        "reference_set_id": {"type": ["string", "null"]},
+        "retry_rule": {"const": "first_attempt"},
+        "attempt_manifest_id": {"$ref": "#/$defs/id"},
+        "stratum_deviation_reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "attempt": {
+      "type": "object", "additionalProperties": false,
+      "required": ["paper_id", "index", "recorded_at", "state", "invocation_id", "input_sha256", "configuration_sha256", "output_path", "output_sha256", "error_code", "selected"],
+      "properties": {
+        "paper_id": {"$ref": "#/$defs/id"},
+        "index": {"type": "integer", "minimum": 1},
+        "recorded_at": {"type": "string", "format": "date-time"},
+        "state": {"enum": ["declared_valid", "invalid_json", "invalid_schema", "error", "missing_call"]},
+        "invocation_id": {"type": ["string", "null"]},
+        "input_sha256": {"$ref": "#/$defs/sha256"},
+        "configuration_sha256": {"$ref": "#/$defs/sha256"},
+        "output_path": {"type": ["string", "null"]},
+        "output_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "error_code": {"type": ["string", "null"]},
+        "selected": {"type": "boolean"}
+      }
+    }
+  }
+}
