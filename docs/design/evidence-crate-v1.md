@@ -24,7 +24,13 @@ explicit `source_unavailable` result; runs without frozen refs remain
 reconstruct older input. The provider response is deliberately withheld, so
 quotation emission remains `unverified` even when source occurrence replays.
 Assessment rationale is withheld; the exported state and pseudonymous actor
-reference do not imply independent qualification or adjudication. Blind-search
+reference do not imply independent qualification or adjudication. The
+`actor_ref` is the project-scoped reviewer pseudonym (`reviewer-` + SHA-256,
+`app.pseudonym.reviewer_reference`), the same value as the annotation
+`reviewer_ref` in `articles/*/metadata.json` and the gold API's actor refs, so
+one person is one reference inside a crate and unrelated projects cannot be
+linked. The durable salted digest kept in the database is never exported; it
+only anchors the reference across account deletion. Blind-search
 archives contain no prediction evidence companion records.
 
 The archive is unsigned. Its checks detect internal damage or inconsistency,

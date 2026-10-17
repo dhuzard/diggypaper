@@ -35,9 +35,12 @@ from app.evidence_links import (
 from app.portable_replay import SCHEMA_VERSION, validate_manifest, validate_manifest_bytes
 from app.provenance import digest, invocation_from_record, source_from_record
 from app.provenance_render import composed_view, legacy_methods_view, title_abstract_view
+from app.pseudonym import reviewer_reference
 
 _PRIVATE = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|\b(?:bearer|api[_ -]?key|secret)\b", re.I)
-_ACTOR_REF = re.compile(r"[0-9a-f]{64}\Z")
+# Project-scoped reviewer pseudonym (``app.pseudonym.reviewer_reference``). Archives
+# written before that policy carried the bare durable digest; they still validate.
+_ACTOR_REF = re.compile(r"(reviewer-)?[0-9a-f]{64}\Z")
 _SUPPORT_STATUSES = {"supports", "contradicts", "insufficient", "unclear", "not_assessed"}
 _HISTORY_KEYS = {
     "prediction_id",
@@ -218,7 +221,7 @@ def build_bundle(
                         "graph_revision_ref": str(assessment.graph_revision_ref),
                         "answer_ref": str(assessment.answer_ref),
                         "evidence_ref": str(assessment.evidence_ref),
-                        "actor_ref": assessment.actor_ref,
+                        "actor_ref": reviewer_reference(project_id, assessment.actor_ref),
                         "status": assessment.status,
                         "created_at": assessment.created_at.isoformat(),
                         "protocol_version": assessment.protocol_version,

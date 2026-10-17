@@ -34,7 +34,9 @@ database checks the exact stored link, revision, project, article, actor and
 protocol on insert. Judgment fields cannot be updated; only nulling the actor
 foreign key for account deletion/anonymization is allowed. The salted pseudonym
 remains, following the existing annotation deletion pattern, and no raw user ID
-is returned by this API. No API deletes individual judgments. Deleting the owning
+is returned by this API. The stored digest is global; the API and the crate
+expose only its project-scoped derivation (`app.pseudonym.reviewer_reference`),
+the same `actor_ref` the person has on annotations and gold in that project. No API deletes individual judgments. Deleting the owning
 prediction or project cascades its assessments under the existing product cleanup
 policy. A populated migration will not downgrade and discard the records.
 

@@ -17,7 +17,10 @@ fields, along with a
 separate digest over its evidence quote list. Review-derived revisions retain
 the annotation ID, displayed source snapshot/view IDs and view SHA-256 when
 the annotation has a bound retained view, plus its reviewer pseudonym, time,
-status, and blind flag. Manual revisions have no review/source reference.
+status, and blind flag. Manual revisions have no review/source reference. Stored actor pseudonyms are
+the durable global digests; the API returns their project-scoped derivation
+(`app.pseudonym.reviewer_reference`), identical to the annotation `reviewer_ref`
+and the support-assessment `actor_ref` of the same person in that project.
 Support-assessment IDs are attached only when supplied explicitly and validated
 against the same project, article, and search; blind reviewers may attach only
 their own assessments. No answer, quote match, or support assessment is inferred

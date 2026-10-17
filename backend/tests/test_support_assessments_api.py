@@ -20,7 +20,7 @@ from app.db.models import (
     Search,
 )
 from app.evidence_prediction import prediction_envelope
-from app.pseudonym import anonymized_actor_ref
+from app.pseudonym import anonymized_actor_ref, reviewer_reference
 
 
 async def _project_article(session, user):
@@ -111,7 +111,9 @@ async def test_assessment_is_human_and_exact_despite_not_found_quote(
     response = await client.post(url, json=payload)
     assert response.status_code == 201, response.text
     row = response.json()
-    assert row["actor_ref"] == anonymized_actor_ref(researcher_user.email)
+    # The API exposes the project-scoped pseudonym, never the stored global digest.
+    digest = anonymized_actor_ref(researcher_user.email)
+    assert row["actor_ref"] == reviewer_reference(project.id, digest) != digest
     assert row["protocol_version"] == "seip-support-v1"
     assert row["created_at"]
     assert row["status"] == "supports"
@@ -283,7 +285,9 @@ async def test_member_and_blind_boundaries(client, session, researcher_user, adm
     assert (await client.get(url)).json()["assessments"] == []
     assert (await client.post(url, json=payload)).status_code == 201
     own = (await client.get(url)).json()["assessments"]
-    assert len(own) == 1 and own[0]["actor_ref"] == anonymized_actor_ref(researcher_user.email)
+    assert len(own) == 1 and own[0]["actor_ref"] == reviewer_reference(
+        project.id, anonymized_actor_ref(researcher_user.email)
+    )
     # After account cleanup clears the actor FK, blind GET cannot identify this
     # preserved pseudonymous judgment as the caller's own record.
     await session.execute(
@@ -317,7 +321,8 @@ async def test_anonymization_preserves_pseudonymous_assessment(
     await session.refresh(assessment)
     await session.refresh(researcher_user)
     assert assessment.actor_id is None
-    assert assessment.actor_ref == researcher_user.anonymized_hash == prior_ref
+    assert assessment.actor_ref == researcher_user.anonymized_hash
+    assert reviewer_reference(project.id, assessment.actor_ref) == prior_ref
 
 
 async def test_admin_deletion_preserves_pseudonymous_assessment(
@@ -335,7 +340,7 @@ async def test_admin_deletion_preserves_pseudonymous_assessment(
     assessment = await session.get(EvidenceSupportAssessment, uuid.UUID(response.json()["id"]))
     await session.refresh(assessment)
     assert assessment.actor_id is None
-    assert assessment.actor_ref == prior_ref
+    assert reviewer_reference(project.id, assessment.actor_ref) == prior_ref
     assert await session.get(ArticlePrediction, prediction.id) is not None
     history = (await client.get(_url(project, article, prediction))).json()
     assert history["assessments"][0]["actor_ref"] == prior_ref
