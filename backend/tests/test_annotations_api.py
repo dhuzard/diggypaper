@@ -20,6 +20,16 @@ from app.db.models import (
     ProjectMember,
     ProjectMemberRole,
 )
+from app.provenance import (
+    ModelIdentity,
+    PromptIdentity,
+    ResponseCapture,
+    complete_invocation,
+    digest,
+    invocation_record,
+    prepare_invocation,
+)
+from app.provenance_capture import capture_article_source
 
 VALID_ANNOTATION = {
     "use_ai_behavior": True,
@@ -401,6 +411,105 @@ async def test_get_prediction_nulls_last(client, session, researcher_user, do_lo
     resp = await client.get(f"/api/v1/projects/{project.id}/articles/{article.id}/prediction")
     assert resp.status_code == 200
     assert resp.json()["model_used"] == "new-model"
+
+
+async def _make_bound_prediction(session, project, article, call_kind) -> ArticlePrediction:
+    """Prediction bound to one succeeded invocation of ``call_kind`` (chat or onnx)."""
+    snapshot, _ = await capture_article_source(
+        session, project_id=project.id, article_id=article.id, text_sections=None
+    )
+    await session.commit()
+    if call_kind == "chat":
+        request = {"model": "chat-model", "messages": [{"role": "user", "content": ""}]}
+        producer = "may_produce"
+    else:
+        request = {
+            "feeds": {"input_ids": {"shape": [1, 1], "dtype": "int64", "values": [7]}},
+            "output_names": None,
+        }
+        producer = "not_produced"
+    envelope = prepare_invocation(
+        snapshot,
+        group_id=uuid.uuid4(),
+        stage="main",
+        call_kind=call_kind,
+        sequence=0,
+        attempt=1,
+        prompt=PromptIdentity(field_schema=[], field_schema_sha256=digest([])),
+        model=ModelIdentity(backend="test", identifier=call_kind),
+        request=request,
+        source_view_ids=(),
+        input_spans=(),
+        quotation_producer=producer,
+    )
+    row = invocation_record(envelope)
+    session.add(row)
+    await session.commit()
+    complete_invocation(
+        row,
+        "succeeded",
+        response=ResponseCapture(
+            origin="driver_parsed",
+            raw_availability="unavailable",
+            parsed={"score": 0.9},
+            reason="test driver",
+        ),
+    )
+    await session.commit()
+    p = ArticlePrediction(
+        article_id=article.id,
+        model_used=call_kind,
+        decision_json={"confidence_score": 0.9, "evidence_quotes": []},
+        confidence_score=0.9,
+        evidence_quotes=[],
+        provenance_project_id=project.id,
+        source_snapshot_id=snapshot.id,
+        invocation_id=row.id,
+        invocation_group_id=row.group_id,
+    )
+    session.add(p)
+    await session.commit()
+    return p
+
+
+async def test_get_prediction_scorer_declares_quotations_not_produced(
+    client, session, researcher_user, do_login
+):
+    """A scorer call cannot emit quotations: explicit ``not_produced``, not a null check."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _make_project_with_article(session, researcher_user)
+    p = await _make_bound_prediction(session, project, article, "onnx")
+    resp = await client.get(f"/api/v1/projects/{project.id}/articles/{article.id}/prediction")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"] == str(p.id)
+    assert body["quotation_producer"] == "not_produced"
+    assert body["quote_checks"] is None
+
+
+async def test_get_prediction_chat_declares_quotations_may_produce(
+    client, session, researcher_user, do_login
+):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _make_project_with_article(session, researcher_user)
+    await _make_bound_prediction(session, project, article, "chat")
+    resp = await client.get(f"/api/v1/projects/{project.id}/articles/{article.id}/prediction")
+    assert resp.status_code == 200
+    assert resp.json()["quotation_producer"] == "may_produce"
+
+
+async def test_get_prediction_legacy_declares_no_quotation_producer(
+    client, session, researcher_user, do_login
+):
+    """No bound invocation: the producer is undeclared (null), never inferred."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _make_project_with_article(session, researcher_user)
+    await _make_prediction(session, article)
+    resp = await client.get(f"/api/v1/projects/{project.id}/articles/{article.id}/prediction")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["quotation_producer"] is None
+    assert body["quote_checks"] is None
 
 
 async def test_get_prediction_null_when_absent(client, session, researcher_user, do_login):

@@ -527,6 +527,7 @@
     "goImport": "Importar artículos",
     "noEvidence": "Este modelo de decisión solo da una puntuación, sin extractos ni razonamiento. Para pasajes resaltados y explicación, usa un modelo generativo o externo en la etapa 2.",
     "quoteUnchecked": "No se comprobó la presencia de las citas en una entrada del modelo conservada para esta predicción.",
+    "quoteNotProduced": "Este modelo puntúa la relevancia y no emite citas, así que no hay nada que comprobar para esta predicción.",
     "quoteCheckTitle": "Comprobación de presencia de citas",
     "quoteCheckScope": "Solo se comprobó el texto del artículo conservado para esta llamada. La presencia no demuestra que una cita apoye una respuesta. El documento actual puede haber cambiado.",
     "currentTextHighlight": "El resaltado siguiente es una búsqueda separada en el documento actual.",

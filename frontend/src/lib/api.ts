@@ -104,6 +104,8 @@ export interface ArticlePrediction {
   confidence_score: number | null;
   evidence_quotes: string[] | null;
   quote_checks: QuoteChecks | null;
+  /** Declared by the bound model call; null when no call is bound (legacy). */
+  quotation_producer?: QuotationProducer | null;
   evidence_graph?: EvidenceGraph | null;
   status: "AUTO_ACCEPTED" | "AUTO_REJECTED" | "NEEDS_HUMAN_REVIEW";
   created_at: string | null;
@@ -160,6 +162,12 @@ export interface SupportAssessmentHistory {
   state: "assessed" | "not_assessed";
   assessments: SupportAssessment[];
 }
+
+/**
+ * "not_produced": a scorer call that cannot emit quotations (nothing to check).
+ * "may_produce": a chat call that may have emitted quotations.
+ */
+export type QuotationProducer = "may_produce" | "not_produced";
 
 export interface QuoteChecks {
   schema_version: "quote-checks-v1";

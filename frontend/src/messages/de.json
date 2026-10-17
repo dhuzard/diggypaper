@@ -527,6 +527,7 @@
     "goImport": "Artikel importieren",
     "noEvidence": "Dieses Entscheidungsmodell liefert nur einen Score, keine Textstellen oder Begründung. Für markierte Passagen und Erklärung ein generatives oder externes Modell in Stufe 2 nutzen.",
     "quoteUnchecked": "Für diese Vorhersage wurde das Vorkommen der Zitate nicht anhand einer gespeicherten Modelleingabe geprüft.",
+    "quoteNotProduced": "Dieses Modell bewertet nur die Relevanz und gibt keine Zitate aus; für diese Vorhersage gibt es daher nichts zu prüfen.",
     "quoteCheckTitle": "Prüfung des Zitatvorkommens",
     "quoteCheckScope": "Nur gegen den für diesen Modellaufruf gespeicherten Artikeltext geprüft. Ein Vorkommen belegt keine Antwort. Das aktuelle Dokument kann sich geändert haben.",
     "currentTextHighlight": "Die Markierungen unten sind eine getrennte Suche im aktuellen Dokument.",

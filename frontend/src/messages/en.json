@@ -527,6 +527,7 @@
     "goImport": "Import articles",
     "noEvidence": "This decision model gives a score only, no excerpt or reasoning. For highlighted passages and an explanation, use a generative or external model at stage 2.",
     "quoteUnchecked": "Quote occurrence was not checked against a captured model input for this prediction.",
+    "quoteNotProduced": "This model scores relevance and does not emit quotations, so there is nothing to check for this prediction.",
     "quoteCheckTitle": "Quote occurrence check",
     "quoteCheckScope": "Checked only against the article text captured for this model call. Occurrence does not show that a quote supports an answer. The current document may have changed.",
     "currentTextHighlight": "Highlights below are a separate search in the current document.",
