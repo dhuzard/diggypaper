@@ -8,7 +8,7 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import InferenceJob, Invocation, ModelRegistry, PromptTemplate
+from app.db.models import BenchmarkRun, InferenceJob, Invocation, ModelRegistry, PromptTemplate
 from app.inference import ChatCallTrace, InferenceError
 from app.provenance import (
     ModelIdentity,
@@ -41,19 +41,55 @@ class PersistedChatTrace(ChatCallTrace):
         *,
         snapshot: SourceSnapshotV1,
         rendered: RenderedChat,
-        job: InferenceJob,
-        prompt: PromptTemplate,
+        job: InferenceJob | BenchmarkRun,
+        prompt: PromptTemplate | None,
         model: ModelRegistry,
         field_schema: list[dict],
         group_id: uuid.UUID,
         stage: str,
         sequence: int,
+        benchmark_run: BenchmarkRun | None = None,
+        benchmark_variant: str | None = None,
+        benchmark_system_template: str | None = None,
+        benchmark_user_template: str | None = None,
+        benchmark_template_id: uuid.UUID | None = None,
+        benchmark_template_version: str | None = None,
     ) -> None:
         self.session = session
         self.snapshot = snapshot
         self.rendered = rendered
-        self.job = job
-        self.prompt = prompt
+        if benchmark_run is not None:
+            if benchmark_run.project_id != snapshot.project_id:
+                raise ValueError("benchmark run and source project differ")
+            self.search_id = benchmark_run.search_id
+            self.inference_job_id = None
+            self.benchmark_run_id = benchmark_run.id
+            self.variant = benchmark_variant
+            self.actor_ref = f"worker:benchmark:{benchmark_run.id}"
+            self.prompt_identity = PromptIdentity(
+                template_id=benchmark_template_id,
+                version=benchmark_template_version,
+                system_template=benchmark_system_template,
+                user_template=benchmark_user_template,
+                field_schema=field_schema,
+                field_schema_sha256=digest(field_schema),
+            )
+        else:
+            if prompt is None or not isinstance(job, InferenceJob):
+                raise ValueError("normal chat capture requires an inference job and prompt")
+            self.search_id = job.search_id
+            self.inference_job_id = job.id
+            self.benchmark_run_id = None
+            self.variant = None
+            self.actor_ref = f"worker:inference:{job.id}"
+            self.prompt_identity = PromptIdentity(
+                template_id=prompt.id,
+                version=prompt.version_number,
+                system_template=prompt.system_prompt,
+                user_template=prompt.user_prompt_schema,
+                field_schema=field_schema,
+                field_schema_sha256=digest(field_schema),
+            )
         self.model = model
         self.field_schema = field_schema
         self.group_id = group_id
@@ -72,20 +108,15 @@ class PersistedChatTrace(ChatCallTrace):
         envelope = prepare_invocation(
             self.snapshot,
             group_id=self.group_id,
-            search_id=self.job.search_id,
-            inference_job_id=self.job.id,
+            search_id=self.search_id,
+            inference_job_id=self.inference_job_id,
+            benchmark_run_id=self.benchmark_run_id,
+            variant=self.variant,
             stage=self.stage,
             call_kind="chat",
             sequence=self.sequence,
             attempt=1,
-            prompt=PromptIdentity(
-                template_id=self.prompt.id,
-                version=self.prompt.version_number,
-                system_template=self.prompt.system_prompt,
-                user_template=self.prompt.user_prompt_schema,
-                field_schema=self.field_schema,
-                field_schema_sha256=digest(self.field_schema),
-            ),
+            prompt=self.prompt_identity,
             model=ModelIdentity(
                 backend=str(
                     self.model.backend_type.value if self.model.backend_type else "unknown"
@@ -134,7 +165,7 @@ class PersistedChatTrace(ChatCallTrace):
                         reason="actual response exceeded provenance retention limit",
                     ),
                     reconciliation=Reconciliation(
-                        actor_ref=f"worker:inference:{self.job.id}",
+                        actor_ref=self.actor_ref,
                         reason="actual oversized HTTP response received",
                     ),
                 )
@@ -152,7 +183,7 @@ class PersistedChatTrace(ChatCallTrace):
             outcome,
             response=response,
             reconciliation=Reconciliation(
-                actor_ref=f"worker:inference:{self.job.id}",
+                actor_ref=self.actor_ref,
                 reason="actual HTTP response received after dispatch marker",
             ),
         )

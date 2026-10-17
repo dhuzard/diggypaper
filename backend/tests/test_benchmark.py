@@ -1,5 +1,6 @@
 """Tests de la task benchmark (app/tasks/benchmark.py) — 100 % offline."""
 
+import httpx
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -10,10 +11,13 @@ from app.db.models import (
     BenchmarkRun,
     BenchmarkStatus,
     GoldArticle,
+    Invocation,
     ModelRegistry,
     Project,
     PromptTemplate,
 )
+from app.inference import InferenceError, OpenAICompatibleService
+from app.provenance import invocation_from_record
 from app.tasks.benchmark import _run_benchmark
 
 
@@ -231,3 +235,73 @@ async def test_benchmark_gold_examples_in_prompt_and_excluded_from_scoring(engin
 
     (r,) = (await session.execute(select(BenchmarkResult))).scalars().all()
     assert r.n_scored == 2 and res["results"][0]["f1_score"] == 1.0  # 4 gold − 2 exemples
+
+
+async def test_real_benchmark_chat_retains_actual_call_and_source(engine, session, monkeypatch):
+    project, prompt, arts = await _project_with_articles(session, 1)
+    run = BenchmarkRun(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        models_tested=["Kev-4B"],
+        options={},
+        status=BenchmarkStatus.PENDING,
+    )
+    session.add(run)
+    await session.commit()
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": '{"use_ai_behavior": true}'}}]},
+        )
+
+    async def skip_unload(*_args):
+        pass
+
+    monkeypatch.setattr("app.tasks.benchmark.unload_ollama", skip_unload)
+    transport = httpx.MockTransport(respond)
+    async with httpx.AsyncClient(transport=transport) as http:
+        inference = OpenAICompatibleService("http://test/v1", http=http)
+        factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        await _run_benchmark(str(run.id), session_factory=factory, inference=inference)
+
+    prediction = (await session.execute(select(BenchmarkPrediction))).scalar_one()
+    invocation = (await session.execute(select(Invocation))).scalar_one()
+    captured = invocation_from_record(invocation)
+    assert len(requests) == 1
+    assert prediction.invocation_id == invocation.id
+    assert prediction.source_snapshot_id == captured.source_snapshot_id
+    assert captured.benchmark_run_id == run.id
+    assert captured.prompt.template_id == prompt.id
+    assert captured.model.identifier == "x"
+    assert captured.request["messages"][1]["content"] == "Article text:\nabstract 0"
+    assert invocation.outcome == "succeeded"
+    assert any(span.origin == "target" for span in captured.input_spans)
+
+
+async def test_failed_benchmark_http_retains_failure_without_prediction(engine, session):
+    project, prompt, _arts = await _project_with_articles(session, 1)
+    run = BenchmarkRun(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        models_tested=["Kev-4B"],
+        options={},
+        status=BenchmarkStatus.PENDING,
+    )
+    session.add(run)
+    await session.commit()
+    transport = httpx.MockTransport(lambda _request: httpx.Response(503, text="provider secret"))
+    async with httpx.AsyncClient(transport=transport) as http:
+        inference = OpenAICompatibleService("http://test/v1", http=http)
+        factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        with pytest.raises(InferenceError, match="HTTP 503"):
+            await _run_benchmark(str(run.id), session_factory=factory, inference=inference)
+
+    await session.refresh(run)
+    assert run.status == BenchmarkStatus.FAILED
+    assert (await session.execute(select(BenchmarkPrediction))).scalars().all() == []
+    invocation = (await session.execute(select(Invocation))).scalar_one()
+    assert invocation.outcome == "failed"
+    assert "provider secret" not in str(invocation.response_capture)
