@@ -52,9 +52,11 @@ from app.inference import (
     make_inference_service,
 )
 from app.inference.scoring import is_scorer, score_prediction
+from app.provenance import invocation_from_record
 from app.provenance_capture import capture_article_source
 from app.provenance_chat import PersistedChatTrace
 from app.provenance_render import render_chat
+from app.quote_checks import check_prediction_quotes
 from app.schema import project_fields
 from app.searches import ScopedProject, get_search, gold_condition, in_search, lot_condition
 from app.settings.service import get_setting
@@ -409,6 +411,11 @@ async def _do_inference(
                 decision_json=prediction,
                 confidence_score=confidence,
                 evidence_quotes=prediction.get("evidence_quotes"),
+                quote_checks_json=(
+                    check_prediction_quotes(invocation_from_record(producing.row), prediction)
+                    if producing
+                    else None
+                ),
                 status=status,
                 provenance_project_id=job.project_id if producing else None,
                 source_snapshot_id=producing.snapshot.id if producing else None,

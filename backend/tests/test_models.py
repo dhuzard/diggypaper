@@ -495,6 +495,7 @@ def test_article_predictions_columns():
         "decision_json",
         "confidence_score",
         "evidence_quotes",
+        "quote_checks_json",
         "search_id",
         "status",
         "created_at",
