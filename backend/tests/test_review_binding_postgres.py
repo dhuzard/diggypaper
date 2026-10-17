@@ -66,13 +66,18 @@ async def test_concurrent_blind_posts_commit_only_first(postgres_database):
         await session.flush()
         session.add(
             ProjectMember(
-                project_id=project.id, user_id=user.id,
+                project_id=project.id,
+                user_id=user.id,
                 role_in_project=ProjectMemberRole.LEAD,
             )
         )
         article = Article(project_id=project.id, title="Race article", methods_text="Mice")
         search = Search(
-            project_id=project.id, name="Blind", kind="blind", question="Q", lot_all=True,
+            project_id=project.id,
+            name="Blind",
+            kind="blind",
+            question="Q",
+            lot_all=True,
         )
         session.add_all([article, search])
         await session.commit()
@@ -131,14 +136,18 @@ async def test_concurrent_blind_posts_commit_only_first(postgres_database):
         assert sorted((first.status_code, second.status_code)) == [201, 409]
     async with factory() as session:
         rows = (
-            await session.execute(
-                select(HumanAnnotation).where(
-                    HumanAnnotation.article_id == article.id,
-                    HumanAnnotation.user_id == user.id,
-                    HumanAnnotation.search_id == search.id,
+            (
+                await session.execute(
+                    select(HumanAnnotation).where(
+                        HumanAnnotation.article_id == article.id,
+                        HumanAnnotation.user_id == user.id,
+                        HumanAnnotation.search_id == search.id,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(rows) == 1
         assert rows[0].blind is True
         assert rows[0].source_view_id is not None

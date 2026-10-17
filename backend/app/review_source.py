@@ -52,8 +52,12 @@ def issue_review_token(
 
 
 def parse_review_token(
-    token: str, *, project_id: uuid.UUID, article_id: uuid.UUID,
-    scope: Search, user_id: uuid.UUID,
+    token: str,
+    *,
+    project_id: uuid.UUID,
+    article_id: uuid.UUID,
+    scope: Search,
+    user_id: uuid.UUID,
 ) -> tuple[uuid.UUID, uuid.UUID, str]:
     if len(token) > 4096:
         raise ValueError("invalid source view token")

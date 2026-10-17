@@ -383,8 +383,10 @@ async def test_sqlite_storage_immutability_lifecycle_and_legacy(session, stored)
         completed,
         "succeeded",
         response=ResponseCapture(
-            origin="driver_parsed", raw_availability="unavailable",
-            parsed={"answer": True}, reason="parsed driver only",
+            origin="driver_parsed",
+            raw_availability="unavailable",
+            parsed={"answer": True},
+            reason="parsed driver only",
         ),
     )
     await session.commit()

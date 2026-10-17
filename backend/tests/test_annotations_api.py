@@ -100,7 +100,8 @@ async def test_review_binds_retained_display_after_source_replacement(
     )
     assert response.status_code == 201, response.text
     assert response.json()["decision_json"]["source_binding"] == {
-        "state": "view_bound", "current_display_text_drift": True
+        "state": "view_bound",
+        "current_display_text_drift": True,
     }
     ann = await session.get(HumanAnnotation, uuid.UUID(response.json()["id"]))
     assert ann.source_snapshot_id and ann.source_view_id and ann.source_view_sha256
@@ -134,7 +135,8 @@ async def test_old_client_review_is_explicitly_unversioned(
     )
     assert response.status_code == 201
     assert response.json()["decision_json"]["source_binding"] == {
-        "state": "legacy_unversioned", "current_display_text_drift": None
+        "state": "legacy_unversioned",
+        "current_display_text_drift": None,
     }
 
 
@@ -146,7 +148,11 @@ async def test_blind_second_submission_cannot_replace_first_judgment(
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project, article = await _make_project_with_article(session, researcher_user)
     blind = Search(
-        project_id=project.id, name="Blind", kind="blind", question="Q", lot_all=True,
+        project_id=project.id,
+        name="Blind",
+        kind="blind",
+        question="Q",
+        lot_all=True,
     )
     session.add(blind)
     await session.commit()
@@ -238,18 +244,25 @@ async def test_review_token_is_user_search_and_expiry_scoped(
     await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
     project, article = await _make_project_with_article(session, researcher_user)
     other_search = Search(
-        project_id=project.id, name="Other", kind="standard", question="Q", lot_all=True,
+        project_id=project.id,
+        name="Other",
+        kind="standard",
+        question="Q",
+        lot_all=True,
     )
     member = await _make_user(
         session, "second-reviewer@lab.fr", UserRole.RESEARCHER, "member-pass-123", True
     )
-    session.add_all([
-        other_search,
-        ProjectMember(
-            project_id=project.id, user_id=member.id,
-            role_in_project=ProjectMemberRole.ANNOTATOR,
-        ),
-    ])
+    session.add_all(
+        [
+            other_search,
+            ProjectMember(
+                project_id=project.id,
+                user_id=member.id,
+                role_in_project=ProjectMemberRole.ANNOTATOR,
+            ),
+        ]
+    )
     await session.commit()
     article_url = f"/api/v1/projects/{project.id}/articles/{article.id}"
     token = (await client.get(article_url)).json()["source_view_token"]
