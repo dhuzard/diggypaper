@@ -74,6 +74,10 @@ EXPECTED_TABLES = {
     "source_snapshots",
     "invocations",
     "evidence_support_assessments",
+    "findings",  # curated source-paper findings (identity)
+    "finding_revisions",
+    "finding_evidence",
+    "finding_reviews",
 }
 
 

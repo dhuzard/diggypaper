@@ -1593,3 +1593,119 @@ event.listen(
         "BEGIN SELECT RAISE(ABORT, 'invalid invocation mutation'); END"
     ).execute_if(dialect="sqlite"),
 )
+
+
+class Finding(Base):
+    """Stable identity of one atomic source-paper finding; content lives in revisions."""
+
+    __tablename__ = "findings"
+    __table_args__ = (
+        UniqueConstraint("id", "project_id", "article_id", name="uq_findings_scope"),
+        ForeignKeyConstraint(
+            ["article_id", "project_id"],
+            ["articles.id", "articles.project_id"],
+            ondelete="CASCADE",
+            name="fk_findings_article_scope",
+        ),
+        Index("ix_findings_article", "project_id", "article_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
+    project_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    article_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class FindingRevision(Base):
+    """Immutable proposition + context. A change is a new revision, never an update."""
+
+    __tablename__ = "finding_revisions"
+    __table_args__ = (
+        UniqueConstraint("finding_id", "revision", name="uq_finding_revisions_number"),
+        CheckConstraint("revision >= 1", name="ck_finding_revisions_number"),
+        CheckConstraint("length(proposer_ref) = 64", name="ck_finding_revisions_proposer_ref"),
+        Index("ix_finding_revisions_finding", "finding_id", "revision"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
+    finding_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("findings.id", ondelete="CASCADE"), nullable=False
+    )
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    content_json: Mapped[dict] = mapped_column(PROVENANCE_JSON, nullable=False)
+    proposer_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    proposer_ref: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class FindingEvidence(Base):
+    """Finding revision <-> existing prediction answer/evidence link (many-to-many)."""
+
+    __tablename__ = "finding_evidence"
+    __table_args__ = (
+        UniqueConstraint(
+            "revision_id", "prediction_id", "evidence_ref", name="uq_finding_evidence_link"
+        ),
+        Index("ix_finding_evidence_revision", "revision_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
+    revision_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("finding_revisions.id", ondelete="CASCADE"), nullable=False
+    )
+    prediction_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("article_predictions.id", ondelete="CASCADE"), nullable=False
+    )
+    answer_ref: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    evidence_ref: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+
+
+class FindingReview(Base):
+    """Append-only independent decision on one revision, with seip-support-v1 judgments."""
+
+    __tablename__ = "finding_reviews"
+    __table_args__ = (
+        UniqueConstraint("revision_id", "reviewer_ref", name="uq_finding_reviews_reviewer"),
+        CheckConstraint("decision IN ('approve','reject')", name="ck_finding_reviews_decision"),
+        CheckConstraint("length(reviewer_ref) = 64", name="ck_finding_reviews_reviewer_ref"),
+        CheckConstraint("protocol_version = 'seip-support-v1'", name="ck_finding_reviews_protocol"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
+    revision_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("finding_revisions.id", ondelete="CASCADE"), nullable=False
+    )
+    decision: Mapped[str] = mapped_column(String(16), nullable=False)
+    judgments_json: Mapped[list] = mapped_column(PROVENANCE_JSON, nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    protocol_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    reviewer_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    reviewer_ref: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+# Append-only: only nulling the actor FK (account deletion) may update a row.
+for _table, _actor, _others in (
+    ("finding_revisions", "proposer_id", None),
+    ("finding_reviews", "reviewer_id", None),
+    ("finding_evidence", None, None),
+):
+    _allow = f"NOT (OLD.{_actor} IS NOT NULL AND NEW.{_actor} IS NULL)" if _actor else "1"
+    event.listen(
+        Base.metadata.tables[_table],
+        "after_create",
+        DDL(
+            f"CREATE TRIGGER {_table}_append_only BEFORE UPDATE ON {_table} "
+            f"WHEN {_allow} BEGIN SELECT RAISE(ABORT, '{_table} are append-only'); END"
+        ).execute_if(dialect="sqlite"),
+    )
