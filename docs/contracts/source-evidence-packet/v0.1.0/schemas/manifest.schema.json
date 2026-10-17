@@ -1,0 +1,349 @@
+{
+  "$id": "urn:diggypaper:source-evidence-packet:0.1.0:manifest",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "access_scope": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "else": {
+            "not": {
+              "required": [
+                "embargo_until"
+              ]
+            }
+          },
+          "if": {
+            "properties": {
+              "level": {
+                "const": "embargoed"
+              }
+            },
+            "required": [
+              "level"
+            ]
+          },
+          "then": {
+            "required": [
+              "embargo_until"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "embargo_until": {
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?Z$",
+          "type": "string"
+        },
+        "level": {
+          "enum": [
+            "public",
+            "restricted",
+            "private",
+            "embargoed"
+          ]
+        },
+        "redistributable_full_text": {
+          "const": false
+        }
+      },
+      "required": [
+        "level",
+        "redistributable_full_text"
+      ],
+      "type": "object"
+    },
+    "artifacts": {
+      "additionalProperties": false,
+      "properties": {
+        "assessments": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "const": "assessments.jsonl"
+            },
+            "record_count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "sha256": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "sha256",
+            "bytes",
+            "record_count"
+          ],
+          "type": "object"
+        },
+        "findings": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "const": "findings.jsonl"
+            },
+            "record_count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "sha256": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "sha256",
+            "bytes",
+            "record_count"
+          ],
+          "type": "object"
+        },
+        "papers": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "const": "papers.jsonl"
+            },
+            "record_count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "sha256": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "sha256",
+            "bytes",
+            "record_count"
+          ],
+          "type": "object"
+        },
+        "passages": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "const": "passages.jsonl"
+            },
+            "record_count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "sha256": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "sha256",
+            "bytes",
+            "record_count"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "papers",
+        "findings",
+        "passages",
+        "assessments"
+      ],
+      "type": "object"
+    },
+    "created_at": {
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?Z$",
+      "type": "string"
+    },
+    "creation_method": {
+      "enum": [
+        "producer-export",
+        "synthetic-fixture",
+        "manual"
+      ]
+    },
+    "export_status": {
+      "additionalProperties": false,
+      "properties": {
+        "reasons": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "state": {
+          "enum": [
+            "complete",
+            "partial",
+            "withheld"
+          ]
+        },
+        "withheld_counts": {
+          "additionalProperties": false,
+          "properties": {
+            "assessments": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "findings": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "papers": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "passages": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "papers",
+            "findings",
+            "passages",
+            "assessments"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "state",
+        "withheld_counts",
+        "reasons"
+      ],
+      "type": "object"
+    },
+    "licenses": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "applies_to": {
+            "enum": [
+              "packet-metadata",
+              "quotes",
+              "source-text"
+            ]
+          },
+          "license_id": {
+            "pattern": "^([A-Za-z0-9][A-Za-z0-9.+-]*|proprietary|unknown)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "license_id",
+          "applies_to"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "packet_id": {
+      "pattern": "^packet:[A-Za-z0-9._-]{1,100}$",
+      "type": "string"
+    },
+    "producer": {
+      "additionalProperties": false,
+      "properties": {
+        "commit": {
+          "pattern": "^([0-9a-f]{40}|synthetic-fixture)$",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "schema_refs": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "version": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "version"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "commit",
+        "schema_refs"
+      ],
+      "type": "object"
+    },
+    "ro_crate": {
+      "additionalProperties": false,
+      "properties": {
+        "authority": {
+          "const": "manifest"
+        },
+        "path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "authority"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "source-evidence-packet/0.1.0"
+    }
+  },
+  "required": [
+    "schema_version",
+    "packet_id",
+    "created_at",
+    "creation_method",
+    "producer",
+    "artifacts",
+    "licenses",
+    "access_scope",
+    "export_status"
+  ],
+  "title": "Source Evidence Packet manifest",
+  "type": "object"
+}

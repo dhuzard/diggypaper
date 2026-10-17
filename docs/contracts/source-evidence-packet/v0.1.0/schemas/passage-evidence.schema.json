@@ -1,0 +1,199 @@
+{
+  "$id": "urn:diggypaper:source-evidence-packet:0.1.0:passage-evidence",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "else": {
+        "properties": {
+          "quote": {
+            "const": "withheld"
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "quote_state": {
+            "const": "included"
+          }
+        },
+        "required": [
+          "quote_state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "quote": {
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "else": {
+        "properties": {
+          "source": {
+            "properties": {
+              "end": {
+                "type": "null"
+              },
+              "start": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "match": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "exact",
+                  "normalized"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          }
+        },
+        "required": [
+          "match"
+        ]
+      },
+      "then": {
+        "properties": {
+          "source": {
+            "properties": {
+              "end": {
+                "type": "integer"
+              },
+              "start": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "match": {
+      "additionalProperties": false,
+      "properties": {
+        "matcher": {
+          "enum": [
+            "quote-matcher-v1",
+            "unknown"
+          ]
+        },
+        "receipt_ref": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "exact",
+            "normalized",
+            "not_found",
+            "ambiguous",
+            "invalid",
+            "source_unavailable",
+            "not_checked",
+            "incomplete"
+          ]
+        }
+      },
+      "required": [
+        "receipt_ref",
+        "status",
+        "matcher"
+      ],
+      "type": "object"
+    },
+    "paper_id": {
+      "pattern": "^paper:[A-Za-z0-9._-]{1,100}$",
+      "type": "string"
+    },
+    "passage_id": {
+      "pattern": "^passage:[A-Za-z0-9._-]{1,100}$",
+      "type": "string"
+    },
+    "producer_ids": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_ref": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "evidence_ref"
+      ],
+      "type": "object"
+    },
+    "quote": {
+      "type": "string"
+    },
+    "quote_sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "quote_state": {
+      "enum": [
+        "included",
+        "withheld-rights"
+      ]
+    },
+    "source": {
+      "additionalProperties": false,
+      "properties": {
+        "end": {
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "snapshot_ref": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "start": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "view_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "snapshot_ref",
+        "view_id",
+        "start",
+        "end"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "passage_id",
+    "paper_id",
+    "quote_state",
+    "quote",
+    "quote_sha256",
+    "source",
+    "match",
+    "producer_ids"
+  ],
+  "title": "Source Evidence Packet passage evidence",
+  "type": "object"
+}

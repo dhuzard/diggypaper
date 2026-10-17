@@ -1,0 +1,74 @@
+{
+  "access_scope": {
+    "level": "public",
+    "redistributable_full_text": false
+  },
+  "artifacts": {
+    "assessments": {
+      "bytes": 1313,
+      "path": "assessments.jsonl",
+      "record_count": 3,
+      "sha256": "sha256:765a4eee1da0e513a19176cdda9739bbfd29e570747c21c7a4e7148d927e0dc6"
+    },
+    "findings": {
+      "bytes": 2039,
+      "path": "findings.jsonl",
+      "record_count": 3,
+      "sha256": "sha256:eb371f6abef612a9d889562e337a09739259c26b619b07a89af46f8fb1c1eb70"
+    },
+    "papers": {
+      "bytes": 993,
+      "path": "papers.jsonl",
+      "record_count": 2,
+      "sha256": "sha256:80247b2ff115f1f542700576ee029e0a437d97f5a70d4077f70646f1afd9fcce"
+    },
+    "passages": {
+      "bytes": 1821,
+      "path": "passages.jsonl",
+      "record_count": 5,
+      "sha256": "sha256:18786ecec321f2504095202ddb918c96ed1c8e08c26cdf1f706fa982a1c1e1ec"
+    }
+  },
+  "created_at": "2026-01-01T00:00:00Z",
+  "creation_method": "synthetic-fixture",
+  "export_status": {
+    "reasons": [],
+    "state": "complete",
+    "withheld_counts": {
+      "assessments": 0,
+      "findings": 0,
+      "papers": 0,
+      "passages": 0
+    }
+  },
+  "licenses": [
+    {
+      "applies_to": "packet-metadata",
+      "license_id": "CC0-1.0"
+    },
+    {
+      "applies_to": "quotes",
+      "license_id": "unknown"
+    }
+  ],
+  "packet_id": "packet:synth-canonical",
+  "producer": {
+    "commit": "synthetic-fixture",
+    "name": "diggypaper-fixture-builder",
+    "schema_refs": [
+      {
+        "name": "evidence-envelope-v1",
+        "version": "1"
+      },
+      {
+        "name": "seip-support-v1",
+        "version": "1"
+      },
+      {
+        "name": "evidence-links-v1",
+        "version": "1"
+      }
+    ]
+  },
+  "schema_version": "source-evidence-packet/0.1.0"
+}
