@@ -1,13 +1,21 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import type { QuoteChecks } from "@/lib/api";
+import type { QuotationProducer, QuoteChecks } from "@/lib/api";
 
 /** Occurrence in the captured model input, never a scientific support verdict. */
-export function QuoteOccurrencePanel({ checks }: { checks: QuoteChecks | null }) {
+export function QuoteOccurrencePanel({
+  checks,
+  producer = null,
+}: {
+  checks: QuoteChecks | null;
+  /** Producer state of the bound call; distinguishes "nothing to check" from "not checked". */
+  producer?: QuotationProducer | null;
+}) {
   const t = useTranslations("annotate");
   if (!checks) {
-    return <p className="mb-2 rounded bg-surface-muted p-2 text-xs text-muted">{t("quoteUnchecked")}</p>;
+    const message = producer === "not_produced" ? t("quoteNotProduced") : t("quoteUnchecked");
+    return <p className="mb-2 rounded bg-surface-muted p-2 text-xs text-muted">{message}</p>;
   }
   return (
     <section className="mb-2 rounded border border-border p-2 text-xs" aria-label={t("quoteCheckTitle")}>

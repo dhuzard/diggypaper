@@ -355,7 +355,9 @@ export default function AnnotatePage() {
             {shownPrediction && !shownPrediction.quote_checks && !shownPrediction.evidence_quotes?.length && (
               <p className="mb-2 rounded bg-surface-muted p-2 text-xs text-muted">{t("noEvidence")}</p>
             )}
-            {shownPrediction && <QuoteOccurrencePanel checks={shownPrediction.quote_checks} />}
+            {shownPrediction && (
+              <QuoteOccurrencePanel checks={shownPrediction.quote_checks} producer={shownPrediction.quotation_producer} />
+            )}
             {shownPrediction?.evidence_quotes?.length ? (
               <p className="mb-1 text-xs text-muted">{t("currentTextHighlight")}</p>
             ) : null}

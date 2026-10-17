@@ -527,6 +527,7 @@
     "goImport": "Importer des articles",
     "noEvidence": "Ce modèle de décision donne un score, pas d'extrait ni de raisonnement. Pour des passages surlignés et une explication, utilisez un modèle génératif ou externe à l'étage 2.",
     "quoteUnchecked": "La présence des citations n'a pas été vérifiée dans une entrée de modèle conservée pour cette prédiction.",
+    "quoteNotProduced": "Ce modèle attribue un score de pertinence et ne produit pas de citations : il n'y a donc rien à vérifier pour cette prédiction.",
     "quoteCheckTitle": "Vérification de présence des citations",
     "quoteCheckScope": "Vérification limitée au texte de l'article conservé pour cet appel. La présence ne prouve pas qu'une citation étaye une réponse. Le document actuel peut avoir changé.",
     "currentTextHighlight": "Le surlignage ci-dessous est une recherche distincte dans le document actuel.",

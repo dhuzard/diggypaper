@@ -32,12 +32,18 @@ from app.db.models import (
     Article,
     ArticlePrediction,
     HumanAnnotation,
+    Invocation,
     Project,
     Search,
     SourceSnapshot,
     User,
 )
-from app.provenance import Components, review_binding, source_from_record
+from app.provenance import (
+    Components,
+    invocation_from_record,
+    review_binding,
+    source_from_record,
+)
 from app.provenance_capture import capture_article_source
 from app.provenance_render import composed_view
 from app.review_source import issue_review_token, parse_review_token
@@ -113,7 +119,33 @@ def _article_payload(a: Article, kinds: list[str] | None = None) -> dict:
     }
 
 
-def _prediction_payload(p: ArticlePrediction) -> dict:
+async def _quotation_producers(
+    db: AsyncSession, predictions: list[ArticlePrediction]
+) -> dict[uuid.UUID, str | None]:
+    """Declared quotation producer of each prediction's bound invocation, in one query.
+
+    ``not_produced``: the producing call was a scorer that cannot emit quotations,
+    so there is nothing to check. ``may_produce``: a chat call that may have emitted
+    quotations. ``None``: no bound invocation (legacy prediction) or an unreadable
+    record; nothing is declared and nothing may be inferred.
+    """
+    wanted = {p.invocation_id for p in predictions if p.invocation_id is not None}
+    producers: dict[uuid.UUID, str | None] = {}
+    if wanted:
+        rows = (await db.execute(select(Invocation).where(Invocation.id.in_(wanted)))).scalars()
+        for row in rows:
+            try:
+                producers[row.id] = invocation_from_record(row).quotation_producer
+            except ValueError:
+                logger.warning("unreadable invocation %s; producer undeclared", row.id)
+                producers[row.id] = None
+    return {
+        p.id: producers.get(p.invocation_id) if p.invocation_id is not None else None
+        for p in predictions
+    }
+
+
+def _prediction_payload(p: ArticlePrediction, quotation_producer: str | None = None) -> dict:
     return {
         "id": str(p.id),
         "article_id": str(p.article_id) if p.article_id else None,
@@ -125,6 +157,10 @@ def _prediction_payload(p: ArticlePrediction) -> dict:
         # Null means this historical/scorer prediction was not checked against
         # a captured model input. Do not infer a result from today's article.
         "quote_checks": p.quote_checks_json,
+        # Producer state of the bound call (SEIP contract item 4): "not_produced"
+        # (scorer, nothing to check) vs "may_produce" (chat) vs null (legacy, no
+        # bound call). Distinct from quote_checks, which stays null in both cases.
+        "quotation_producer": quotation_producer,
         # Context binding is separate from quote occurrence and answer support.
         "evidence_graph": p.evidence_graph_json,
         "status": p.status,
@@ -357,7 +393,8 @@ async def get_prediction(
     )
     if prediction is None:
         return None
-    return _prediction_payload(prediction)
+    producers = await _quotation_producers(db, [prediction])
+    return _prediction_payload(prediction, producers[prediction.id])
 
 
 @router.get("/{project_id}/articles/{article_id}/annotation")

@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { QuoteOccurrencePanel } from "@/components/QuoteOccurrencePanel";
-import type { QuoteChecks } from "@/lib/api";
+import type { QuotationProducer, QuoteChecks } from "@/lib/api";
 
 jest.mock("next-intl", () => ({
   useTranslations: () => (key: string, values?: { count?: number }) => {
@@ -14,12 +14,24 @@ jest.mock("next-intl", () => ({
   },
 }));
 
-function show(checks: QuoteChecks | null) {
-  return render(<QuoteOccurrencePanel checks={checks} />);
+function show(checks: QuoteChecks | null, producer?: QuotationProducer | null) {
+  return render(<QuoteOccurrencePanel checks={checks} producer={producer} />);
 }
 
 it("distinguishes a historical unchecked prediction from a checked occurrence", () => {
   show(null);
+  expect(screen.getByText(/was not checked against a captured model input/i)).toBeInTheDocument();
+});
+
+it("says a scorer emitted no quotations instead of calling them unchecked", () => {
+  show(null, "not_produced");
+  expect(screen.getByText(/does not emit quotations.*nothing to check/i)).toBeInTheDocument();
+  expect(screen.queryByText(/was not checked against a captured model input/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/support|verif/i)).not.toBeInTheDocument();
+});
+
+it("keeps the unchecked wording for a chat call whose checks are missing", () => {
+  show(null, "may_produce");
   expect(screen.getByText(/was not checked against a captured model input/i)).toBeInTheDocument();
 });
 
