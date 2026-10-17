@@ -1,5 +1,7 @@
 """Pilote des modèles de décision (/v1/systemone) + cascade avec scoreurs — offline."""
 
+import json
+
 import httpx
 import pytest
 from sqlalchemy import select
@@ -83,6 +85,22 @@ async def test_cascade_with_decision_models(engine, session, monkeypatch):
     async def fake_decide(identifier, text, question, fields, **kw):
         calls.append((identifier, text.split("\n")[0]))
         p = {"low": 0.05, "mid": 0.5, "high": 0.9}[text.split("\n")[0]]
+        trace = kw["trace"]
+        body = {"state": text.strip(), "questions": build_questions(question, fields)}
+        checkpoint = split_identifier(identifier)[1]
+        if checkpoint:
+            body["model"] = checkpoint
+        await trace.before_dispatch(
+            body,
+            kind="systemone_combined",
+            window_index=0,
+            window_count=1,
+            state_start=0,
+            confidence_call_id=None,
+        )
+        await trace.on_http_response(
+            json.dumps({"answers": {"relevance": {"noul": p}}}).encode(), 200
+        )
         return {"confidence_score": p, "evidence_quotes": [], "decision": "X"}
 
     from app.inference import scoring

@@ -14,7 +14,7 @@ import { Card, Badge, statusColor } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Skeleton, ErrorBanner, EmptyState } from "@/components/ui/Feedback";
 import { articlesStoreKey, prefillStoreKey, selectionFromFilters, withSearch } from "@/lib/search";
-import { useSearchId } from "@/lib/useSearch";
+import { useSearchId, useSearches } from "@/lib/useSearch";
 
 type Filter = PredictionFilter | "ALL";
 const FILTERS: Filter[] = ["ALL", "TO_REVIEW", "AUTO_ACCEPTED", "AUTO_REJECTED", "NONE"];
@@ -36,6 +36,7 @@ function ResultsContent() {
   const locale = useLocale();
   const projectId = useParams<{ id: string }>().id;
   const searchId = useSearchId(projectId);
+  const { searches, current } = useSearches(projectId, searchId);
   const router = useRouter();
 
   const [articles, setArticles] = useState<Article[] | null>(null);
@@ -44,6 +45,7 @@ function ResultsContent() {
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState<Filter>("ALL");
   const [sort, setSort] = useState<Sort>("added");
+  const effectiveSort = current?.kind === "blind" && sort === "score_desc" ? "added" : sort;
   const [fields, setFields] = useState<SchemaField[]>([]);
   const [answers, setAnswers] = useState<Answers>({}); // appliqués à la requête
   const [draft, setDraft] = useState<Answers>({}); // saisie (texte retardé de 300 ms)
@@ -84,6 +86,10 @@ function ResultsContent() {
     }
   }, [ready, projectId, searchId, filter, sort, page, answers]);
 
+  useEffect(() => {
+    if (current?.kind === "blind" && sort === "score_desc") setSort("added");
+  }, [current?.kind, sort]);
+
   function setAnswer(key: string, value: string, text: boolean) {
     setDraft((d) => ({ ...d, [key]: value }));
     clearTimeout(timer.current);
@@ -106,18 +112,18 @@ function ResultsContent() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const res = await listArticles(projectId, page, PER_PAGE, filter === "ALL" ? undefined : filter, sort, answers, searchId);
+      const res = await listArticles(projectId, page, PER_PAGE, filter === "ALL" ? undefined : filter, effectiveSort, answers, searchId);
       setArticles(res.items);
       setTotal(res.total);
       setStats(res.stats);
     } catch (e) {
       setError(e instanceof Error ? e.message : "error");
     }
-  }, [projectId, page, filter, sort, answers, searchId]);
+  }, [projectId, page, filter, effectiveSort, answers, searchId]);
 
   useEffect(() => {
-    if (ready && restoredFor.current === articlesStoreKey(projectId, searchId)) void load();
-  }, [ready, load, projectId, searchId]);
+    if (ready && searches !== null && restoredFor.current === articlesStoreKey(projectId, searchId)) void load();
+  }, [ready, searches, load, projectId, searchId]);
 
   const count = (f: Filter) =>
     f === "ALL" ? Object.values(stats).reduce((a, b) => a + b, 0) : stats[f] ?? 0;
@@ -187,7 +193,7 @@ function ResultsContent() {
       <div className="flex items-center justify-end gap-2 text-xs text-muted">
         {t("sortBy")}
         <select
-          value={sort}
+          value={effectiveSort}
           onChange={(e) => {
             setSort(e.target.value as Sort);
             setPage(1);
@@ -197,7 +203,7 @@ function ResultsContent() {
           <option value="added">{t("sortAdded")}</option>
           <option value="date_desc">{t("sortDateDesc")}</option>
           <option value="date_asc">{t("sortDateAsc")}</option>
-          <option value="score_desc">{t("sortScore")}</option>
+          {current?.kind !== "blind" && <option value="score_desc">{t("sortScore")}</option>}
         </select>
       </div>
 

@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dhuzard/diggypaper/blob/seip/portable-replay/docs/schemas/seip-portable-replay-v1.schema.json",
+  "title": "SEIP portable replay manifest v1",
+  "description": "Unsigned offline artifact and quote occurrence replay manifest. The quotation_field is caller-supplied; emission can be verified only by parsing a retained raw legacy OpenAI-compatible chat response, matching non-null result/invocation search scope, and exact quote-list equality. Nested canonical envelopes and quote checks require semantic replay by app.portable_replay; this schema alone does not validate origins, hashes, occurrences, or emission.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "canonical_encoding", "sources", "invocations", "results"],
+  "properties": {
+    "schema_version": {"const": "seip-portable-replay-v1"},
+    "canonical_encoding": {"const": "seip-json-v1"},
+    "sources": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/frozen"}},
+    "invocations": {"type": "array", "maxItems": 20000, "items": {"$ref": "#/$defs/invocation"}},
+    "results": {"type": "array", "maxItems": 20000, "items": {"$ref": "#/$defs/result"}}
+  },
+  "$defs": {
+    "uuid": {"type": "string", "format": "uuid"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "frozen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "canonical_base64", "sha256"],
+      "properties": {
+        "id": {"$ref": "#/$defs/uuid"},
+        "canonical_base64": {"type": "string", "contentEncoding": "base64"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "invocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "canonical_base64", "sha256", "outcome", "response_capture", "response_sha256"],
+      "properties": {
+        "id": {"$ref": "#/$defs/uuid"},
+        "canonical_base64": {"type": "string", "contentEncoding": "base64"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "outcome": {"enum": ["prepared", "outcome_unknown", "succeeded", "failed"]},
+        "response_capture": {"type": ["object", "null"]},
+        "response_sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]}
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "project_id", "article_id", "capture_state", "source_snapshot_ref", "invocation_ref", "reason", "quote_state", "quote_reason", "quotation_field", "quote_checks", "quote_checks_sha256"],
+      "properties": {
+        "id": {"$ref": "#/$defs/uuid"},
+        "project_id": {"$ref": "#/$defs/uuid"},
+        "article_id": {"$ref": "#/$defs/uuid"},
+        "search_id": {
+          "description": "Optional result search scope. A non-null exact match to the invocation search is required for verified quote emission; absent or null remains unverified.",
+          "anyOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]
+        },
+        "capture_state": {"enum": ["captured", "legacy_unversioned", "source_unavailable"]},
+        "source_snapshot_ref": {"anyOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
+        "invocation_ref": {"anyOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
+        "reason": {"type": ["string", "null"]},
+        "quote_state": {"enum": ["recorded", "not_produced", "legacy_unversioned", "unavailable"]},
+        "quote_reason": {"type": ["string", "null"]},
+        "quotation_field": {
+          "description": "Caller-supplied quote-field observation. The offline validator reports whether a retained raw legacy chat response exactly emitted this list; this schema itself cannot prove emission.",
+          "anyOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["present", "value"],
+              "properties": {"present": {"type": "boolean"}, "value": {}}
+            }
+          ]
+        },
+        "quote_checks": {"type": ["object", "null"]},
+        "quote_checks_sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]}
+      }
+    }
+  }
+}

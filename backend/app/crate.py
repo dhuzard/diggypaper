@@ -55,6 +55,13 @@ def sha256_json(obj) -> str:
     return hashlib.sha256(json.dumps(obj, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
+def reviewer_reference(project_id, annotator_hash: str | None) -> str | None:
+    """Project-scoped pseudonym from the salted digest retained on account deletion."""
+    if not annotator_hash:
+        return None
+    return "reviewer-" + sha256_json(["diggypaper-reviewer", str(project_id), annotator_hash])
+
+
 def fulltext_markdown(a) -> str:
     """Titre + abstract + sections du texte intégral, en Markdown."""
     out = [f"# {a.title or a.pmid or a.id}", ""]
@@ -100,7 +107,17 @@ def article_record(a, key: str, pred, annos: list, fields: list[dict]) -> dict:
         },
         "human": [
             {
+                "annotation_id": str(h.id),
+                "created_at": h.created_at.isoformat() if h.created_at else None,
+                "reviewer_ref": getattr(h, "reviewer_ref", None),
+                # Historical annotations have no retained field-definition version.
+                # Keep their authoritative raw decision instead of projecting it
+                # solely through today's project/search fields.
+                "decision_json": h.decision_json,
+                "decision_schema_status": "legacy_unversioned",
                 "answers": {f["key"]: (h.decision_json or {}).get(f["key"]) for f in fields},
+                "answers_projection": "current_fields_only",
+                "evidence_quotes": (h.decision_json or {}).get("evidence_quotes"),
                 "notes": h.notes,
             }
             for h in annos
@@ -193,6 +210,7 @@ def build_graph(project, articles, keys: dict, files: dict, info: dict, now: str
     """Graphe JSON-LD RO-Crate. ``files`` : {clé d'article: [chemins de fichiers présents]}."""
     top = ["README.md", "project.json", "extraction.csv", "results.xlsx"]
     top += ["references.ris", "references.bib", "prisma.svg"]
+    top += ["evidence/portable-replay.json", "evidence/prediction-history.json"]
     mime = {
         "md": "text/markdown",
         "json": "application/json",
@@ -249,6 +267,8 @@ def build_graph(project, articles, keys: dict, files: dict, info: dict, now: str
         "references.ris": "Références (RIS : Zotero, EndNote, Mendeley)",
         "references.bib": "Références (BibTeX)",
         "prisma.svg": "Diagramme de flux PRISMA 2020",
+        "evidence/portable-replay.json": "Preuves figées et vérification hors ligne",
+        "evidence/prediction-history.json": "Historique des graphes et évaluations humaines",
     }
     graph += [file_entity(p, labels[p]) for p in top]
 
@@ -360,8 +380,28 @@ Export RO-Crate (Diggypaper) — {datetime.now(UTC):%Y-%m-%d}.
 - `prisma.svg` : diagramme de flux PRISMA 2020 (effectifs aussi dans `project.json`)
 - `references.ris` / `references.bib` : références à importer dans Zotero, EndNote, JabRef…
 - `extraction.csv` / `results.xlsx` : tableau d'extraction (réponses IA, certitudes, relecture)
+- `evidence/portable-replay.json` : manifeste de relecture hors ligne des sources,
+  appels et citations distribuables ; les anciens cas et sources non distribuables
+  portent un état explicite. Aucun PDF brut ni réponse brute du fournisseur n'y figure.
+- `evidence/prediction-history.json` : historique des graphes de réponse/preuve
+  et évaluations de soutien ; les raisons des évaluateurs sont retenues hors archive.
 - Licence : {get_settings().crate_license_name} pour les métadonnées, réponses et relectures ;
   les textes intégraux et PDF conservent la licence de leurs ayants droit.
 - `articles/<clé>/` : un dossier par article ({n_articles}) — `metadata.json`, `fulltext.md`
   ({n_text} avec texte intégral, sinon `abstract.md`) et `fulltext.pdf` ({n_pdf} conservés)
+
+Dans `metadata.json`, chaque entrée `human` conserve l'identifiant et la date de l'annotation,
+`decision_json` intégral, les notes et les `evidence_quotes` enregistrés (null si absents).
+`decision_schema_status=legacy_unversioned` signifie que la définition des champs lors de la
+relecture n'a pas été conservée : le nom, le type et le sens historiques des clés ne sont pas
+vérifiables. `answers` est seulement une projection sur les champs actuels et peut omettre des
+clés historiques ; `decision_json` reste la donnée enregistrée à utiliser pour l'audit.
+`reviewer_ref` est un pseudonyme propre au projet, dérivé de l'empreinte salée utilisée lors
+de la suppression du compte ; il reste stable après cette suppression si l'e-mail et le sel
+n'ont pas changé. Il est null si l'identité n'est plus disponible. Aucun nom ou e-mail n'est
+ajouté à ces entrées JSON. L'archive entière n'est pas pseudonyme : `results.xlsx` contient
+les noms ou e-mails de relecteurs disponibles et l'e-mail du compte qui exporte. Ne la partagez
+qu'avec les personnes autorisées à voir ces identités. Ces citations ne constituent ni une
+vérification de source ni une évaluation de leur soutien aux réponses ; les textes exportés sont
+les textes actuels.
 """
