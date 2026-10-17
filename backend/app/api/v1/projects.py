@@ -669,20 +669,17 @@ async def list_articles(
         )
     ).all()
     stats = {(k or "NONE"): n for k, n in stats_rows}
-    reviews = await latest_reviews(db, [r[0].id for r in rows], scope)
+    # Aveugle : seule SA relecture est projetée (review / answers / confidence) ; la dernière
+    # relecture d'un autre membre ne doit jamais apparaître, même après la sienne.
+    reviews = await latest_reviews(
+        db,
+        [r[0].id for r in rows],
+        scope,
+        reviewer_id=user.id if scope.kind == "blind" else None,
+    )
     mine: set | None = None
-    if scope.kind == "blind":  # ne montrer l'IA et les autres relecteurs qu'après SA relecture
-        mine = set(
-            (
-                await db.execute(
-                    select(HumanAnnotation.article_id).where(
-                        HumanAnnotation.user_id == user.id,
-                        HumanAnnotation.article_id.in_([r[0].id for r in rows]),
-                        in_search(HumanAnnotation.search_id, scope),
-                    )
-                )
-            ).scalars()
-        )
+    if scope.kind == "blind":  # ne montrer l'IA qu'après SA relecture
+        mine = set(reviews)
     stats["TO_REVIEW"] = (
         await db.execute(
             select(func.count())
