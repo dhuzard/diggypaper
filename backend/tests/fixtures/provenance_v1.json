@@ -1,0 +1,1195 @@
+{
+  "snapshot": {
+    "schema_version": 1,
+    "canonical_encoding": "seip-json-v1",
+    "id": "00000000-0000-0000-0000-000000000001",
+    "project_id": "00000000-0000-0000-0000-000000000002",
+    "article_id": "00000000-0000-0000-0000-000000000003",
+    "captured_at": "2026-10-16T12:00:00Z",
+    "pmid": "123",
+    "pmcid": "PMC123",
+    "doi": "10.1/example",
+    "source": {
+      "type": "europepmc",
+      "public_url": "https://example.org/article?id=123&format=xml",
+      "url_state": "retained",
+      "url_unavailable_reason": null,
+      "attribution_check": "not_checked",
+      "extraction_method": "unknown",
+      "extraction_version": "unknown",
+      "software_build": "unknown"
+    },
+    "components": {
+      "title": "Café 🐭",
+      "abstract": "No mice were housed.",
+      "methods_text": "Legacy methods.",
+      "sections": [
+        {
+          "title": "Methods",
+          "kind": "methods",
+          "text": "Mice α. No intervention."
+        }
+      ]
+    },
+    "raw_artifact": {
+      "availability": "not_captured",
+      "sha256": null,
+      "media_type": null,
+      "reason": null
+    },
+    "views": [
+      {
+        "id": "00000000-0000-0000-0000-00000000000b",
+        "kind": "composed",
+        "availability": "retained",
+        "text": "Methods\nMice α. No intervention.",
+        "sha256": "103eb6e35a965bd5120fc1bed460808e54e525b95a2c2f67f63c1f152d713508",
+        "selection": [
+          "methods"
+        ],
+        "fallback": null,
+        "composition_version": "fixture-compose-v1",
+        "origins": [
+          {
+            "start": 0,
+            "end": 7,
+            "origin": "component",
+            "component_path": [
+              "sections",
+              0,
+              "title"
+            ],
+            "source_start": 0,
+            "source_end": 7
+          },
+          {
+            "start": 7,
+            "end": 8,
+            "origin": "synthetic",
+            "component_path": null,
+            "source_start": null,
+            "source_end": null
+          },
+          {
+            "start": 8,
+            "end": 32,
+            "origin": "component",
+            "component_path": [
+              "sections",
+              0,
+              "text"
+            ],
+            "source_start": 0,
+            "source_end": 24
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-0000-0000-00000000000c",
+        "kind": "review",
+        "availability": "retained",
+        "text": "Methods\nMice α. No intervention.",
+        "sha256": "103eb6e35a965bd5120fc1bed460808e54e525b95a2c2f67f63c1f152d713508",
+        "selection": [
+          "methods"
+        ],
+        "fallback": null,
+        "composition_version": "fixture-compose-v1",
+        "origins": [
+          {
+            "start": 0,
+            "end": 7,
+            "origin": "component",
+            "component_path": [
+              "sections",
+              0,
+              "title"
+            ],
+            "source_start": 0,
+            "source_end": 7
+          },
+          {
+            "start": 7,
+            "end": 8,
+            "origin": "synthetic",
+            "component_path": null,
+            "source_start": null,
+            "source_end": null
+          },
+          {
+            "start": 8,
+            "end": 32,
+            "origin": "component",
+            "component_path": [
+              "sections",
+              0,
+              "text"
+            ],
+            "source_start": 0,
+            "source_end": 24
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-0000-0000-00000000000d",
+        "kind": "legacy_methods",
+        "availability": "retained",
+        "text": "Legacy methods.",
+        "sha256": "16a91e73fc58eecfac6707f2a561a3b53de4151090eb1f352665a3100546a678",
+        "selection": [
+          "legacy_methods"
+        ],
+        "fallback": null,
+        "composition_version": "fixture-compose-v1",
+        "origins": [
+          {
+            "start": 0,
+            "end": 15,
+            "origin": "component",
+            "component_path": [
+              "methods_text"
+            ],
+            "source_start": 0,
+            "source_end": 15
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-0000-0000-00000000000e",
+        "kind": "title_abstract",
+        "availability": "retained",
+        "text": "Café 🐭\nNo mice were housed.",
+        "sha256": "b3fd41e5a0cc9730a48958df00dc6f20da153935827adb9c569301a067cebd47",
+        "selection": [
+          "title",
+          "abstract"
+        ],
+        "fallback": null,
+        "composition_version": "fixture-compose-v1",
+        "origins": [
+          {
+            "start": 0,
+            "end": 6,
+            "origin": "component",
+            "component_path": [
+              "title"
+            ],
+            "source_start": 0,
+            "source_end": 6
+          },
+          {
+            "start": 6,
+            "end": 7,
+            "origin": "synthetic",
+            "component_path": null,
+            "source_start": null,
+            "source_end": null
+          },
+          {
+            "start": 7,
+            "end": 27,
+            "origin": "component",
+            "component_path": [
+              "abstract"
+            ],
+            "source_start": 0,
+            "source_end": 20
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-0000-0000-00000000000f",
+        "kind": "composed",
+        "availability": "retained",
+        "text": "No mice were housed.",
+        "sha256": "9c78c3ac2306a7e2fec6811161a149225ab253172a257468e112f63b63afeb72",
+        "selection": [
+          "results"
+        ],
+        "fallback": "abstract",
+        "composition_version": "fixture-compose-v1",
+        "origins": [
+          {
+            "start": 0,
+            "end": 20,
+            "origin": "component",
+            "component_path": [
+              "abstract"
+            ],
+            "source_start": 0,
+            "source_end": 20
+          }
+        ]
+      }
+    ]
+  },
+  "snapshot_sha256": "09f7edfab91a1c0f44b10459829e0a7986bfc7a0e8960ea157483cd0129f3314",
+  "literal_snapshot": {
+    "schema_version": 1,
+    "canonical_encoding": "seip-json-v1",
+    "id": "00000000-0000-0000-0000-00000000001e",
+    "project_id": "00000000-0000-0000-0000-000000000002",
+    "article_id": "00000000-0000-0000-0000-000000000003",
+    "captured_at": "2026-10-16T12:00:00Z",
+    "pmid": "123",
+    "pmcid": "PMC123",
+    "doi": "10.1/example",
+    "source": {
+      "type": "europepmc",
+      "public_url": "https://example.org/article?id=123&format=xml",
+      "url_state": "retained",
+      "url_unavailable_reason": null,
+      "attribution_check": "not_checked",
+      "extraction_method": "unknown",
+      "extraction_version": "unknown",
+      "software_build": "unknown"
+    },
+    "components": {
+      "title": "Café 🐭",
+      "abstract": "No mice were housed.",
+      "methods_text": "LEGACY",
+      "sections": [
+        {
+          "title": "Methods",
+          "kind": "methods",
+          "text": "prefix {methods_text} suffix"
+        }
+      ]
+    },
+    "raw_artifact": {
+      "availability": "not_captured",
+      "sha256": null,
+      "media_type": null,
+      "reason": null
+    },
+    "views": [
+      {
+        "id": "00000000-0000-0000-0000-00000000001f",
+        "kind": "composed",
+        "availability": "retained",
+        "text": "Methods\nprefix {methods_text} suffix",
+        "sha256": "6487d756d9ec6404e5c9172b567e32cdc32a5035954198592871262c75dcc836",
+        "selection": [
+          "methods"
+        ],
+        "fallback": null,
+        "composition_version": "fixture-compose-v1",
+        "origins": [
+          {
+            "start": 0,
+            "end": 7,
+            "origin": "component",
+            "component_path": [
+              "sections",
+              0,
+              "title"
+            ],
+            "source_start": 0,
+            "source_end": 7
+          },
+          {
+            "start": 7,
+            "end": 8,
+            "origin": "synthetic",
+            "component_path": null,
+            "source_start": null,
+            "source_end": null
+          },
+          {
+            "start": 8,
+            "end": 36,
+            "origin": "component",
+            "component_path": [
+              "sections",
+              0,
+              "text"
+            ],
+            "source_start": 0,
+            "source_end": 28
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-0000-0000-000000000020",
+        "kind": "legacy_methods",
+        "availability": "retained",
+        "text": "LEGACY",
+        "sha256": "6e779d3634705ea2ed91ee059566ec7290b305ef850ef3664f6ad2e63a27d5e9",
+        "selection": [
+          "legacy_methods"
+        ],
+        "fallback": null,
+        "composition_version": "fixture-compose-v1",
+        "origins": [
+          {
+            "start": 0,
+            "end": 6,
+            "origin": "component",
+            "component_path": [
+              "methods_text"
+            ],
+            "source_start": 0,
+            "source_end": 6
+          }
+        ]
+      }
+    ]
+  },
+  "literal_snapshot_sha256": "0dbd828738d1b0cef5e99c1db25c21358b8c4ac7cd272a70c55c373393ba1218",
+  "invocations": [
+    {
+      "name": "legacy_only",
+      "envelope": {
+        "schema_version": 1,
+        "canonical_encoding": "seip-json-v1",
+        "id": "00000000-0000-0000-0000-000000000015",
+        "group_id": "00000000-0000-0000-0000-000000000079",
+        "parent_id": null,
+        "project_id": "00000000-0000-0000-0000-000000000002",
+        "article_id": "00000000-0000-0000-0000-000000000003",
+        "source_snapshot_id": "00000000-0000-0000-0000-000000000001",
+        "search_id": null,
+        "inference_job_id": null,
+        "benchmark_run_id": null,
+        "variant": null,
+        "stage": "main",
+        "call_kind": "chat",
+        "sequence": 0,
+        "attempt": 1,
+        "prepared_at": "2026-10-16T12:01:00Z",
+        "prompt": {
+          "template_id": null,
+          "version": "fixture-v1",
+          "system_template": "S",
+          "user_template": "{article_text}",
+          "field_schema": {
+            "use_mice": {
+              "type": "boolean"
+            }
+          },
+          "field_schema_sha256": "908282f537efa09f37057be2da22a0f691cb8a55906f4d329c112ffbbed0971a"
+        },
+        "model": {
+          "backend": "OLLAMA",
+          "identifier": "fixture-model",
+          "revision": null,
+          "model_artifact_sha256": null,
+          "tokenizer_artifact_sha256": null
+        },
+        "software_build": "unknown",
+        "request": {
+          "messages": [
+            {
+              "content": "Legacy methods.",
+              "role": "user"
+            }
+          ],
+          "model": "fixture-model",
+          "response_format": {
+            "type": "json_object"
+          },
+          "temperature": 0.0
+        },
+        "request_sha256": "7b34460763b22e6a852b6172929ca4eb2ebc9d7ba8c76d68df6ebb869df24508",
+        "source_view_ids": [
+          "00000000-0000-0000-0000-00000000000d"
+        ],
+        "input_spans": [
+          {
+            "payload_path": [
+              "messages",
+              0,
+              "content"
+            ],
+            "start": 0,
+            "end": 15,
+            "origin": "target",
+            "view_id": "00000000-0000-0000-0000-00000000000d",
+            "view_start": 0,
+            "view_end": 15,
+            "component_path": [
+              "methods_text"
+            ],
+            "source_start": 0,
+            "source_end": 15,
+            "example_ref": null
+          }
+        ],
+        "execution": {
+          "window_index": null,
+          "window_count": null,
+          "winning_call_id": null,
+          "tie_policy": null,
+          "max_tokens": null,
+          "truncation": "unknown",
+          "confidence_call_id": null,
+          "answers_call_id": null
+        },
+        "quotation_producer": "may_produce"
+      }
+    },
+    {
+      "name": "abstract_fallback",
+      "envelope": {
+        "schema_version": 1,
+        "canonical_encoding": "seip-json-v1",
+        "id": "00000000-0000-0000-0000-000000000016",
+        "group_id": "00000000-0000-0000-0000-00000000007a",
+        "parent_id": null,
+        "project_id": "00000000-0000-0000-0000-000000000002",
+        "article_id": "00000000-0000-0000-0000-000000000003",
+        "source_snapshot_id": "00000000-0000-0000-0000-000000000001",
+        "search_id": null,
+        "inference_job_id": null,
+        "benchmark_run_id": null,
+        "variant": null,
+        "stage": "main",
+        "call_kind": "chat",
+        "sequence": 0,
+        "attempt": 1,
+        "prepared_at": "2026-10-16T12:01:00Z",
+        "prompt": {
+          "template_id": null,
+          "version": "fixture-v1",
+          "system_template": "S",
+          "user_template": "{article_text}",
+          "field_schema": {
+            "use_mice": {
+              "type": "boolean"
+            }
+          },
+          "field_schema_sha256": "908282f537efa09f37057be2da22a0f691cb8a55906f4d329c112ffbbed0971a"
+        },
+        "model": {
+          "backend": "OLLAMA",
+          "identifier": "fixture-model",
+          "revision": null,
+          "model_artifact_sha256": null,
+          "tokenizer_artifact_sha256": null
+        },
+        "software_build": "unknown",
+        "request": {
+          "messages": [
+            {
+              "content": "No mice were housed.",
+              "role": "user"
+            }
+          ],
+          "model": "fixture-model",
+          "response_format": {
+            "type": "json_object"
+          },
+          "temperature": 0.0
+        },
+        "request_sha256": "a3990d321dbc7350ffe95cec49bfd5adc61ac08a9479d42ebeff9bdfdd4c174a",
+        "source_view_ids": [
+          "00000000-0000-0000-0000-00000000000f"
+        ],
+        "input_spans": [
+          {
+            "payload_path": [
+              "messages",
+              0,
+              "content"
+            ],
+            "start": 0,
+            "end": 20,
+            "origin": "target",
+            "view_id": "00000000-0000-0000-0000-00000000000f",
+            "view_start": 0,
+            "view_end": 20,
+            "component_path": [
+              "abstract"
+            ],
+            "source_start": 0,
+            "source_end": 20,
+            "example_ref": null
+          }
+        ],
+        "execution": {
+          "window_index": null,
+          "window_count": null,
+          "winning_call_id": null,
+          "tie_policy": null,
+          "max_tokens": null,
+          "truncation": "unknown",
+          "confidence_call_id": null,
+          "answers_call_id": null
+        },
+        "quotation_producer": "may_produce"
+      }
+    },
+    {
+      "name": "repeated_placeholders",
+      "envelope": {
+        "schema_version": 1,
+        "canonical_encoding": "seip-json-v1",
+        "id": "00000000-0000-0000-0000-000000000017",
+        "group_id": "00000000-0000-0000-0000-00000000007b",
+        "parent_id": null,
+        "project_id": "00000000-0000-0000-0000-000000000002",
+        "article_id": "00000000-0000-0000-0000-000000000003",
+        "source_snapshot_id": "00000000-0000-0000-0000-000000000001",
+        "search_id": null,
+        "inference_job_id": null,
+        "benchmark_run_id": null,
+        "variant": null,
+        "stage": "main",
+        "call_kind": "chat",
+        "sequence": 0,
+        "attempt": 1,
+        "prepared_at": "2026-10-16T12:01:00Z",
+        "prompt": {
+          "template_id": null,
+          "version": "fixture-v1",
+          "system_template": "S",
+          "user_template": "{article_text}",
+          "field_schema": {
+            "use_mice": {
+              "type": "boolean"
+            }
+          },
+          "field_schema_sha256": "908282f537efa09f37057be2da22a0f691cb8a55906f4d329c112ffbbed0971a"
+        },
+        "model": {
+          "backend": "OLLAMA",
+          "identifier": "fixture-model",
+          "revision": null,
+          "model_artifact_sha256": null,
+          "tokenizer_artifact_sha256": null
+        },
+        "software_build": "unknown",
+        "request": {
+          "messages": [
+            {
+              "content": "Methods\nMice α. No intervention.|Methods\nMice α. No intervention.|Legacy methods.",
+              "role": "user"
+            }
+          ],
+          "model": "fixture-model",
+          "response_format": {
+            "type": "json_object"
+          },
+          "temperature": 0.0
+        },
+        "request_sha256": "d415a082525edbedd17263973a6df79983291ddae6af4495ebb3b24cbbad4cf2",
+        "source_view_ids": [
+          "00000000-0000-0000-0000-00000000000b",
+          "00000000-0000-0000-0000-00000000000d"
+        ],
+        "input_spans": [
+          {
+            "payload_path": [
+              "messages",
+              0,
+              "content"
+            ],
+            "start": 0,
+            "end": 7,
+            "origin": "target",
+            "view_id": "00000000-0000-0000-0000-00000000000b",
+            "view_start": 0,
+            "view_end": 7,
+            "component_path": [
+              "sections",
+              0,
+              "title"
+            ],
+            "source_start": 0,
+            "source_end": 7,
+            "example_ref": null
+          },
+          {
+            "payload_path": [
+              "messages",
+              0,
+              "content"
+            ],
+            "start": 7,
+            "end": 8,
+            "origin": "synthetic",
+            "view_id": null,
+            "view_start": null,
+            "view_end": null,
+            "component_path": null,
+            "source_start": null,
+            "source_end": null,
+            "example_ref": null
+          },
+          {
+            "payload_path": [
+              "messages",
+              0,
+              "content"
+            ],
+            "start": 8,
+            "end": 32,
+            "origin": "target",
+            "view_id": "00000000-0000-0000-0000-00000000000b",
+            "view_start": 8,
+            "view_end": 32,
+            "component_path": [
+              "sections",
+              0,
+              "text"
+            ],
+            "source_start": 0,
+            "source_end": 24,
+            "example_ref": null
+          },
+          {
+            "payload_path": [
+              "messages",
+              0,
+              "content"
+            ],
+            "start": 33,
+            "end": 40,
+            "origin": "target",
+            "view_id": "00000000-0000-0000-0000-00000000000b",
+            "view_start": 0,
+            "view_end": 7,
+            "component_path": [
+              "sections",
+              0,
+              "title"
+            ],
+            "source_start": 0,
+            "source_end": 7,
+            "example_ref": null
+          },
+          {
+            "payload_path": [
+              "messages",
+              0,
+              "content"
+            ],
+            "start": 40,
+            "end": 41,
+            "origin": "synthetic",
+            "view_id": null,
+            "view_start": null,
+            "view_end": null,
+            "component_path": null,
+            "source_start": null,
+            "source_end": null,
+            "example_ref": null
+          },
+          {
+            "payload_path": [
+              "messages",
+              0,
+              "content"
+            ],
+            "start": 41,
+            "end": 65,
+            "origin": "target",
+            "view_id": "00000000-0000-0000-0000-00000000000b",
+            "view_start": 8,
+            "view_end": 32,
+            "component_path": [
+              "sections",
+              0,
+              "text"
+            ],
+            "source_start": 0,
+            "source_end": 24,
+            "example_ref": null
+          },
+          {
+            "payload_path": [
+              "messages",
+              0,
+              "content"
+            ],
+            "start": 66,
+            "end": 81,
+            "origin": "target",
+            "view_id": "00000000-0000-0000-0000-00000000000d",
+            "view_start": 0,
+            "view_end": 15,
+            "component_path": [
+              "methods_text"
+            ],
+            "source_start": 0,
+            "source_end": 15,
+            "example_ref": null
+          },
+          {
+            "payload_path": [
+              "messages",
+              0,
+              "content"
+            ],
+            "start": 32,
+            "end": 33,
+            "origin": "template",
+            "view_id": null,
+            "view_start": null,
+            "view_end": null,
+            "component_path": null,
+            "source_start": null,
+            "source_end": null,
+            "example_ref": null
+          },
+          {
+            "payload_path": [
+              "messages",
+              0,
+              "content"
+            ],
+            "start": 65,
+            "end": 66,
+            "origin": "template",
+            "view_id": null,
+            "view_start": null,
+            "view_end": null,
+            "component_path": null,
+            "source_start": null,
+            "source_end": null,
+            "example_ref": null
+          }
+        ],
+        "execution": {
+          "window_index": null,
+          "window_count": null,
+          "winning_call_id": null,
+          "tie_policy": null,
+          "max_tokens": null,
+          "truncation": "unknown",
+          "confidence_call_id": null,
+          "answers_call_id": null
+        },
+        "quotation_producer": "may_produce"
+      }
+    },
+    {
+      "name": "missing_placeholder",
+      "envelope": {
+        "schema_version": 1,
+        "canonical_encoding": "seip-json-v1",
+        "id": "00000000-0000-0000-0000-000000000018",
+        "group_id": "00000000-0000-0000-0000-00000000007c",
+        "parent_id": null,
+        "project_id": "00000000-0000-0000-0000-000000000002",
+        "article_id": "00000000-0000-0000-0000-000000000003",
+        "source_snapshot_id": "00000000-0000-0000-0000-000000000001",
+        "search_id": null,
+        "inference_job_id": null,
+        "benchmark_run_id": null,
+        "variant": null,
+        "stage": "main",
+        "call_kind": "chat",
+        "sequence": 0,
+        "attempt": 1,
+        "prepared_at": "2026-10-16T12:01:00Z",
+        "prompt": {
+          "template_id": null,
+          "version": "fixture-v1",
+          "system_template": "S",
+          "user_template": "{article_text}",
+          "field_schema": {
+            "use_mice": {
+              "type": "boolean"
+            }
+          },
+          "field_schema_sha256": "908282f537efa09f37057be2da22a0f691cb8a55906f4d329c112ffbbed0971a"
+        },
+        "model": {
+          "backend": "OLLAMA",
+          "identifier": "fixture-model",
+          "revision": null,
+          "model_artifact_sha256": null,
+          "tokenizer_artifact_sha256": null
+        },
+        "software_build": "unknown",
+        "request": {
+          "messages": [
+            {
+              "content": "No article placeholder",
+              "role": "user"
+            }
+          ],
+          "model": "fixture-model",
+          "response_format": {
+            "type": "json_object"
+          },
+          "temperature": 0.0
+        },
+        "request_sha256": "40f28994f57df78c557a4f531b867082013d5b2ad7abb8a8ed17b1b0ecd90877",
+        "source_view_ids": [],
+        "input_spans": [
+          {
+            "payload_path": [
+              "messages",
+              0,
+              "content"
+            ],
+            "start": 0,
+            "end": 22,
+            "origin": "template",
+            "view_id": null,
+            "view_start": null,
+            "view_end": null,
+            "component_path": null,
+            "source_start": null,
+            "source_end": null,
+            "example_ref": null
+          }
+        ],
+        "execution": {
+          "window_index": null,
+          "window_count": null,
+          "winning_call_id": null,
+          "tie_policy": null,
+          "max_tokens": null,
+          "truncation": "unknown",
+          "confidence_call_id": null,
+          "answers_call_id": null
+        },
+        "quotation_producer": "may_produce"
+      }
+    },
+    {
+      "name": "example_separation",
+      "envelope": {
+        "schema_version": 1,
+        "canonical_encoding": "seip-json-v1",
+        "id": "00000000-0000-0000-0000-000000000019",
+        "group_id": "00000000-0000-0000-0000-00000000007d",
+        "parent_id": null,
+        "project_id": "00000000-0000-0000-0000-000000000002",
+        "article_id": "00000000-0000-0000-0000-000000000003",
+        "source_snapshot_id": "00000000-0000-0000-0000-000000000001",
+        "search_id": null,
+        "inference_job_id": null,
+        "benchmark_run_id": null,
+        "variant": null,
+        "stage": "main",
+        "call_kind": "chat",
+        "sequence": 0,
+        "attempt": 1,
+        "prepared_at": "2026-10-16T12:01:00Z",
+        "prompt": {
+          "template_id": null,
+          "version": "fixture-v1",
+          "system_template": "S",
+          "user_template": "{article_text}",
+          "field_schema": {
+            "use_mice": {
+              "type": "boolean"
+            }
+          },
+          "field_schema_sha256": "908282f537efa09f37057be2da22a0f691cb8a55906f4d329c112ffbbed0971a"
+        },
+        "model": {
+          "backend": "OLLAMA",
+          "identifier": "fixture-model",
+          "revision": null,
+          "model_artifact_sha256": null,
+          "tokenizer_artifact_sha256": null
+        },
+        "software_build": "unknown",
+        "request": {
+          "messages": [
+            {
+              "content": "Example: Mice α. No intervention.",
+              "role": "system"
+            },
+            {
+              "content": "Methods\nMice α. No intervention.",
+              "role": "user"
+            }
+          ],
+          "model": "fixture-model",
+          "response_format": {
+            "type": "json_object"
+          },
+          "temperature": 0.0
+        },
+        "request_sha256": "86aa336f230f99d6a7df51634c376e2f7cc5a027c5fd34184ebd65035900211c",
+        "source_view_ids": [
+          "00000000-0000-0000-0000-00000000000b"
+        ],
+        "input_spans": [
+          {
+            "payload_path": [
+              "messages",
+              0,
+              "content"
+            ],
+            "start": 0,
+            "end": 9,
+            "origin": "template",
+            "view_id": null,
+            "view_start": null,
+            "view_end": null,
+            "component_path": null,
+            "source_start": null,
+            "source_end": null,
+            "example_ref": null
+          },
+          {
+            "payload_path": [
+              "messages",
+              0,
+              "content"
+            ],
+            "start": 9,
+            "end": 33,
+            "origin": "example",
+            "view_id": null,
+            "view_start": null,
+            "view_end": null,
+            "component_path": null,
+            "source_start": null,
+            "source_end": null,
+            "example_ref": "fixture-example-1"
+          },
+          {
+            "payload_path": [
+              "messages",
+              1,
+              "content"
+            ],
+            "start": 0,
+            "end": 7,
+            "origin": "target",
+            "view_id": "00000000-0000-0000-0000-00000000000b",
+            "view_start": 0,
+            "view_end": 7,
+            "component_path": [
+              "sections",
+              0,
+              "title"
+            ],
+            "source_start": 0,
+            "source_end": 7,
+            "example_ref": null
+          },
+          {
+            "payload_path": [
+              "messages",
+              1,
+              "content"
+            ],
+            "start": 7,
+            "end": 8,
+            "origin": "synthetic",
+            "view_id": null,
+            "view_start": null,
+            "view_end": null,
+            "component_path": null,
+            "source_start": null,
+            "source_end": null,
+            "example_ref": null
+          },
+          {
+            "payload_path": [
+              "messages",
+              1,
+              "content"
+            ],
+            "start": 8,
+            "end": 32,
+            "origin": "target",
+            "view_id": "00000000-0000-0000-0000-00000000000b",
+            "view_start": 8,
+            "view_end": 32,
+            "component_path": [
+              "sections",
+              0,
+              "text"
+            ],
+            "source_start": 0,
+            "source_end": 24,
+            "example_ref": null
+          }
+        ],
+        "execution": {
+          "window_index": null,
+          "window_count": null,
+          "winning_call_id": null,
+          "tie_policy": null,
+          "max_tokens": null,
+          "truncation": "unknown",
+          "confidence_call_id": null,
+          "answers_call_id": null
+        },
+        "quotation_producer": "may_produce"
+      }
+    },
+    {
+      "name": "literal_inside_article",
+      "envelope": {
+        "schema_version": 1,
+        "canonical_encoding": "seip-json-v1",
+        "id": "00000000-0000-0000-0000-000000000021",
+        "group_id": "00000000-0000-0000-0000-000000000085",
+        "parent_id": null,
+        "project_id": "00000000-0000-0000-0000-000000000002",
+        "article_id": "00000000-0000-0000-0000-000000000003",
+        "source_snapshot_id": "00000000-0000-0000-0000-00000000001e",
+        "search_id": null,
+        "inference_job_id": null,
+        "benchmark_run_id": null,
+        "variant": null,
+        "stage": "main",
+        "call_kind": "chat",
+        "sequence": 0,
+        "attempt": 1,
+        "prepared_at": "2026-10-16T12:01:00Z",
+        "prompt": {
+          "template_id": null,
+          "version": "fixture-v1",
+          "system_template": "S",
+          "user_template": "{article_text}",
+          "field_schema": {
+            "use_mice": {
+              "type": "boolean"
+            }
+          },
+          "field_schema_sha256": "908282f537efa09f37057be2da22a0f691cb8a55906f4d329c112ffbbed0971a"
+        },
+        "model": {
+          "backend": "OLLAMA",
+          "identifier": "fixture-model",
+          "revision": null,
+          "model_artifact_sha256": null,
+          "tokenizer_artifact_sha256": null
+        },
+        "software_build": "unknown",
+        "request": {
+          "messages": [
+            {
+              "content": "Methods\nprefix LEGACY suffix",
+              "role": "user"
+            }
+          ],
+          "model": "fixture-model",
+          "response_format": {
+            "type": "json_object"
+          },
+          "temperature": 0.0
+        },
+        "request_sha256": "4c63c9785e7bb1a43e3d9759ada5f8d5ec20077e0b6abce00fadc3e9caf0bb44",
+        "source_view_ids": [
+          "00000000-0000-0000-0000-00000000001f",
+          "00000000-0000-0000-0000-000000000020"
+        ],
+        "input_spans": [
+          {
+            "payload_path": [
+              "messages",
+              0,
+              "content"
+            ],
+            "start": 0,
+            "end": 7,
+            "origin": "target",
+            "view_id": "00000000-0000-0000-0000-00000000001f",
+            "view_start": 0,
+            "view_end": 7,
+            "component_path": [
+              "sections",
+              0,
+              "title"
+            ],
+            "source_start": 0,
+            "source_end": 7,
+            "example_ref": null
+          },
+          {
+            "payload_path": [
+              "messages",
+              0,
+              "content"
+            ],
+            "start": 7,
+            "end": 8,
+            "origin": "synthetic",
+            "view_id": null,
+            "view_start": null,
+            "view_end": null,
+            "component_path": null,
+            "source_start": null,
+            "source_end": null,
+            "example_ref": null
+          },
+          {
+            "payload_path": [
+              "messages",
+              0,
+              "content"
+            ],
+            "start": 8,
+            "end": 15,
+            "origin": "target",
+            "view_id": "00000000-0000-0000-0000-00000000001f",
+            "view_start": 8,
+            "view_end": 15,
+            "component_path": [
+              "sections",
+              0,
+              "text"
+            ],
+            "source_start": 0,
+            "source_end": 7,
+            "example_ref": null
+          },
+          {
+            "payload_path": [
+              "messages",
+              0,
+              "content"
+            ],
+            "start": 15,
+            "end": 21,
+            "origin": "target",
+            "view_id": "00000000-0000-0000-0000-000000000020",
+            "view_start": 0,
+            "view_end": 6,
+            "component_path": [
+              "methods_text"
+            ],
+            "source_start": 0,
+            "source_end": 6,
+            "example_ref": null
+          },
+          {
+            "payload_path": [
+              "messages",
+              0,
+              "content"
+            ],
+            "start": 21,
+            "end": 28,
+            "origin": "target",
+            "view_id": "00000000-0000-0000-0000-00000000001f",
+            "view_start": 29,
+            "view_end": 36,
+            "component_path": [
+              "sections",
+              0,
+              "text"
+            ],
+            "source_start": 21,
+            "source_end": 28,
+            "example_ref": null
+          }
+        ],
+        "execution": {
+          "window_index": null,
+          "window_count": null,
+          "winning_call_id": null,
+          "tie_policy": null,
+          "max_tokens": null,
+          "truncation": "unknown",
+          "confidence_call_id": null,
+          "answers_call_id": null
+        },
+        "quotation_producer": "may_produce"
+      }
+    }
+  ]
+}
