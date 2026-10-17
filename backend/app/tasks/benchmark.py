@@ -11,11 +11,15 @@ sinon on mesure leur accord. Les variantes de prompt ne concernent que les modè
 
 import asyncio
 import logging
-import resource
 import threading
 import time
 import uuid
 from dataclasses import dataclass
+
+try:
+    import resource  # Unix seulement : absent sous Windows
+except ImportError:  # pragma: no cover - dépend de la plateforme
+    resource = None
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -59,6 +63,13 @@ logger = logging.getLogger(__name__)
 _session_factory_override: async_sessionmaker[AsyncSession] | None = None
 
 DEFAULT_USER_PROMPT = "Article text:\n{article_text}"
+
+
+def _peak_ram_mb() -> float | None:
+    """RAM max du processus (Mo) via ``resource`` ; ``None`` sans ce module (Windows)."""
+    if resource is None:
+        return None
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
 
 
 @dataclass(frozen=True)
@@ -343,7 +354,7 @@ async def _do_benchmark(
                     "variant": vname,
                 }
                 await session.commit()
-                ram_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+                ram_mb = _peak_ram_mb()
             by_variant[vname] = preds
             res = BenchmarkResult(
                 benchmark_run_id=run.id,
