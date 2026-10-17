@@ -44,6 +44,7 @@ from app.db.models import (
     PromptTemplate,
 )
 from app.emails import Mailer
+from app.evidence_prediction import prediction_envelope
 from app.gold_examples import examples_block, pick_examples
 from app.inference import (
     InferenceError,
@@ -402,8 +403,29 @@ async def _do_inference(
         else:
             needs_review += 1
         processed += 1
+        prediction_id = uuid.uuid4()
+        quote_checks = (
+            check_prediction_quotes(invocation_from_record(producing.row), prediction)
+            if producing
+            else None
+        )
+        evidence_graph = (
+            prediction_envelope(
+                prediction_id=prediction_id,
+                project_id=job.project_id,
+                article_id=article.id,
+                project=project,
+                decision=prediction,
+                invocation_id=producing.row.id,
+                source_snapshot_id=producing.snapshot.id,
+                quote_checks=quote_checks,
+            )
+            if producing
+            else None
+        )
         session.add(
             ArticlePrediction(
+                id=prediction_id,
                 article_id=article.id,
                 search_id=job.search_id if producing else search.id,
                 prompt_template_id=prompt.id,
@@ -411,11 +433,8 @@ async def _do_inference(
                 decision_json=prediction,
                 confidence_score=confidence,
                 evidence_quotes=prediction.get("evidence_quotes"),
-                quote_checks_json=(
-                    check_prediction_quotes(invocation_from_record(producing.row), prediction)
-                    if producing
-                    else None
-                ),
+                quote_checks_json=quote_checks,
+                evidence_graph_json=evidence_graph,
                 status=status,
                 provenance_project_id=job.project_id if producing else None,
                 source_snapshot_id=producing.snapshot.id if producing else None,

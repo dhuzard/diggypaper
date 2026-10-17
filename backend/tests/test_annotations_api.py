@@ -328,6 +328,7 @@ async def test_get_prediction_returns_prediction(client, session, researcher_use
     assert body["confidence_score"] == 0.9
     assert body["evidence_quotes"] == ["mice were randomized"]
     assert body["quote_checks"] is None  # historical prediction: no captured-input check
+    assert body["evidence_graph"] is None
     assert body["status"] == "NEEDS_HUMAN_REVIEW"
 
 
