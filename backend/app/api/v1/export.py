@@ -34,14 +34,18 @@ from app.db.models import (
     Article,
     ArticleFile,
     ArticlePrediction,
+    EvidenceSupportAssessment,
     ExportJob,
     HumanAnnotation,
     ImportJob,
     InferenceJob,
+    Invocation,
     ModelRegistry,
     PromptTemplate,
+    SourceSnapshot,
     User,
 )
+from app.evidence_crate import build_bundle
 from app.schema import project_fields
 from app.searches import ScopedProject, default_search, get_search, in_search, lot_condition
 
@@ -442,6 +446,7 @@ async def write_crate(
 
     ``progress(done, total)`` (async, optionnel) est appelé tous les 10 articles.
     """
+    search = search or await default_search(db, project)
     articles, preds, annos, import_jobs, inf_job = await _load(db, project, search=search)
     fields = project_fields(project)
     names = {n for n in (inf_job.model_used, inf_job.prefilter_model) if n} if inf_job else set()
@@ -453,6 +458,53 @@ async def write_crate(
     prompt = await db.get(PromptTemplate, ptid) if ptid else None
     info = crate.project_info(project, fields, import_jobs, inf_job, models, prompt)
     keys = crate.assign_keys(articles)
+    history_predictions = []
+    source_rows = {}
+    invocation_rows = {}
+    assessments = {}
+    if search.kind != "blind" and articles:
+        article_ids = [article.id for article in articles]
+        history_predictions = list(
+            (
+                await db.execute(
+                    select(ArticlePrediction).where(
+                        ArticlePrediction.article_id.in_(article_ids),
+                        in_search(ArticlePrediction.search_id, search),
+                    )
+                )
+            ).scalars()
+        )
+        source_ids = {p.source_snapshot_id for p in history_predictions if p.source_snapshot_id}
+        call_ids = {p.invocation_id for p in history_predictions if p.invocation_id}
+        if source_ids:
+            source_rows = {
+                row.id: row
+                for row in (
+                    await db.execute(
+                        select(SourceSnapshot).where(SourceSnapshot.id.in_(source_ids))
+                    )
+                ).scalars()
+            }
+        if call_ids:
+            invocation_rows = {
+                row.id: row
+                for row in (
+                    await db.execute(select(Invocation).where(Invocation.id.in_(call_ids)))
+                ).scalars()
+            }
+        prediction_ids = [p.id for p in history_predictions]
+        if prediction_ids:
+            for row in (
+                await db.execute(
+                    select(EvidenceSupportAssessment).where(
+                        EvidenceSupportAssessment.prediction_id.in_(prediction_ids)
+                    )
+                )
+            ).scalars():
+                assessments.setdefault(row.prediction_id, []).append(row)
+    replay_manifest, prediction_history = build_bundle(
+        project.id, history_predictions, source_rows, invocation_rows, assessments
+    )
     xlsx = await asyncio.to_thread(
         build_workbook, project, articles, preds, annos, import_jobs, inf_job, user_email
     )
@@ -491,6 +543,14 @@ async def write_crate(
             if progress and i % 10 == 0:
                 await progress(i, len(articles))
         now = datetime.now(UTC).isoformat(timespec="seconds")
+        put(
+            "evidence/portable-replay.json",
+            json.dumps(replay_manifest, ensure_ascii=False, indent=2),
+        )
+        put(
+            "evidence/prediction-history.json",
+            json.dumps(prediction_history, ensure_ascii=False, indent=2),
+        )
         counts = prisma.prisma_counts(articles, preds, annos, import_jobs)
         info["prisma"] = counts
         put("prisma.svg", prisma.render_svg(counts, project.default_language or "fr"))

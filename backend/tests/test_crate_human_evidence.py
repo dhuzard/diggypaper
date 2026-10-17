@@ -131,6 +131,31 @@ async def test_crate_preserves_legacy_answer_after_project_field_changes(session
     assert b"legacy_unversioned" in files["README.md"]
 
 
+async def test_crate_keeps_separate_legacy_prediction_runs_in_evidence_history(session, corpus):
+    project, article = corpus
+    first = ArticlePrediction(
+        article_id=article.id,
+        model_used="legacy-1",
+        decision_json={"ai": True},
+        status=PredictionStatus.AUTO_ACCEPTED,
+    )
+    second = ArticlePrediction(
+        article_id=article.id,
+        model_used="legacy-2",
+        decision_json={"ai": False},
+        status=PredictionStatus.AUTO_ACCEPTED,
+    )
+    session.add_all([first, second])
+    await session.commit()
+    files = await _export(session, project)
+    replay = json.loads(files["evidence/portable-replay.json"])
+    history = json.loads(files["evidence/prediction-history.json"])
+    assert {item["id"] for item in replay["results"]} == {str(first.id), str(second.id)}
+    assert {item["prediction_id"] for item in history} == {str(first.id), str(second.id)}
+    assert {item["capture_state"] for item in history} == {"legacy_unversioned"}
+    assert replay["sources"] == replay["invocations"] == []
+
+
 async def test_reviewer_reference_survives_account_deletion_and_is_project_scoped(
     session, corpus, researcher_user
 ):
@@ -202,6 +227,9 @@ async def test_blind_crate_preserves_only_search_human_evidence_and_redacts_mode
     )
     await session.commit()
     files = await _export(session, project, blind)
+    replay = json.loads(files["evidence/portable-replay.json"])
+    assert replay["sources"] == replay["invocations"] == replay["results"] == []
+    assert json.loads(files["evidence/prediction-history.json"]) == []
     record = json.loads(files["articles/pmid-42/metadata.json"])
     assert record["ai"] is None
     assert len(record["human"]) == 1
