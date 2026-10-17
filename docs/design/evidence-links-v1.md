@@ -1,5 +1,7 @@
 # Evidence and answer links v1: pure contract
 
+> Status update 2026-10-17: the module is now wired: persistence in `app/evidence_prediction.py` and migration `0025`, API in `app/api/v1/support_assessments.py`, UI in `SupportAssessmentPanel.tsx`. Benchmark predictions and human annotations still carry no graph. See the [merge audit](../audits/2026-10-17-seip-merge-audit.md).
+
 Draft implementation slice for [SEIP issue #4](https://github.com/dhuzard/diggypaper/issues/4),
 based on `origin/main` at `9e5859c1d00921fb19f5c61146deeb39977b2df9`.
 The new `app.evidence_links` module has no database, API, task or frontend wiring.

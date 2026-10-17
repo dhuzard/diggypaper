@@ -73,6 +73,42 @@ une seconde question aux seuls articles retenus par la première, sans rien réa
   tout ce qu'il faut pour reproduire), générée en tâche de fond, avec sa licence (`CRATE_LICENSE_*`).
 - **Diagramme de flux PRISMA 2020** (SVG et PDF) calculé depuis les données du projet.
 
+### Intégrité des preuves scientifiques (SEIP)
+Chaîne de provenance ajoutée en octobre 2026 (migrations `0022` → `0028`), décrite dans
+[l'audit initial](docs/audits/2026-10-scientific-evidence-integrity.md), [l'audit de fusion](docs/audits/2026-10-17-seip-merge-audit.md)
+et les contrats de `docs/design/`. Une correspondance de texte n'est jamais un jugement de soutien scientifique.
+- **Versions de source figées** : avant chaque appel au modèle, le texte exactement envoyé
+  (sections, méthodes, résumé) est copié dans une version immuable avec son empreinte SHA-256,
+  son origine (PMC, PDF déposé, résumé seul) et la version de l'extraction. Le remplacement d'un
+  texte intégral est atomique (un nouveau JATS ne garde pas un ancien PDF, des sections sans
+  méthodes n'héritent pas des anciennes) et ne réécrit jamais l'historique.
+- **Appels capturés** : chaque invocation (pré-filtre et appel principal, fenêtres SystemOne,
+  entrées ONNX) est enregistrée avec ses messages, son modèle et son état (préparé, inconnu,
+  réussi, échoué). Une prédiction ne peut être liée qu'à un appel réussi. Les clés et en-têtes
+  ne sont jamais capturés. Les lignes antérieures restent explicitement `legacy_unversioned`.
+- **Relecture liée au texte affiché** : la fiche article renvoie un jeton de la version
+  affichée ; la relecture le renvoie et est refusée si le texte a changé entre-temps.
+- **Vérification de présence des citations** : chaque citation du modèle est cherchée dans
+  l'entrée réellement envoyée (jamais dans le prompt système ni les exemples), avec un
+  résultat `exact`, `normalized` (NFC + espaces), `not_found`, `ambiguous`, `invalid` ;
+  positions en points de code Unicode. Pas de correspondance floue, pas de pliage de casse.
+- **Liens réponse ↔ preuve** : graphe versionné (identifiants stables, liens plusieurs-à-
+  plusieurs, références invalides rejetées) ; `evidence_quotes` reste dérivé pour les anciens
+  clients, qui ne peuvent pas effacer la structure.
+- **Appréciation humaine du soutien** : sur chaque lien, un relecteur enregistre
+  `supports`, `contradicts`, `insufficient` ou `unclear` avec justification ; les
+  appréciations sont immuables et rattachées à la révision exacte de la prédiction.
+- **Gold avec historique** : chaque création ou rafraîchissement ajoute une révision ;
+  obsolescence distinguée selon la source, les preuves ou les réponses ; les anciennes
+  références sont marquées `legacy_unqualified`.
+- **Export portable et rejeu hors ligne** : le RO-Crate contient `evidence/` (lots,
+  invocations, vérifications, appréciations, pseudonymes de relecteurs) et un manifeste de
+  rejeu ; des validateurs sans base de données recalculent empreintes et correspondances.
+- **Pilote de qualification** : protocole, manifeste figé de 30 articles, registre de
+  références indépendantes et calculateur de métriques à dénominateurs explicites
+  (`docs/protocols/`, `docs/schemas/`). Le plan de test du PoC est dans
+  [docs/plans/2026-10-seip-poc-test-plan.md](docs/plans/2026-10-seip-poc-test-plan.md).
+
 ### Travailler à plusieurs
 - **Comptes** : l'administrateur invite des **créateurs** de projets ; ceux-ci invitent des
   collègues, simples **invités** dont le compte disparaît quand ils n'ont plus de projet.
@@ -396,11 +432,12 @@ SameSite=Strict, révoqué au changement de mot de passe et à la déconnexion).
 | POST | `/projects` | Créer un projet |
 | POST | `/projects/{id}/import` | Lancer l'import PubMed |
 | GET | `/projects/{id}/articles` | Liste des articles |
-| GET | `/projects/{id}/articles/{aid}` | Article + texte méthodes |
-| POST | `/projects/{id}/articles/{aid}/annotation` | Soumettre une annotation |
+| GET | `/projects/{id}/articles/{aid}` | Article + texte méthodes, jeton de la version affichée, vérifications de citations |
+| POST | `/projects/{id}/articles/{aid}/annotation` | Soumettre une annotation (liée à la version affichée via le jeton) |
 | GET/POST | `/projects/{id}/searches` | Recherches (question + lot d'articles) ; `?search=<id>` sur les routes de résultats |
 | POST | `/projects/{id}/searches/preview` | Nombre d'articles d'une sélection |
-| GET/POST | `/projects/{id}/gold` · `/gold/from-reviews` | Références (gold) et ajout depuis les relectures |
+| GET/POST | `/projects/{id}/gold` · `/gold/from-reviews` | Références (gold) et ajout depuis les relectures ; révisions et obsolescence par dimension |
+| GET/POST | `/projects/{id}/articles/{aid}/predictions/{pid}/support-assessments` | Appréciations humaines du soutien sur les liens réponse ↔ preuve (immuables) |
 | GET/POST | `/projects/{id}/prompts` | Prompts versionnés |
 | GET/POST | `/projects/{id}/benchmarks` | Benchmarks (métriques) |
 | GET/POST | `/projects/{id}/inference` | Inférence (job) |
@@ -423,10 +460,24 @@ ruff check . && ruff format .
 
 # Frontend
 cd frontend
-npx jest          # tests des libs pures (highlight, swipe)
+npx jest          # tests des libs pures (highlight, swipe) et des panneaux SEIP
 npm run build     # compile + type-check + lint
 npm run lint
+
+# Validateurs SEIP hors ligne (sans base ni réseau)
+cd backend
+python -m app.seip_pilot_manifest ../docs/examples/seip-pilot-manifest-draft-v1.json
+python -m app.seip_reference_ledger ../docs/examples/seip-pilot-manifest-draft-v1.json \
+    ../docs/examples/seip-independent-reference-draft-v1.json
+python -m app.portable_replay ../docs/examples/seip-portable-replay-v1.json
+python -m app.evidence_crate <dossier evidence/ d'un RO-Crate exporté>
+python scripts/benchmark_quote_matcher.py   # latence/mémoire du matcher (docs/benchmarks/)
 ```
+
+Les tests de migration PostgreSQL (`test_provenance_migration.py`, `test_review_binding_postgres.py`)
+ne s'exécutent que si `SEIP_TEST_POSTGRES_URL` est défini ; la CI ne les lance pas encore.
+Sous Windows, `app/tasks/benchmark.py` importe le module Unix `resource` : la collecte de
+quatre modules de test échoue tant que ce point n'est pas corrigé (voir l'audit de fusion, F-0).
 
 ---
 
@@ -437,20 +488,26 @@ diggypaper/
 ├── .env.example              # variables d'env (backend + frontend)
 ├── backend/
 │   ├── app/
-│   │   ├── api/v1/           # routes (auth, projects, prompts, gold, …)
+│   │   ├── api/v1/           # routes (auth, projects, prompts, gold, support_assessments, …)
 │   │   ├── core/             # config, crypto (AES-256-GCM), deps
 │   │   ├── db/               # modèles SQLAlchemy + session
 │   │   ├── pubmed/           # client NCBI E-utilities (throttle, erreurs propres)
-│   │   ├── inference/        # service LLM OpenAI-compatible
+│   │   ├── inference/        # service LLM OpenAI-compatible, SystemOne, ONNX
+│   │   ├── provenance*.py    # SEIP : versions de source, invocations, capture des appels
+│   │   ├── quote_matcher.py  # SEIP : correspondance déterministe des citations
+│   │   ├── evidence_*.py     # SEIP : graphe réponse ↔ preuve, crate de preuves
+│   │   ├── seip_*.py         # SEIP : manifeste pilote, registre de références, scoring
+│   │   ├── portable_replay.py# SEIP : rejeu hors ligne
 │   │   ├── settings/         # réglages et secrets chiffrés
 │   │   ├── tasks/            # tâches Celery (import, benchmark, inférence)
 │   │   ├── emails/           # FastAPI-Mail (DB > env)
 │   │   └── main.py           # app factory (middleware + routers)
-│   ├── alembic/              # migrations (0001 → 0004)
-│   └── tests/                # 22 suites, offline
+│   ├── alembic/              # migrations (0001 → 0028)
+│   └── tests/                # ~50 modules, offline (SQLite) ; 2 modules PostgreSQL optionnels
 └── frontend/
     ├── src/app/              # routes (login, register, projects/[id]/*)
     ├── src/components/ui/    # design system (Button, Field, Card, Feedback)
+    ├── src/components/       # QuoteOccurrencePanel, SupportAssessmentPanel, …
     ├── src/lib/              # api.ts, auth.tsx, highlight.ts, swipe.ts
     ├── src/messages/         # i18n (fr, en, de, es)
     └── tailwind.config.ts    # tokens sémantiques

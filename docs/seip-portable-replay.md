@@ -1,5 +1,7 @@
 # SEIP portable replay manifest v1
 
+> Status update 2026-10-17: the RO-Crate integration now exists (`app/evidence_crate.py`, `evidence/portable-replay.json` in exports). See the [merge audit](../audits/2026-10-17-seip-merge-audit.md).
+
 This is a bounded, unsigned offline format for replaying retained SEIP artifacts and quote occurrences. The [JSON Schema](schemas/seip-portable-replay-v1.schema.json) describes its wire shape, and the [example](examples/seip-portable-replay-v1.json) contains one frozen source, a succeeded invocation, and a replayable quotation occurrence check. The schema is only a shape check; the Python validator performs semantic replay.
 
 From the `backend` directory, run:
