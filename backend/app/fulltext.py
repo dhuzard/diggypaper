@@ -243,12 +243,50 @@ def match_scores(sections: list[dict], candidates: list[tuple]) -> list[tuple[fl
     return sorted(scored, key=lambda t: -t[0])
 
 
+async def _apply_fulltext(
+    session: AsyncSession,
+    art,
+    sections: list[dict],
+    source: str | None,
+    url: str | None,
+    pdf: bytes | None,
+    *,
+    protect_upload: bool = False,
+) -> bool:
+    """Remplace une source cohérente, PDF compris ; le commit reste à l'appelant."""
+    methods = " ".join(s["text"] for s in sections if s["kind"] == "methods") or None
+    if session.get_bind().dialect.name == "sqlite":
+        connection = await session.connection()
+        driver = (await connection.get_raw_connection()).driver_connection
+        # En mode legacy, SQLite n'ouvre pas de transaction sur SELECT/SAVEPOINT.
+        # Sans BEGIN réel, RELEASE committerait avant le commit de l'appelant.
+        if not driver.in_transaction:
+            await connection.exec_driver_sql("BEGIN")
+    # Le traitement en lot peut intercepter une erreur puis committer le reste :
+    # ce savepoint empêche de conserver une source partiellement remplacée.
+    async with session.begin_nested():
+        # L'upload manuel et la recherche automatique sérialisent l'adoption.
+        # La source a pu changer pendant la récupération réseau : relire la base.
+        await session.refresh(art, with_for_update=True)
+        if (
+            protect_upload
+            and art.fulltext_source == "pdf:upload"
+            and long_enough(art.sections or [])
+        ):
+            return False
+        if pdf is not None:
+            await store_pdf(session, art.id, pdf)
+        else:
+            await session.execute(delete(ArticleFile).where(ArticleFile.article_id == art.id))
+        art.sections, art.fulltext_source, art.fulltext_url = sections, source, url
+        art.fulltext_note, art.methods_text = None, methods
+        await session.flush()
+    return True
+
+
 async def apply_uploaded_pdf(session, art, sections: list[dict], data: bytes) -> None:
     """Adopte ce PDF comme texte intégral de l'article (dépôt manuel). Pas de commit."""
-    art.sections, art.fulltext_source = sections, "pdf:upload"
-    art.fulltext_note, art.fulltext_url = None, None
-    await store_pdf(session, art.id, data)
-    art.methods_text = " ".join(s["text"] for s in sections if s["kind"] == "methods") or None
+    await _apply_fulltext(session, art, sections, "pdf:upload", None, data)
 
 
 async def find_open_fulltext(
@@ -318,11 +356,5 @@ async def complete_article(
     )
     if not sections:
         return None
-    art.sections, art.fulltext_source, art.fulltext_url = sections, source, url
-    art.fulltext_note = None
-    if pdf:
-        await store_pdf(session, art.id, pdf)
-    art.methods_text = (
-        " ".join(s["text"] for s in sections if s["kind"] == "methods") or art.methods_text
-    )
-    return source
+    adopted = await _apply_fulltext(session, art, sections, source, url, pdf, protect_upload=True)
+    return source if adopted else None
