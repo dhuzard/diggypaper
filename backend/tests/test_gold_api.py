@@ -309,6 +309,43 @@ async def test_legacy_gold_is_explicitly_unqualified_then_preserved_on_refresh(
     assert after["revisions"][0]["ground_truth_json"] == VALID_GT
 
 
+async def test_from_reviews_ignores_article_ids_of_another_project(
+    client, session, researcher_user, do_login
+):
+    """F-3 : un identifiant d'article d'un autre projet (portant une relecture « legacy »,
+    ``search_id`` NULL) ne doit jamais créer de référence dans le projet appelant."""
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, _ = await _make_project_with_article(session, researcher_user)
+    other = Project(title="Other", created_by=researcher_user.id)
+    session.add(other)
+    await session.commit()
+    foreign_article = Article(project_id=other.id, pmid="333", title="Foreign")
+    session.add(foreign_article)
+    await session.commit()
+    session.add(
+        HumanAnnotation(
+            article_id=foreign_article.id,
+            user_id=researcher_user.id,
+            search_id=None,  # relecture legacy : retenue par in_search() de la recherche par défaut
+            decision_json={**VALID_GT, "review_status": "MANUAL"},
+            created_at=datetime.now(UTC),
+        )
+    )
+    await session.commit()
+    base = f"/api/v1/projects/{project.id}/gold"
+    resp = await client.post(
+        f"{base}/from-reviews", json={"article_ids": [str(foreign_article.id)]}
+    )
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "article not in this project"
+    assert (await client.get(base)).json()["items"] == []
+    assert (
+        await session.execute(
+            select(GoldArticle).where(GoldArticle.article_id == foreign_article.id)
+        )
+    ).first() is None
+
+
 async def test_manual_gold_preserves_only_explicit_scoped_assessment_refs(
     client, session, researcher_user, do_login
 ):

@@ -391,13 +391,26 @@ async def gold_from_reviews(
     scope = await get_search(db, project, search)
     fields = project_fields(scope)
     reviewer_id = user.id if scope.kind == "blind" else None
-    reviews = await latest_reviews(
-        db,
-        payload.article_ids or await _reviewed_ids(db, scope, reviewer_id),
-        scope,
-        reviewer_id=reviewer_id,
-    )
-    wanted = set(payload.article_ids) if payload.article_ids else set(reviews)
+    if payload.article_ids:
+        # Only this project's articles: ``latest_reviews`` does not join Article, and the
+        # default search also matches legacy annotations (``search_id`` NULL) of any project.
+        requested = set(payload.article_ids)
+        own_articles = set(
+            (
+                await db.execute(
+                    select(Article.id).where(
+                        Article.project_id == project.id, Article.id.in_(requested)
+                    )
+                )
+            ).scalars()
+        )
+        if own_articles != requested:
+            raise HTTPException(status_code=422, detail="article not in this project")
+        article_ids: list = list(requested)
+    else:
+        article_ids = await _reviewed_ids(db, scope, reviewer_id)
+    reviews = await latest_reviews(db, article_ids, scope, reviewer_id=reviewer_id)
+    wanted = set(article_ids) if payload.article_ids else set(reviews)
     if set(payload.assessment_refs_by_article) - wanted:
         raise HTTPException(
             status_code=422, detail="assessment references target an unselected article"
