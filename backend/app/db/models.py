@@ -562,6 +562,7 @@ class BenchmarkPrediction(_ProvenanceState, Base):
     __tablename__ = "benchmark_predictions"
     __table_args__ = (
         Index("ix_benchmark_predictions_run_id", "benchmark_run_id"),
+        UniqueConstraint("invocation_id", name="uq_benchmark_predictions_invocation"),
         *_source_links("benchmark_predictions", invocation=True),
         ForeignKeyConstraint(
             ["benchmark_run_id", "provenance_project_id"],
@@ -1301,6 +1302,33 @@ for _action in ("INSERT", "UPDATE"):
             "BEGIN SELECT RAISE(ABORT, 'review view is unavailable or mismatched'); END"
         ).execute_if(dialect="sqlite"),
     )
+
+for _action in ("INSERT", "UPDATE"):
+    event.listen(
+        BenchmarkPrediction.__table__,
+        "after_create",
+        DDL(
+            f"CREATE TRIGGER benchmark_predictions_variant_{_action.lower()} "
+            f"BEFORE {_action} ON benchmark_predictions "
+            "WHEN NEW.invocation_id IS NOT NULL AND NOT EXISTS ("
+            "SELECT 1 FROM invocations i WHERE i.id = NEW.invocation_id "
+            "AND i.variant IS NEW.variant) "
+            "BEGIN SELECT RAISE(ABORT, 'benchmark variant differs from producing call'); END"
+        ).execute_if(dialect="sqlite"),
+    )
+event.listen(
+    BenchmarkPrediction.__table__,
+    "after_create",
+    DDL(
+        "CREATE TRIGGER benchmark_predictions_result_immutable "
+        "BEFORE UPDATE ON benchmark_predictions WHEN OLD.invocation_id IS NOT NULL AND ("
+        "NEW.id IS NOT OLD.id OR NEW.model_name IS NOT OLD.model_name OR "
+        "NEW.variant IS NOT OLD.variant OR NEW.decision_json IS NOT OLD.decision_json OR "
+        "NEW.confidence_score IS NOT OLD.confidence_score OR NEW.error IS NOT OLD.error OR "
+        "NEW.seconds IS NOT OLD.seconds) "
+        "BEGIN SELECT RAISE(ABORT, 'bound benchmark result is immutable'); END"
+    ).execute_if(dialect="sqlite"),
+)
 
 for _table in (
     ArticlePrediction.__table__,
