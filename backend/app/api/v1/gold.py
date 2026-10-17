@@ -390,22 +390,13 @@ async def gold_from_reviews(
     project = await _require_project_member(db, project_id, user)
     scope = await get_search(db, project, search)
     fields = project_fields(scope)
-    reviews = await latest_reviews(db, payload.article_ids or await _reviewed_ids(db, scope), scope)
-    if scope.kind == "blind":
-        own = await db.execute(
-            select(HumanAnnotation)
-            .where(
-                HumanAnnotation.user_id == user.id,
-                in_search(HumanAnnotation.search_id, scope),
-            )
-            .order_by(HumanAnnotation.created_at, HumanAnnotation.id)
-        )
-        own_latest = {ann.article_id: ann for ann in own.scalars()}
-        reviews = {
-            article_id: (ann, user)
-            for article_id, ann in own_latest.items()
-            if article_id in reviews
-        }
+    reviewer_id = user.id if scope.kind == "blind" else None
+    reviews = await latest_reviews(
+        db,
+        payload.article_ids or await _reviewed_ids(db, scope, reviewer_id),
+        scope,
+        reviewer_id=reviewer_id,
+    )
     wanted = set(payload.article_ids) if payload.article_ids else set(reviews)
     if set(payload.assessment_refs_by_article) - wanted:
         raise HTTPException(
@@ -512,11 +503,16 @@ async def gold_from_reviews(
     return {"added": added, "updated": updated, "skipped": skipped}
 
 
-async def _reviewed_ids(db: AsyncSession, scope) -> list:
+async def _reviewed_ids(db: AsyncSession, scope, reviewer_id: uuid.UUID | None = None) -> list:
+    own = [HumanAnnotation.user_id == reviewer_id] if reviewer_id else []
     rows = await db.execute(
         select(HumanAnnotation.article_id)
         .join(Article, Article.id == HumanAnnotation.article_id)
-        .where(Article.project_id == scope.project_id, in_search(HumanAnnotation.search_id, scope))
+        .where(
+            Article.project_id == scope.project_id,
+            in_search(HumanAnnotation.search_id, scope),
+            *own,
+        )
         .distinct()
     )
     return [r for r in rows.scalars() if r]
@@ -531,6 +527,8 @@ async def list_gold(
     scope = await get_search(db, project, search)
     condition = await gold_condition(db, project, scope)
     if scope.kind == "blind":
+        # The current gold copy must derive from this reviewer's own locked
+        # annotation; an unrelated gold copy must not disclose another review.
         condition &= GoldArticle.source_annotation_id.in_(
             select(HumanAnnotation.id).where(
                 HumanAnnotation.user_id == user.id,
