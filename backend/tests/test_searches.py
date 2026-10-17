@@ -316,7 +316,11 @@ async def test_blind_sample_hides_predictions_until_reviewed(client, session, co
     await session.commit()
     url = f"{base}/articles/{art.id}"
     assert (await client.get(f"{url}/prediction", params={"search": s["id"]})).json() is None
-    r = await client.post(f"{url}/annotation", params={"search": s["id"]}, json={"ai": False})
+    token = (await client.get(url, params={"search": s["id"]})).json()["source_view_token"]
+    r = await client.post(
+        f"{url}/annotation", params={"search": s["id"]},
+        json={"ai": False, "source_view_token": token},
+    )
     assert r.status_code == 201
     assert (await client.get(f"{url}/prediction", params={"search": s["id"]})).json() is not None
     ann = (
@@ -374,14 +378,37 @@ async def test_blind_search_hides_model_and_other_reviewers_everywhere(
         )
     await session.commit()
     # le LEAD relit A1 ; un annotateur n'en voit RIEN : ni IA, ni réponse du LEAD
+    article_url = f"{base}/articles/{arts[0].id}"
+    lead_token = (await client.get(article_url, params={"search": s["id"]})).json()[
+        "source_view_token"
+    ]
     await client.post(
-        f"{base}/articles/{arts[0].id}/annotation", params={"search": s["id"]}, json={"ai": False}
+        f"{article_url}/annotation", params={"search": s["id"]},
+        json={"ai": False, "source_view_token": lead_token},
     )
+    await client.post(f"{base}/gold/from-reviews", params={"search": s["id"]}, json={})
     await _member(session, project, "ann@lab.fr")
     await do_login("ann@lab.fr", "member-pass-123", consent=True)
+    assert (
+        await client.post(
+            f"{base}/gold/from-reviews",
+            params={"search": s["id"]},
+            json={"article_ids": [str(arts[0].id)]},
+        )
+    ).json() == {"added": 0, "updated": 0, "skipped": 1}
+    assert (await client.get(f"{base}/gold", params={"search": s["id"]})).json()["items"] == []
     items = (await client.get(f"{base}/articles", params={"search": s["id"]})).json()["items"]
     assert items and all(i["answers"] == [] and i["prediction_status"] is None for i in items)
     assert all(i["confidence"] is None and i["review"] is None for i in items)
+    assert (
+        await client.get(f"{base}/articles", params={"search": s["id"], "sort": "score_desc"})
+    ).status_code == 422
+    own_queue = (
+        await client.get(f"{base}/articles", params={"search": s["id"], "status": "TO_REVIEW"})
+    ).json()
+    assert own_queue["stats"]["TO_REVIEW"] == len(arts)
+    assert {item["id"] for item in own_queue["items"]} == {str(a.id) for a in arts}
+    assert all(item["annotated"] is False for item in own_queue["items"])
     # filtres et sélections ne servent pas d'oracle
     assert (
         await client.get(f"{base}/articles", params={"search": s["id"], "answers": '{"ai": true}'})
@@ -396,12 +423,23 @@ async def test_blind_search_hides_model_and_other_reviewers_everywhere(
     got = await client.get(f"{base}/articles/{arts[0].id}/annotation", params={"search": s["id"]})
     assert got.json() is None
     # après SA relecture, l'IA devient visible pour cet article
+    member_token = (await client.get(article_url, params={"search": s["id"]})).json()[
+        "source_view_token"
+    ]
     await client.post(
-        f"{base}/articles/{arts[0].id}/annotation", params={"search": s["id"]}, json={"ai": True}
+        f"{article_url}/annotation", params={"search": s["id"]},
+        json={"ai": True, "source_view_token": member_token},
     )
     mine = (await client.get(f"{base}/articles", params={"search": s["id"]})).json()["items"]
     shown = [i for i in mine if i["answers"]]
     assert len(shown) == 1 and shown[0]["prediction_status"] == "AUTO_ACCEPTED"
+    own_gold = (await client.get(f"{base}/gold", params={"search": s["id"]})).json()["items"]
+    assert len(own_gold) == 1 and own_gold[0]["article_id"] == str(arts[0].id)
+    own_queue = (
+        await client.get(f"{base}/articles", params={"search": s["id"], "status": "TO_REVIEW"})
+    ).json()
+    assert own_queue["stats"]["TO_REVIEW"] == len(arts) - 1
+    assert str(arts[0].id) not in {item["id"] for item in own_queue["items"]}
 
 
 async def test_only_lead_or_author_can_refresh_a_gold_reference(client, session, corpus, do_login):

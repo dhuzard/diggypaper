@@ -16,6 +16,7 @@ import {
   Article,
   ArticlePrediction,
   ArticleReview,
+  getArticle,
   getArticleWithPrediction,
   getPrediction,
   getProject,
@@ -143,13 +144,13 @@ export default function AnnotatePage() {
         ...prediction.decision_json,
         confidence_score: prediction.confidence_score ?? 0.5,
         evidence_quotes: prediction.evidence_quotes ?? [],
-      }, searchId, isBlind);
+      }, searchId, isBlind, article?.source_view_token);
       setReview({ ...r, decision_json: prediction.decision_json, notes: null });
       setStatus("accepted");
     } catch (e) {
       setError((e as Error).message);
     }
-  }, [projectId, articleId, prediction, searchId, isBlind]);
+  }, [projectId, articleId, article?.source_view_token, prediction, searchId, isBlind]);
 
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
@@ -160,12 +161,14 @@ export default function AnnotatePage() {
       setPdfError(null);
       try {
         try {
-          setArticle(await uploadArticlePdf(projectId, articleId, file, false, searchId));
+          await uploadArticlePdf(projectId, articleId, file, false, searchId);
+          setArticle(await getArticle(projectId, articleId, searchId));
         } catch (e) {
           // Le PDF ne ressemble pas à cet article : on laisse l'utilisateur trancher.
           if (!(e instanceof Error && e.message === "pdf_mismatch")) throw e;
           if (!window.confirm(t("pdfMismatch"))) return;
-          setArticle(await uploadArticlePdf(projectId, articleId, file, true, searchId));
+          await uploadArticlePdf(projectId, articleId, file, true, searchId);
+          setArticle(await getArticle(projectId, articleId, searchId));
         }
       } catch (e) {
         setPdfError((e as Error).message);
@@ -184,7 +187,7 @@ export default function AnnotatePage() {
     setPdfError(null);
     try {
       const r = await searchArticleFulltext(projectId, articleId, searchId);
-      setArticle(r.article);
+      setArticle(await getArticle(projectId, articleId, searchId));
       setSearchNote(r.found ? t("searchFound", { source: r.source ?? "" }) : t("searchNone"));
     } catch (e) {
       setPdfError((e as Error).message);
@@ -203,7 +206,7 @@ export default function AnnotatePage() {
   const handleSubmit = useCallback(
     async (annotation: Annotation) => {
       try {
-        const r = await submitAnnotation(projectId, articleId, annotation, searchId, isBlind);
+        const r = await submitAnnotation(projectId, articleId, annotation, searchId, isBlind, article?.source_view_token);
         setReview({ ...r, decision_json: annotation, notes: String(annotation.reasoning_summary ?? "") });
         setSaved(r.status ?? "MANUAL");
         setStatus("submitted");
@@ -214,7 +217,7 @@ export default function AnnotatePage() {
         setError((e as Error).message);
       }
     },
-    [projectId, articleId, searchId, isBlind]
+    [projectId, articleId, searchId, isBlind, article?.source_view_token]
   );
 
   const addToGold = useCallback(async () => {

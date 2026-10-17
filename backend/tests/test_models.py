@@ -58,6 +58,7 @@ EXPECTED_TABLES = {
     "benchmark_results",
     "prompt_templates",
     "gold_articles",
+    "gold_revisions",
     "article_predictions",
     "human_annotations",
     "system_settings",

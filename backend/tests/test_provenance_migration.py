@@ -31,6 +31,8 @@ from app.db.models import (
     BenchmarkRun,
     BenchmarkStatus,
     EvidenceSupportAssessment,
+    GoldArticle,
+    GoldRevision,
     HumanAnnotation,
     InferenceJob,
     Invocation,
@@ -540,7 +542,7 @@ async def test_populated_postgres_upgrade_downgrade_and_storage_guards(postgres_
     blocked = await alembic(url, "downgrade", "0021", success=False)
     assert "refusing to discard retained provenance" in blocked.stderr
     async with engine.begin() as connection:
-        assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "0027"
+        assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "0028"
         assert await connection.scalar(text("SELECT count(*) FROM source_snapshots")) == 2
         # Explicit ownership deletion remains the documented retention boundary.
         await connection.execute(delete(Project).where(Project.id == pid))
@@ -1051,3 +1053,53 @@ async def test_empty_support_assessment_migration_downgrades(postgres_database):
     url, _ = postgres_database
     await alembic(url, "upgrade", "head")
     await alembic(url, "downgrade", "0026")
+
+
+async def test_gold_revision_upgrade_immutability_cascade_and_guarded_downgrade(
+    postgres_database,
+):
+    url, engine = postgres_database
+    await alembic(url, "upgrade", "0027")
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        project = Project(title="Gold migration")
+        session.add(project)
+        await session.flush()
+        article = Article(project_id=project.id, title="Study")
+        session.add(article)
+        await session.flush()
+        gold = GoldArticle(
+            project_id=project.id, article_id=article.id, ground_truth_json={"answer": True}
+        )
+        session.add(gold)
+        await session.commit()
+    await alembic(url, "upgrade", "head")
+    async with factory() as session:
+        revision = GoldRevision(
+            gold_id=gold.id,
+            sequence=1,
+            ground_truth_json={"answer": True},
+            answer_keys_json=["answer"],
+            answer_sha256="a" * 64,
+            evidence_sha256="b" * 64,
+            assessment_refs_json=[],
+            provenance_state="legacy_unqualified",
+        )
+        session.add(revision)
+        await session.commit()
+        with pytest.raises(DBAPIError):
+            async with session.begin_nested():
+                await session.execute(
+                    update(GoldRevision)
+                    .where(GoldRevision.id == revision.id)
+                    .values(provenance_state="unqualified")
+                )
+        with pytest.raises(DBAPIError):
+            async with session.begin_nested():
+                await session.execute(delete(GoldRevision).where(GoldRevision.id == revision.id))
+    await alembic(url, "downgrade", "0027", success=False)
+    async with factory() as session:
+        await session.execute(delete(GoldArticle).where(GoldArticle.id == gold.id))
+        await session.commit()
+        assert await session.get(GoldRevision, revision.id) is None
+    await alembic(url, "downgrade", "0027")

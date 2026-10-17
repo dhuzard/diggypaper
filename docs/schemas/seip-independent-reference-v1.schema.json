@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:diggypaper:seip-independent-reference:v1",
+  "title": "SEIP independent reference ledger v1",
+  "description": "Shape only. The offline validator checks scope, exact input slices, qualifications, locks and chronology declarations. Unsigned records cannot prove real reviewer identity, independence or blinding.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "state", "reference_set_id", "pilot_manifest_sha256", "protocol_version", "codebook_version", "codebook_approval", "actors", "stage_a", "stage_b"],
+  "properties": {
+    "schema_version": {"const": "seip-independent-reference-v1"},
+    "state": {"enum": ["draft", "locked"]},
+    "reference_set_id": {"type": ["string", "null"]},
+    "pilot_manifest_sha256": {"anyOf": [{"$ref": "#/$defs/sha"}, {"type": "null"}]},
+    "protocol_version": {"type": "string", "minLength": 1},
+    "codebook_version": {"type": "string", "minLength": 1},
+    "codebook_approval": {"anyOf": [{"$ref": "#/$defs/codebook_approval"}, {"type": "null"}]},
+    "actors": {"type": "array", "items": {"$ref": "#/$defs/actor"}},
+    "stage_a": {"type": "array", "items": {"$ref": "#/$defs/stage_a"}},
+    "stage_b": {"type": "array", "items": {"$ref": "#/$defs/stage_b"}}
+  },
+  "allOf": [
+    {"if": {"properties": {"state": {"const": "draft"}}}, "then": {"properties": {"reference_set_id": {"type": "null"}, "pilot_manifest_sha256": {"type": "null"}, "codebook_approval": {"type": "null"}, "actors": {"maxItems": 0}, "stage_a": {"maxItems": 0}, "stage_b": {"maxItems": 0}}}},
+    {"if": {"properties": {"state": {"const": "locked"}}}, "then": {"properties": {"reference_set_id": {"type": "string", "minLength": 1}, "pilot_manifest_sha256": {"$ref": "#/$defs/sha"}, "codebook_approval": {"$ref": "#/$defs/codebook_approval"}, "actors": {"minItems": 3, "maxItems": 3}, "stage_a": {"minItems": 24, "maxItems": 24}, "stage_b": {"minItems": 24, "maxItems": 24}}}}
+  ],
+  "$defs": {
+    "sha": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "time": {"type": "string", "format": "date-time"},
+    "codebook_approval": {"type": "object", "additionalProperties": false, "required": ["state", "approved_at", "approved_by", "approval_record_sha256"], "properties": {"state": {"const": "approved"}, "approved_at": {"$ref": "#/$defs/time"}, "approved_by": {"type": "array", "minItems": 3, "maxItems": 3, "uniqueItems": true, "items": {"$ref": "#/$defs/id"}}, "approval_record_sha256": {"$ref": "#/$defs/sha"}}},
+    "lock": {"type": "object", "additionalProperties": false, "required": ["at", "sha256"], "properties": {"at": {"$ref": "#/$defs/time"}, "sha256": {"$ref": "#/$defs/sha"}}},
+    "actor": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "role", "qualification", "case_clearance"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "role": {"enum": ["initial", "adjudicator"]},
+        "qualification": {"type": "object", "additionalProperties": false, "required": ["expertise", "protocol_version", "codebook_version", "signed_at"], "properties": {"expertise": {"type": "string", "minLength": 1}, "protocol_version": {"type": "string", "minLength": 1}, "codebook_version": {"type": "string", "minLength": 1}, "signed_at": {"$ref": "#/$defs/time"}}},
+        "case_clearance": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["paper_id", "conflict", "model_visible", "peer_visible", "checked_at"], "properties": {"paper_id": {"$ref": "#/$defs/id"}, "conflict": {"const": "none"}, "model_visible": {"const": false}, "peer_visible": {"const": false}, "checked_at": {"$ref": "#/$defs/time"}}}}
+      }
+    },
+    "observation": {"type": "object", "additionalProperties": false, "required": ["value", "scope", "unit", "quote", "start", "end", "section"], "properties": {"value": {"type": ["string", "integer", "boolean"]}, "scope": {"type": "object", "additionalProperties": {"type": "string"}}, "unit": {"type": ["string", "null"]}, "quote": {"type": "string", "minLength": 1}, "start": {"type": "integer", "minimum": 0}, "end": {"type": "integer", "minimum": 1}, "section": {"type": "string", "minLength": 1}}},
+    "field": {"type": "object", "additionalProperties": false, "required": ["field_key", "status", "observations", "reason"], "properties": {"field_key": {"$ref": "#/$defs/id"}, "status": {"enum": ["reported", "not_reported", "not_accessible", "not_applicable", "unclear"]}, "observations": {"type": "array", "items": {"$ref": "#/$defs/observation"}}, "reason": {"type": "string", "minLength": 1}}},
+    "initial_a": {"type": "object", "additionalProperties": false, "required": ["actor_id", "locked_at", "fields"], "properties": {"actor_id": {"$ref": "#/$defs/id"}, "locked_at": {"$ref": "#/$defs/time"}, "fields": {"type": "array", "items": {"$ref": "#/$defs/field"}}}},
+    "adjudication_a": {"type": "object", "additionalProperties": false, "required": ["field_key", "actor_id", "judged_at", "original_sha256", "final", "reason"], "properties": {"field_key": {"$ref": "#/$defs/id"}, "actor_id": {"$ref": "#/$defs/id"}, "judged_at": {"$ref": "#/$defs/time"}, "original_sha256": {"$ref": "#/$defs/sha"}, "final": {"$ref": "#/$defs/field"}, "reason": {"type": "string", "minLength": 1}}},
+    "stage_a": {"type": "object", "additionalProperties": false, "required": ["paper_id", "source_sha256", "input_sha256", "initial", "adjudications", "lock"], "properties": {"paper_id": {"$ref": "#/$defs/id"}, "source_sha256": {"$ref": "#/$defs/sha"}, "input_sha256": {"$ref": "#/$defs/sha"}, "initial": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/initial_a"}}, "adjudications": {"type": "array", "items": {"$ref": "#/$defs/adjudication_a"}}, "lock": {"$ref": "#/$defs/lock"}}},
+    "support_review": {"type": "object", "additionalProperties": false, "required": ["actor_id", "judged_at", "support", "reason"], "properties": {"actor_id": {"$ref": "#/$defs/id"}, "judged_at": {"$ref": "#/$defs/time"}, "support": {"enum": ["supports", "contradicts", "insufficient", "unclear"]}, "reason": {"type": "string", "minLength": 1}}},
+    "support_adjudication": {"type": "object", "additionalProperties": false, "required": ["actor_id", "judged_at", "support", "reason", "original_sha256"], "properties": {"actor_id": {"$ref": "#/$defs/id"}, "judged_at": {"$ref": "#/$defs/time"}, "support": {"enum": ["supports", "contradicts", "insufficient", "unclear"]}, "reason": {"type": "string", "minLength": 1}, "original_sha256": {"$ref": "#/$defs/sha"}}},
+    "link": {"type": "object", "additionalProperties": false, "required": ["link_id", "field_key", "answer_revision", "evidence_id", "quote", "match_state", "start", "end", "initial", "adjudication"], "properties": {"link_id": {"$ref": "#/$defs/id"}, "field_key": {"$ref": "#/$defs/id"}, "answer_revision": {"type": "string", "minLength": 1}, "evidence_id": {"$ref": "#/$defs/id"}, "quote": {"type": "string", "minLength": 1}, "match_state": {"enum": ["exact", "unverified"]}, "start": {"type": ["integer", "null"], "minimum": 0}, "end": {"type": ["integer", "null"], "minimum": 1}, "initial": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/support_review"}}, "adjudication": {"anyOf": [{"$ref": "#/$defs/support_adjudication"}, {"type": "null"}]} }},
+    "stage_b": {"type": "object", "additionalProperties": false, "required": ["paper_id", "stage_a_lock_sha256", "input_sha256", "model_output_sha256", "links", "no_links_reason", "lock"], "properties": {"paper_id": {"$ref": "#/$defs/id"}, "stage_a_lock_sha256": {"$ref": "#/$defs/sha"}, "input_sha256": {"$ref": "#/$defs/sha"}, "model_output_sha256": {"anyOf": [{"$ref": "#/$defs/sha"}, {"type": "null"}]}, "links": {"type": "array", "items": {"$ref": "#/$defs/link"}}, "no_links_reason": {"type": ["string", "null"]}, "lock": {"$ref": "#/$defs/lock"}}}
+  }
+}
