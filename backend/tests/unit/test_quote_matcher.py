@@ -1,0 +1,630 @@
+"""Pure tests; runnable without the application/database fixtures."""
+
+import json
+import random
+import unicodedata
+from dataclasses import asdict
+from pathlib import Path
+
+import pytest
+
+from app.quote_matcher import (
+    ArticleInputSpan,
+    ArticleQuoteMatcher,
+    TargetArticleInput,
+    _nfc_with_offsets,
+    _normalize_with_offsets,
+    normalize_quote_text,
+)
+
+FIXTURES = json.loads(
+    (Path(__file__).parents[1] / "fixtures" / "quote_matcher_v1.json").read_text(encoding="utf-8")
+)
+
+
+def span(
+    text,
+    *,
+    path="messages/1/content",
+    input_start=0,
+    view="abstract",
+    view_start=0,
+    component=None,
+    component_start=None,
+):
+    return ArticleInputSpan(
+        text,
+        path,
+        input_start,
+        "snapshot-A",
+        view,
+        view_start,
+        component if component is not None else view,
+        component_start if component_start is not None else view_start,
+    )
+
+
+def source(text):
+    return TargetArticleInput("invocation-A", (span(text),))
+
+
+@pytest.mark.parametrize("fixture", FIXTURES, ids=lambda fixture: fixture["name"])
+def test_contract_fixtures(fixture):
+    result = ArticleQuoteMatcher(
+        source(fixture["text"]), allow_normalized=fixture["normalized"]
+    ).match(fixture["quote"])
+    assert result.status == fixture["status"]
+    if "start" in fixture:
+        candidate = result.candidates[0]
+        assert (candidate.view_start, candidate.view_end) == (fixture["start"], fixture["end"])
+        assert (candidate.input_start, candidate.input_end) == (fixture["start"], fixture["end"])
+        retained_slice = fixture["text"][candidate.view_start : candidate.view_end]
+        if result.match_mode == "exact":
+            assert retained_slice == fixture["quote"]
+        else:
+            assert normalize_quote_text(retained_slice) == normalize_quote_text(fixture["quote"])
+    assert result.input_occurrence_count == fixture.get("count", int(bool(result.candidates)))
+    assert "support" not in asdict(result)
+    assert "adjudication" not in asdict(result)
+
+
+@pytest.mark.parametrize("quote", [None, 42, False, [], {}, b"quote", "", " \t\n"])
+def test_invalid_quote(quote):
+    result = ArticleQuoteMatcher(source("quote")).match(quote)
+    assert result.status == "invalid"
+    assert result.quote is quote
+
+
+def test_oversized_quote_is_invalid_before_source_availability():
+    result = ArticleQuoteMatcher(None, max_quote_codepoints=3).match("😀😀😀😀")
+    assert result.status == "invalid"
+    assert result.reason == "quote_too_long"
+
+
+def test_unavailable_and_known_empty_and_legacy_are_distinct():
+    assert ArticleQuoteMatcher(None).match("x").status == "source_unavailable"
+    assert ArticleQuoteMatcher(TargetArticleInput("empty", ())).match("x").status == "not_found"
+    legacy = ArticleQuoteMatcher(None).match("x", checked=False)
+    assert legacy.status == "not_checked"
+    assert legacy.input_ref is None
+
+
+def test_example_and_instruction_text_are_not_search_inputs():
+    payload = "Instruction: report verbatim. Example: fabricated quote. Article: real quote."
+    start = payload.index("real quote")
+    captured = TargetArticleInput("invocation-A", (span("real quote", input_start=start),))
+    matcher = ArticleQuoteMatcher(captured, allow_normalized=True)
+    assert matcher.match("fabricated quote").status == "not_found"
+    assert matcher.match("report verbatim").status == "not_found"
+    actual = matcher.match("real quote")
+    assert actual.candidates[0].input_start == start
+    assert actual.candidates[0].view_start == 0
+
+
+def test_only_frozen_source_is_used_after_mutable_article_changes():
+    current_article = {"abstract": "old captured quote"}
+    frozen = source(current_article["abstract"])
+    current_article["abstract"] = "new current quote"
+    matcher = ArticleQuoteMatcher(frozen)
+    assert matcher.match("old captured quote").status == "exact"
+    assert matcher.match("new current quote").status == "not_found"
+
+
+def test_repeated_insertion_is_one_source_location_and_multiple_input_occurrences():
+    captured = TargetArticleInput(
+        "invocation-A",
+        (
+            span("same passage", input_start=10, view_start=100),
+            span("same passage", input_start=50, view_start=100),
+        ),
+    )
+    result = ArticleQuoteMatcher(captured).match("passage")
+    assert result.status == "exact"
+    assert result.input_occurrence_count == 2
+    assert result.distinct_source_location_count == 1
+    assert result.unique_input_occurrence is False
+    assert result.unique_source_location is True
+    assert [candidate.input_start for candidate in result.candidates] == [15, 55]
+    assert [candidate.view_start for candidate in result.candidates] == [105, 105]
+
+
+def test_identical_text_in_distinct_views_is_ambiguous():
+    captured = TargetArticleInput(
+        "invocation-A",
+        (
+            span("same", path="messages/0/content", view="title"),
+            span("same", path="messages/1/content", view="abstract"),
+        ),
+    )
+    result = ArticleQuoteMatcher(captured).match("same")
+    assert result.status == "ambiguous"
+    assert result.match_mode == "exact"
+    assert result.distinct_source_location_count == 2
+    assert result.unique_source_location is False
+
+
+def test_same_component_passage_in_two_views_is_one_document_location():
+    captured = TargetArticleInput(
+        "invocation-A",
+        (
+            span(
+                "same passage",
+                path="messages/0/content",
+                view="abstract-only",
+                view_start=0,
+                component="abstract",
+                component_start=0,
+            ),
+            span(
+                "same passage",
+                path="messages/1/content",
+                view="full-article",
+                view_start=600,
+                component="abstract",
+                component_start=0,
+            ),
+        ),
+    )
+    result = ArticleQuoteMatcher(captured).match("passage")
+    assert result.status == "exact"
+    assert result.input_occurrence_count == 2
+    assert result.distinct_source_location_count == 1
+    assert result.unique_source_location is True
+    assert result.unique_input_occurrence is False
+    assert [candidate.view_start for candidate in result.candidates] == [5, 605]
+    assert [candidate.component_start for candidate in result.candidates] == [5, 5]
+
+
+def test_repeated_component_text_at_different_component_offsets_is_ambiguous():
+    captured = TargetArticleInput(
+        "invocation-A",
+        (
+            span("same", input_start=0, component="abstract", component_start=10),
+            span("same", input_start=20, component="abstract", component_start=80),
+        ),
+    )
+    assert ArticleQuoteMatcher(captured).match("same").status == "ambiguous"
+
+
+def test_exact_pass_wins_without_normalized_candidates():
+    result = ArticleQuoteMatcher(source("café cafe\u0301"), allow_normalized=True).match("café")
+    assert result.status == "exact"
+    assert result.input_occurrence_count == 1
+    assert result.normalization_version is None
+
+
+def test_normalized_repetition_is_ambiguous_with_original_offsets():
+    result = ArticleQuoteMatcher(source("cafe\u0301 cafe\u0301"), allow_normalized=True).match(
+        "café"
+    )
+    assert result.status == "ambiguous"
+    assert result.match_mode == "normalized"
+    assert [(item.view_start, item.view_end) for item in result.candidates] == [(0, 5), (6, 11)]
+
+
+def test_candidate_expansion_is_bounded_for_adversarial_repetitions():
+    result = ArticleQuoteMatcher(source("a" * 1_000_000), max_candidates=3).match("aa")
+    assert len(result.candidates) == 3
+    assert result.status == "ambiguous"
+    assert result.input_occurrence_count == 4  # Includes the overflow witness.
+    assert result.distinct_source_location_count == 4
+    assert result.candidates_truncated is True
+    assert result.counts_complete is False
+
+
+def test_truncation_cannot_claim_unique_source_location():
+    captured = TargetArticleInput(
+        "invocation-A",
+        (
+            span("x", input_start=0),
+            span("x", input_start=2),
+            span("x", input_start=4, view="other-view"),
+        ),
+    )
+    result = ArticleQuoteMatcher(captured, max_candidates=1).match("x")
+    assert result.status == "exact"  # Observed existence, with uniqueness unknown.
+    assert result.distinct_source_location_count == 1
+    assert result.input_occurrence_count == 2
+    assert result.counts_complete is False
+    assert result.unique_source_location is None
+    assert result.unique_input_occurrence is False
+
+
+def test_exactly_the_cap_does_not_mark_truncation():
+    result = ArticleQuoteMatcher(source("xxx"), max_candidates=3).match("x")
+    assert len(result.candidates) == 3
+    assert result.counts_complete is True
+    assert result.candidates_truncated is False
+
+
+def test_matching_does_not_bridge_disjoint_origin_spans():
+    captured = TargetArticleInput(
+        "invocation-A",
+        (
+            span("alpha", input_start=0),
+            span("beta", input_start=6, view_start=20),
+        ),
+    )
+    assert ArticleQuoteMatcher(captured).match("alpha beta").status == "not_found"
+
+
+def test_nfc_offset_composition_agrees_with_unicode_database():
+    rng = random.Random(319)
+    alphabet = list("abc😀 \t") + [chr(value) for value in range(0x300, 0x370)]
+    alphabet += list("\u1100\u1161\u11a8\u0344\u0958\u0f73\u212b")
+    for _ in range(2_000):
+        text = "".join(rng.choices(alphabet, k=rng.randrange(1, 40)))
+        mapped = _nfc_with_offsets(text)
+        assert mapped.text == unicodedata.normalize("NFC", text)
+        assert len(mapped.starts) == len(mapped.ends) == len(mapped.text)
+        assert all(
+            0 <= start < end <= len(text)
+            for start, end in zip(mapped.starts, mapped.ends, strict=True)
+        )
+
+
+def test_normalized_offset_map_differential_and_candidate_round_trip():
+    rng = random.Random(977)
+    alphabet = list("abc😀 \t\r\n\u00a0\u2028")
+    alphabet += list("\u1100\u1161\u11a8\u0344\u0958\u0f73\u212b")
+    alphabet += [chr(value) for value in range(0x300, 0x370)]
+    texts = [
+        "",
+        "a\u0315\u0300\t\n각",
+        "\u1100\u1161\u11a8",
+        "\u0344\u0344",
+        "a" + "\u0315\u0300\u0327" * 1_000,
+        "\u1100\u1161\u11a8" * 1_000,
+        "\t\r\n\u00a0\u2028 " * 1_000,
+        "😀 cafe\u0301\t\r\n beta",
+        "😀 café beta",
+    ]
+    texts.extend("".join(rng.choices(alphabet, k=rng.randrange(1, 60))) for _ in range(1_000))
+    for text in texts:
+        mapped = _normalize_with_offsets(text)
+        assert mapped.text == normalize_quote_text(text)
+        assert len(mapped.starts) == len(mapped.ends) == len(mapped.text)
+        assert all(
+            0 <= start < end <= len(text)
+            for start, end in zip(mapped.starts, mapped.ends, strict=True)
+        )
+        if not mapped.text:
+            continue
+        start = rng.randrange(len(mapped.text))
+        end = rng.randrange(start + 1, len(mapped.text) + 1)
+        quote = mapped.text[start:end]
+        captured = TargetArticleInput("differential", (span(text, input_start=7, view_start=13),))
+        result = ArticleQuoteMatcher(captured, allow_normalized=True).match(quote)
+        for candidate in result.candidates:
+            assert candidate.input_start - 7 == candidate.view_start - 13
+            assert candidate.input_end - 7 == candidate.view_end - 13
+            original_slice = text[candidate.view_start - 13 : candidate.view_end - 13]
+            assert normalize_quote_text(original_slice) == normalize_quote_text(quote)
+
+
+@pytest.mark.parametrize(
+    "name,value",
+    [
+        ("max_candidates", 0),
+        ("max_candidates", True),
+        ("max_quote_codepoints", -1),
+        ("max_candidate_examinations", 0),
+        ("max_candidate_examinations", True),
+        ("max_validation_codepoints", 0),
+        ("max_validation_codepoints", False),
+        ("max_combining_run", 0),
+        ("max_normalized_source_codepoints", False),
+        ("max_normalized_decomposed_codepoints", -1),
+    ],
+)
+def test_invalid_configuration(name, value):
+    with pytest.raises(ValueError):
+        ArticleQuoteMatcher(None, **{name: value})
+
+
+def test_rejected_normalized_hits_have_bounded_validation_work():
+    fixture = json.loads(
+        (
+            Path(__file__).parents[1] / "fixtures" / "quote_matcher_resource_limits_v1.json"
+        ).read_text(encoding="utf-8")
+    )
+    text = fixture["source_repeat"] * fixture["source_repetitions"]
+    quote = fixture["quote_repeat"] * fixture["quote_repetitions"] + fixture["quote_suffix"]
+    matcher = ArticleQuoteMatcher(
+        source(text),
+        allow_normalized=True,
+        max_candidates=fixture["max_candidates"],
+        max_combining_run=20_000,  # Isolate per-hit accounting from run admission.
+    )
+    result = matcher.match(quote)
+    assert result.status == "incomplete"
+    assert result.reason == "resource_limit"
+    assert result.resource_limit_kind == "validation_codepoints"
+    assert result.candidates == ()
+    assert result.candidates_truncated is True
+    assert result.counts_complete is False
+    assert result.unique_source_location is None
+    assert result.unique_input_occurrence is None
+    assert result.input_occurrence_count == result.distinct_source_location_count == 0
+    assert result.candidate_examinations <= matcher.max_candidate_examinations
+    assert result.validation_codepoints <= matcher.max_validation_codepoints
+    assert result.candidate_examination_limit == matcher.max_candidate_examinations
+    assert result.validation_codepoint_limit == matcher.max_validation_codepoints
+
+
+def test_examination_limit_does_not_hide_a_later_accepted_hit_as_not_found():
+    captured = source("\u0344" * 100 + " X \u0344\u0308")
+    quote = "\u0308\u0301\u0308"
+    bounded = ArticleQuoteMatcher(
+        captured, allow_normalized=True, max_candidate_examinations=1
+    ).match(quote)
+    assert bounded.status == "incomplete"
+    assert bounded.reason == "resource_limit"
+    assert bounded.resource_limit_kind == "candidate_examinations"
+    assert bounded.candidate_examinations == 1
+    assert bounded.counts_complete is False
+    complete = ArticleQuoteMatcher(captured, allow_normalized=True).match(quote)
+    assert complete.status == "normalized"
+    assert complete.unique_source_location is True
+
+
+def test_accepted_hit_before_work_limit_retains_existence_with_unknown_uniqueness():
+    captured = source("\u0344\u0308 X " + "\u0344" * 100)
+    result = ArticleQuoteMatcher(
+        captured, allow_normalized=True, max_candidate_examinations=2
+    ).match("\u0308\u0301\u0308")
+    assert result.status == result.match_mode == "normalized"
+    assert len(result.candidates) == result.input_occurrence_count == 1
+    assert result.reason == "resource_limit"
+    assert result.resource_limit_kind == "candidate_examinations"
+    assert result.candidate_examinations == 2
+    assert result.counts_complete is False
+    assert result.unique_input_occurrence is result.unique_source_location is None
+
+
+def test_budget_is_charged_before_mapping_scan():
+    result = ArticleQuoteMatcher(
+        source("\u0344" * 100), allow_normalized=True, max_validation_codepoints=5
+    ).match("\u0308\u0301\u0308")
+    assert result.status == "incomplete"
+    assert result.resource_limit_kind == "validation_codepoints"
+    assert result.candidate_examinations == 1
+    assert result.validation_codepoints == 0  # Six mapping units would exceed the budget.
+
+
+def test_budget_is_charged_before_normalizing_a_large_covering_slice(monkeypatch):
+    import app.quote_matcher as module
+
+    calls = []
+    original_normalize = module.normalize_quote_text
+
+    def observed_normalize(text):
+        calls.append(len(text))
+        return original_normalize(text)
+
+    monkeypatch.setattr(module, "normalize_quote_text", observed_normalize)
+    result = ArticleQuoteMatcher(
+        source("a" + "\u0315" * 10_000 + "\u0300"),
+        allow_normalized=True,
+        max_validation_codepoints=100,
+        max_combining_run=20_000,  # Admit the source to isolate the per-hit slice budget.
+    ).match("à")
+    assert result.status == "incomplete"
+    assert result.resource_limit_kind == "validation_codepoints"
+    assert result.validation_codepoints == 2
+    assert calls == [1]  # Quote normalization only; the large candidate slice was never copied.
+
+
+def test_examination_budget_is_shared_across_spans():
+    captured = TargetArticleInput(
+        "across-spans",
+        tuple(span("\u0344\u0344", path=f"messages/{index}/content") for index in range(3)),
+    )
+    result = ArticleQuoteMatcher(
+        captured, allow_normalized=True, max_candidate_examinations=2
+    ).match("\u0308\u0301\u0308")
+    assert result.status == "incomplete"
+    assert result.candidate_examinations == 2
+    assert result.counts_complete is False
+
+
+def test_exhausting_budget_with_no_remaining_hits_is_still_complete():
+    result = ArticleQuoteMatcher(
+        source("\u0344\u0308"),
+        allow_normalized=True,
+        max_candidate_examinations=1,
+        max_validation_codepoints=8,
+    ).match("\u0308\u0301\u0308")
+    assert result.status == "normalized"
+    assert result.candidate_examinations == 1
+    assert result.validation_codepoints == 8
+    assert result.counts_complete is True
+    assert result.unique_source_location is True
+
+
+def test_complete_rejected_search_returns_not_found():
+    result = ArticleQuoteMatcher(source("\u0344\u0344"), allow_normalized=True).match(
+        "\u0308\u0301\u0308"
+    )
+    assert result.status == "not_found"
+    assert result.reason is None
+    assert result.candidate_examinations == 1
+    assert result.counts_complete is True
+
+
+def test_long_quote_run_is_refused_before_native_nfc_or_map_allocation(monkeypatch):
+    import app.quote_matcher as module
+
+    text = "a" + "\u0315" * 50_000 + "\u0300" * 8_001
+    quote = "à" + "\u0300" * 8_000
+
+    def forbidden(*args):
+        pytest.fail("unadmitted quote must not reach whole-string normalization or allocation")
+
+    monkeypatch.setattr(module, "normalize_quote_text", forbidden)
+    monkeypatch.setattr(module, "_normalize_with_offsets", forbidden)
+    matcher = ArticleQuoteMatcher(source(text), allow_normalized=True)
+    result = matcher.match(quote)
+    assert result.status == "incomplete"
+    assert result.reason == "resource_limit"
+    assert result.resource_limit_kind == "quote_combining_run"
+    assert result.candidate_examinations == result.validation_codepoints == 0
+    assert result.normalized_source_codepoints == result.normalized_decomposed_codepoints == 0
+    assert result.combining_run_limit == 256
+    assert matcher._normalized == {}
+    assert result.counts_complete is False
+    assert result.unique_input_occurrence is result.unique_source_location is None
+
+
+def test_long_source_run_is_refused_before_native_nfc_or_map_allocation(monkeypatch):
+    import app.quote_matcher as module
+
+    native_normalize = module.unicodedata.normalize
+
+    def guarded_normalize(form, text):
+        assert len(text) <= 1  # Only quote NFC and single-codepoint preflight NFD are needed.
+        return native_normalize(form, text)
+
+    def forbidden_map(*args):
+        pytest.fail("unadmitted source must not allocate a normalized map")
+
+    monkeypatch.setattr(module, "_normalize_with_offsets", forbidden_map)
+    matcher = ArticleQuoteMatcher(
+        source("a" + "\u0315" * 50_000 + "\u0300" * 8_001), allow_normalized=True
+    )
+    with monkeypatch.context() as scoped:
+        scoped.setattr(module.unicodedata, "normalize", guarded_normalize)
+        result = matcher.match("à")
+    assert result.status == "incomplete"
+    assert result.resource_limit_kind == "source_combining_run"
+    assert result.normalized_source_codepoints == result.normalized_decomposed_codepoints == 0
+    assert matcher._normalized == {}
+
+
+def test_run_gate_counts_canonical_decomposition_expansion():
+    result = ArticleQuoteMatcher(source("\u0344" * 200), allow_normalized=True).match(
+        "\u0308\u0301\u0308"
+    )
+    assert result.status == "incomplete"
+    assert result.resource_limit_kind == "source_combining_run"
+    assert result.normalized_source_codepoints == 0
+
+
+def test_exact_match_is_usable_when_normalized_run_admission_would_fail():
+    quote = "à" + "\u0300" * 8_000
+    result = ArticleQuoteMatcher(source(quote), allow_normalized=True).match(quote)
+    assert result.status == "exact"
+    assert result.counts_complete is True
+    assert result.normalized_source_codepoints == 0
+
+
+def test_cumulative_source_budget_includes_repeated_spans_before_map_allocation(monkeypatch):
+    import app.quote_matcher as module
+
+    allocations = []
+    original_map = module._normalize_with_offsets
+
+    def observed_map(text):
+        allocations.append(text)
+        return original_map(text)
+
+    monkeypatch.setattr(module, "_normalize_with_offsets", observed_map)
+    captured = TargetArticleInput(
+        "repeated-input",
+        tuple(span("cafe\u0301", path=f"messages/{index}/content") for index in range(10)),
+    )
+    matcher = ArticleQuoteMatcher(
+        captured, allow_normalized=True, max_normalized_source_codepoints=10
+    )
+    result = matcher.match("café")
+    assert result.status == "normalized"
+    assert result.reason == "resource_limit"
+    assert result.resource_limit_kind == "normalized_source_codepoints"
+    assert result.normalized_source_codepoints == 10
+    assert result.normalized_decomposed_codepoints == 10
+    assert result.input_occurrence_count == 2
+    assert result.unique_input_occurrence is False
+    assert result.unique_source_location is None
+    assert result.counts_complete is False
+    assert len(allocations) == len(matcher._normalized) == 2
+    again = matcher.match("café")
+    assert again.normalized_source_codepoints == 10
+    assert len(allocations) == 2  # Reusing the cache never double-charges or reallocates it.
+
+
+def test_cumulative_decomposition_budget_is_checked_before_map_allocation(monkeypatch):
+    import app.quote_matcher as module
+
+    def forbidden(*args):
+        pytest.fail("decomposition expansion must be admitted before map allocation")
+
+    monkeypatch.setattr(module, "_normalize_with_offsets", forbidden)
+    captured = source("각" * 100)
+    result = ArticleQuoteMatcher(
+        captured, allow_normalized=True, max_normalized_decomposed_codepoints=299
+    ).match("\u1100\u1161\u11a8")
+    assert result.status == "incomplete"
+    assert result.resource_limit_kind == "normalized_decomposed_codepoints"
+    assert result.normalized_source_codepoints == result.normalized_decomposed_codepoints == 0
+
+
+def test_original_size_gate_precedes_decomposition_preflight(monkeypatch):
+    import app.quote_matcher as module
+
+    original = module._normalization_preflight
+
+    def only_quote(text, *args):
+        assert text == "café"
+        return original(text, *args)
+
+    monkeypatch.setattr(module, "_normalization_preflight", only_quote)
+    result = ArticleQuoteMatcher(
+        source("cafe\u0301"), allow_normalized=True, max_normalized_source_codepoints=4
+    ).match("café")
+    assert result.resource_limit_kind == "normalized_source_codepoints"
+    assert result.status == "incomplete"
+
+
+def test_normalized_match_at_both_admission_budgets_is_allowed():
+    text = ("a" + "\u0344" * 127) * 3
+    matcher = ArticleQuoteMatcher(
+        source(text),
+        allow_normalized=True,
+        max_normalized_source_codepoints=384,
+        max_normalized_decomposed_codepoints=765,
+    )
+    result = matcher.match("ä\u0301")
+    assert result.status == "ambiguous"
+    assert result.match_mode == "normalized"
+    assert result.reason is result.resource_limit_kind is None
+    assert result.normalized_source_codepoints == 384
+    assert result.normalized_decomposed_codepoints == 765
+    assert result.input_occurrence_count == 3
+    assert result.counts_complete is True
+
+
+def test_decomposed_combining_run_exactly_at_limit_is_admitted():
+    text = "a" + "\u0344" * 128
+    quote = normalize_quote_text(text)
+    result = ArticleQuoteMatcher(source(text), allow_normalized=True).match(quote)
+    assert result.status == "normalized"
+    assert result.resource_limit_kind is None
+    assert result.counts_complete is True
+    assert result.normalized_decomposed_codepoints == 257
+
+
+def test_invalid_origin_maps_are_rejected():
+    with pytest.raises(ValueError, match="overlap"):
+        TargetArticleInput("invocation-A", (span("abc"), span("abc", input_start=2)))
+    with pytest.raises(ValueError, match="tuple"):
+        TargetArticleInput("invocation-A", [span("abc")])
+    with pytest.raises(ValueError, match="code-point"):
+        span("abc", view_start=-1)
+
+
+def test_lazy_normalization_cache_is_reused():
+    matcher = ArticleQuoteMatcher(source("alpha\t beta cafe\u0301"), allow_normalized=True)
+    matcher.match("alpha beta")
+    cached = matcher._normalized[0]
+    matcher.match("café")
+    assert matcher._normalized[0] is cached

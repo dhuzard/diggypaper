@@ -1,0 +1,21 @@
+[
+  {"name":"abstract_only","text":"Abstract: mice were not randomized.","quote":"mice were not randomized","normalized":false,"status":"exact","start":10,"end":34},
+  {"name":"negation_substring_no_support_claim","text":"Treatment did not reduce injury.","quote":"reduce injury","normalized":false,"status":"exact","start":18,"end":31},
+  {"name":"fabricated","text":"Observed 12 animals.","quote":"Observed 20 animals.","normalized":true,"status":"not_found"},
+  {"name":"paraphrase","text":"Animals were randomized.","quote":"Random allocation was used.","normalized":true,"status":"not_found"},
+  {"name":"case_sensitive","text":"Mice were randomized.","quote":"mice were randomized.","normalized":true,"status":"not_found"},
+  {"name":"punctuation_sensitive","text":"Mice, rats.","quote":"Mice rats.","normalized":true,"status":"not_found"},
+  {"name":"pdf_hyphen_not_repaired","text":"random-\nized animals","quote":"randomized animals","normalized":true,"status":"not_found"},
+  {"name":"emoji_codepoints","text":"😀🧬 Mouse sample.","quote":"Mouse","normalized":false,"status":"exact","start":3,"end":8},
+  {"name":"nfd_source","text":"😀 cafe\u0301 sample","quote":"café sample","normalized":true,"status":"normalized","start":2,"end":14},
+  {"name":"nfd_quote","text":"café sample","quote":"cafe\u0301 sample","normalized":true,"status":"normalized","start":0,"end":11},
+  {"name":"whitespace","text":"😀 alpha\t\r\n\u00a0beta end","quote":"alpha beta","normalized":true,"status":"normalized","start":2,"end":15},
+  {"name":"no_normalized_pass","text":"cafe\u0301","quote":"café","normalized":false,"status":"not_found"},
+  {"name":"not_trimmed","text":"alpha","quote":" alpha ","normalized":true,"status":"not_found"},
+  {"name":"overlap","text":"ababa","quote":"aba","normalized":false,"status":"ambiguous","count":2},
+  {"name":"repeated_source","text":"yes then yes","quote":"yes","normalized":false,"status":"ambiguous","count":2},
+  {"name":"hangul_jamo","text":"x\u1100\u1161\u11a8!","quote":"각","normalized":true,"status":"normalized","start":1,"end":4},
+  {"name":"canonical_reorder","text":"a\u0315\u0300","quote":"à\u0315","normalized":true,"status":"normalized","start":0,"end":3},
+  {"name":"combining_blocking","text":"a\u0327\u0301","quote":"á\u0327","normalized":true,"status":"normalized","start":0,"end":3},
+  {"name":"normalization_must_not_expand_partial_match","text":"a\u0315\u0300","quote":"à","normalized":true,"status":"not_found"}
+]

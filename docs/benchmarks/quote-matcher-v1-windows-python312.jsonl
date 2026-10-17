@@ -1,0 +1,9 @@
+{"python": "3.12.6", "platform": "Windows-11-10.0.26200-SP0", "timing_repetitions": 3, "memory": "tracemalloc peak; source/quote construction excluded; not RSS"}
+{"utf8_bytes": 100000, "codepoints": 99900, "mode": "exact", "quotes": 100, "cold_median_ms": 6.639, "warm_median_ms": 6.546, "peak_python_mib": 0.057, "statuses": {"exact": 100}, "max_retained_candidates": 1}
+{"utf8_bytes": 100000, "codepoints": 99900, "mode": "normalized_whitespace", "quotes": 100, "cold_median_ms": 107.912, "warm_median_ms": 14.677, "peak_python_mib": 4.001, "statuses": {"normalized": 100}, "max_retained_candidates": 1}
+{"utf8_bytes": 100000, "codepoints": 99900, "mode": "normalized_unicode", "quotes": 100, "cold_median_ms": 110.435, "warm_median_ms": 15.548, "peak_python_mib": 4.098, "statuses": {"normalized": 100}, "max_retained_candidates": 1}
+{"utf8_bytes": 100000, "codepoints": 100000, "mode": "repeated", "quotes": 100, "cold_median_ms": 25.656, "warm_median_ms": 26.435, "peak_python_mib": 0.518, "statuses": {"ambiguous": 100}, "max_retained_candidates": 32}
+{"utf8_bytes": 1000000, "codepoints": 999900, "mode": "exact", "quotes": 100, "cold_median_ms": 50.233, "warm_median_ms": 45.284, "peak_python_mib": 0.057, "statuses": {"exact": 100}, "max_retained_candidates": 1}
+{"utf8_bytes": 1000000, "codepoints": 999900, "mode": "normalized_whitespace", "quotes": 100, "cold_median_ms": 1188.57, "warm_median_ms": 83.875, "peak_python_mib": 40.146, "statuses": {"normalized": 100}, "max_retained_candidates": 1}
+{"utf8_bytes": 1000000, "codepoints": 999900, "mode": "normalized_unicode", "quotes": 100, "cold_median_ms": 1350.249, "warm_median_ms": 105.238, "peak_python_mib": 41.101, "statuses": {"normalized": 100}, "max_retained_candidates": 1}
+{"utf8_bytes": 1000000, "codepoints": 1000000, "mode": "repeated", "quotes": 100, "cold_median_ms": 30.63, "warm_median_ms": 33.146, "peak_python_mib": 0.517, "statuses": {"ambiguous": 100}, "max_retained_candidates": 32}
