@@ -1,6 +1,7 @@
 """Recherches : plusieurs questions par projet, lots dérivés des résultats d'une autre recherche,
 résultats / relectures / analyses rattachés à chacune."""
 
+import json
 import uuid
 
 import pytest
@@ -181,9 +182,28 @@ async def test_inference_runs_only_on_the_search_lot(engine, session, corpus):
     class Fake:
         calls = 0
 
-        async def infer(self, *a):
+        async def infer(self, model, system_prompt, user_prompt, *, trace=None):
             Fake.calls += 1
-            return {"ai": True, "confidence_score": 0.9, "evidence_quotes": []}
+            output = {"ai": True, "confidence_score": 0.9, "evidence_quotes": []}
+            if trace is not None:
+                await trace.before_dispatch(
+                    {
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        "temperature": 0.0,
+                        "response_format": {"type": "json_object"},
+                    }
+                )
+                await trace.on_http_response(
+                    json.dumps(
+                        {"choices": [{"message": {"content": json.dumps(output)}}]}
+                    ).encode(),
+                    200,
+                )
+            return output
 
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     res = await _run_inference(str(job.id), session_factory=factory, inference=Fake())

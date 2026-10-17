@@ -1,5 +1,7 @@
 """Cascade 2 étages (encodeur ONNX → modèle de chat) + driver ONNX — offline."""
 
+import json
+
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -24,9 +26,26 @@ class FakeChat:
     def __init__(self):
         self.models: list[str] = []
 
-    async def infer(self, model, system_prompt, user_prompt) -> dict:
+    async def infer(self, model, system_prompt, user_prompt, *, trace=None) -> dict:
         self.models.append(model)
-        return {"confidence_score": 0.9, "evidence_quotes": [], "reasoning_summary": ""}
+        output = {"confidence_score": 0.9, "evidence_quotes": [], "reasoning_summary": ""}
+        if trace is not None:
+            await trace.before_dispatch(
+                {
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "temperature": 0.0,
+                    "response_format": {"type": "json_object"},
+                }
+            )
+            await trace.on_http_response(
+                json.dumps({"choices": [{"message": {"content": json.dumps(output)}}]}).encode(),
+                200,
+            )
+        return output
 
 
 async def test_prefilter_rejects_before_llm(engine, session, monkeypatch):

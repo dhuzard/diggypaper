@@ -91,6 +91,49 @@ async def test_infer_sends_bearer_and_body():
     assert captured["body"]["temperature"] == 0.0
 
 
+async def test_trace_sees_exact_body_before_dispatch_and_real_bytes_before_parse():
+    events = []
+
+    class Trace:
+        async def before_dispatch(self, body):
+            events.append(("prepared", body))
+
+        async def on_http_response(self, raw, status_code):
+            events.append(("response", raw, status_code))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert events == [("prepared", json.loads(request.content))]
+        return httpx.Response(200, json={"choices": [{"message": {"content": "not json"}}]})
+
+    svc = OpenAICompatibleService("http://llm.test/v1", api_key="SECRET", http=_client(handler))
+    with pytest.raises(InferenceError, match="invalid_json"):
+        await svc.infer("m", "s", "u", trace=Trace())
+    assert events[0][1]["messages"][1]["content"] == "u"
+    assert "SECRET" not in json.dumps(events[0][1])
+    assert events[1][1] == b'{"choices":[{"message":{"content":"not json"}}]}'
+    assert events[1][2] == 200
+
+
+async def test_trace_transport_loss_leaves_only_prepared_observation():
+    events = []
+
+    class Trace:
+        async def before_dispatch(self, body):
+            events.append("prepared")
+
+        async def on_http_response(self, raw, status_code):
+            events.append("response")
+
+    def timeout(request):
+        assert events == ["prepared"]
+        raise httpx.ReadTimeout("lost", request=request)
+
+    svc = OpenAICompatibleService("http://llm.test/v1", http=_client(timeout))
+    with pytest.raises(InferenceError, match="timeout"):
+        await svc.infer("m", "s", "u", trace=Trace())
+    assert events == ["prepared"]
+
+
 async def test_make_inference_service_from_settings(session):
     from app.settings.service import set_setting
 
