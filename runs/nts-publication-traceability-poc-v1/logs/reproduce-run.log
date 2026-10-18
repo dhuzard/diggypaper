@@ -1,0 +1,33 @@
+{
+  "gate0_verdict": "BLOCKED_NO_VERIFIED_PAIR",
+  "links": 9,
+  "observations": 28,
+  "production_state": "withheld",
+  "crt": {
+    "production": "NO_FINDING_ACCEPTED",
+    "exploratory": "NO_FINDING_ACCEPTED"
+  }
+}
+--- Diggypaper packet validator (both packets, import and restricted modes)
+{
+  "counts": {
+    "assessments": 0,
+    "findings": 0,
+    "findings_by_export_state": {},
+{
+  "counts": {
+    "assessments": 0,
+    "findings": 13,
+    "findings_by_export_state": {
+--- NTS tests
+.................................................................        [100%]
+65 passed in 0.82s
+--- CRT importer baseline tests
+# tests 31
+# suites 0
+# pass 31
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 428.493553

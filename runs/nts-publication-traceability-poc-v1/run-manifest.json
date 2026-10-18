@@ -1,0 +1,144 @@
+{
+  "command": "/home/user/diggypaper/backend/app/nts/__main__.py run --run-dir /home/user/diggypaper/runs/nts-publication-traceability-poc-v1 --crt-checkout /home/user/ComputationalReviewTemplate_trust-knowledge",
+  "contract": "source-evidence-packet/0.1.0",
+  "crt_commit": "ce8f29cf251aadfc4c44d109db65d15dd0f629c0",
+  "diggypaper_commit": "61a4829e66fc45ccfc46951a03ffd74af8c546ef",
+  "executed_at": "2026-10-18T09:19:53Z",
+  "gate0": {
+    "acquisition": {
+      "attempts": [
+        {
+          "at": "2026-10-18T09:19:53Z",
+          "bytes": 0,
+          "error": "URLError: <urlopen error Tunnel connection failed: 403 Forbidden>",
+          "http_status": null,
+          "kind": "landing-page",
+          "ok": false,
+          "url": "https://environmental-data.ec.europa.eu/alures/datasets.html"
+        }
+      ],
+      "datasets": [],
+      "discovered_links": [],
+      "landing_url": "https://environmental-data.ec.europa.eu/alures/datasets.html",
+      "obtained_any_dataset": false
+    },
+    "dataset": null,
+    "landing_url": "https://environmental-data.ec.europa.eu/alures/datasets.html"
+  },
+  "llm": {
+    "note": "all extraction is deterministic rules; no model or API was called",
+    "used": false
+  },
+  "outputs_sha256": {
+    "animal-count-observations.csv": "e9b31fb68821b5234d57a9692d90183dc681cc7d6e0e677c260679b038bbebbb",
+    "cache/pmc11731260.json": "013ed6808753162a248c6f3d81ba1e87c7f483726d33dab60504fd48117c9cdd",
+    "case-summary.md": "e897a5e6759745cf17de3d3a32edbfeaf2e8dc2da4042eb18d7b9f53bee29b86",
+    "comparisons.json": "fe0699b3dd26dd905e4dcfc8eb892cc017640b5dd0988bcf4b0d7790e70be665",
+    "crt-import-report.json": "78d194ace3a3ab0092a394532334d425f2c63a1bad9348991b8155a2d074b68b",
+    "crt-interoperability-report.json": "2a25aa99cc2f18561159c60b252b3d7f576f1379ecd8c16ac4de67e8cac208ca",
+    "crt-interoperability-report.md": "7c9e5e181ce0a940fe979c2e42cde98ceedd043a235066b66d029d71d2a6a950",
+    "discovery-log.md": "81dcd535a1f695aef6ce7c7ee8ce0fa6b90d55e2a70b52f055478ec6a9dde873",
+    "finding-extraction-report.json": "f53e12e88133e076af5b08dc974c026253fd964f175808f004d58bf69b6c4f89",
+    "gate0-acquisition.json": "38aa3212f14890bfc05d860fd34f9044b29b86c31e87526d2e8e1049a52bbf61",
+    "logs/backend-baseline-before-nts.log": "6981622390bf042334b7b1eb11dc272ffe7e2d182e8cacc32494e2f69149e2de",
+    "logs/backend-full-after-nts.log": "db0c208ec224c3bbd61eefdf1d4d3059aff5abd6e0edf03c63c81c09410d40a3",
+    "logs/crt-baseline-source-evidence-import-test.log": "3859ef01a9d841dcbea339b9bd9db93af084761b7745cde9a60c6d7a7322fde1",
+    "logs/postgres-0029-0030.log": "c5784ccffb8c17eb9988d6475c5e315f05a7246be022b932b568749a10373ce5",
+    "logs/reproduce-run.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "nts-companion.json": "45d7814f6c3b89c521a2827f7e15529ae89cc5bd96ab46d3ea1747ba140a41bf",
+    "packet-validation-report.json": "303ec0864b88e438757a2c901bd6ba8f9cb5f215b9f35d02e427a5510101105a",
+    "publication-nts-links.csv": "a78bf550d83e6a2ca66a82c44bed2bd138814d0c3145a444f695984b8a2e6e84",
+    "publication-nts-links.json": "ed4efd1b1164b94efbbf2f3b29366ee2a15584a216fa05444564fd0a69742dff",
+    "reproduce.sh": "7579d7e128ec613be8120b06d2fa16538c4128615f2345d01c48d62672ab5e11",
+    "research-report.md": "1dae996e480b83b9d687997a23199b8aa6bf9be68dacdf489cca0690a23ca459",
+    "review-queue.json": "5d39fc0bb8f84d78d30ddf47d2b45d669627e16c90dc156a6444398f15845560",
+    "review-queue.md": "728b97395c10ce34e652da46a0f8df43398b64e1db8d1bac96b47b1abfce4972",
+    "source-evidence-packet-exploratory/assessments.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source-evidence-packet-exploratory/findings.jsonl": "ae584a048b4a04da77e40c7a16dbea122fa167055ac772cbbfaa36d6878ab571",
+    "source-evidence-packet-exploratory/manifest.json": "c51f114f67c60b28a7c72fd48d0fb34c313c03d57ad9790e00f5d6e4dfd68009",
+    "source-evidence-packet-exploratory/papers.jsonl": "d15ff682f129536cff1d88a235d4198fdcc87204deec5f91f086719994844691",
+    "source-evidence-packet-exploratory/passages.jsonl": "0d1768227a61b32f8d18452b7375d3c1475ccfe14b410dbba3befc27a9626b16",
+    "source-evidence-packet/assessments.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source-evidence-packet/findings.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source-evidence-packet/manifest.json": "9e97100feae5a44fc58ae1923d095a8289b864a6b2a122bb4d98f7851c0021ab",
+    "source-evidence-packet/papers.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source-evidence-packet/passages.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sources/pmc13304911.json": "417fe47536f8dea05578f02e88b974e5bf0a64298819afee47e91f0a3ff4a4d9",
+    "sources/pmc6392334.json": "b23c36c5a8fea708e322814e689246f01087bf056e9ac2f8e800cb9018bd7234",
+    "study-config.json": "53d65c51c95f3cf7164580db57ab2848b15d401c8660d7926b32a0039413d817"
+  },
+  "parameters": {
+    "crt_checkout": "/home/user/ComputationalReviewTemplate_trust-knowledge",
+    "offline": false
+  },
+  "platform": "Linux-6.18.44-fc-v139-x86_64-with-glibc2.39",
+  "python": "3.13.16",
+  "quote_matcher": {
+    "algorithm": "article-input-quote-v1.2",
+    "allow_normalized": true
+  },
+  "repo_dirty": false,
+  "sources": [
+    {
+      "case_id": "A-ES-mouse",
+      "file": "cache/pmc11731260.json",
+      "license": {
+        "basis": "PubMed connector get_copyright_status returned license.type=null and is_open_access=false (checked_sources=[pubmed]); the licence was NOT independently verified, so quotation redistribution is not established",
+        "evidence_url": null,
+        "license_id": "unknown",
+        "statement": "© 2024 The Authors.",
+        "url": null
+      },
+      "retrieval": {
+        "completeness": "excerpt",
+        "fidelity": "Paragraph transcribed verbatim by the executing agent from the connector's plain-text rendering (italic gene symbols and figure panel callouts are dropped by the connector). Not a byte-identical publisher or PMC copy. Each section is one contiguous span.",
+        "method": "pubmed-connector get_full_text_article",
+        "public_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11731260/",
+        "retrieved_at": "2026-10-18T08:58:00Z"
+      },
+      "snapshot_sha256": "e1e53f2fbc43bd30c545170901720a8160990a618c0b3549b3cb1a279814f3dc",
+      "source_sha256": "013ed6808753162a248c6f3d81ba1e87c7f483726d33dab60504fd48117c9cdd"
+    },
+    {
+      "case_id": "B-RO-rat",
+      "file": "sources/pmc13304911.json",
+      "license": {
+        "basis": "PMC license metadata returned by the PubMed connector get_copyright_status (source=pmc, is_open_access=true) on 2026-10-18",
+        "evidence_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13304911/",
+        "license_id": "CC-BY-4.0",
+        "statement": "© 2026 by the authors.",
+        "url": "https://creativecommons.org/licenses/by/4.0/"
+      },
+      "retrieval": {
+        "completeness": "excerpt",
+        "fidelity": "Paragraphs selected and transcribed verbatim by the executing agent from the connector's plain-text rendering. The connector drops italics and some symbols (for example the statistical symbol n), so the text is NOT a byte-identical publisher or PMC copy. Re-run `python -m app.nts fetch` with network access to replace this excerpt with PMC OA XML. Each section below is one contiguous span copied from the article; spans are never stitched across skipped text.",
+        "method": "pubmed-connector get_full_text_article",
+        "public_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13304911/",
+        "retrieved_at": "2026-10-18T08:58:00Z"
+      },
+      "snapshot_sha256": "26de5eaf7daea5dd0504e385d6b743ef771481f01d693838e54302913262e7e1",
+      "source_sha256": "417fe47536f8dea05578f02e88b974e5bf0a64298819afee47e91f0a3ff4a4d9"
+    },
+    {
+      "case_id": "C-FR-negative-control",
+      "file": "sources/pmc6392334.json",
+      "license": {
+        "basis": "PMC license metadata returned by the PubMed connector get_copyright_status (source=pmc, is_open_access=true) on 2026-10-18",
+        "evidence_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6392334/",
+        "license_id": "CC-BY-4.0",
+        "statement": "© 2019 Amraoui et al",
+        "url": "https://creativecommons.org/licenses/by/4.0/"
+      },
+      "retrieval": {
+        "completeness": "excerpt",
+        "fidelity": "Paragraphs transcribed verbatim by the executing agent from the connector's plain-text rendering (italic taxon names dropped). Not a byte-identical PMC copy. Each section is one contiguous span.",
+        "method": "pubmed-connector get_full_text_article",
+        "public_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6392334/",
+        "retrieved_at": "2026-10-18T08:59:00Z"
+      },
+      "snapshot_sha256": "859a387800e369c9d720cfbd779f9e4e92d9178200fd0df9bdea6261d7100906",
+      "source_sha256": "b23c36c5a8fea708e322814e689246f01087bf056e9ac2f8e800cb9018bd7234"
+    }
+  ],
+  "study_id": "nts-publication-traceability-poc-v1"
+}

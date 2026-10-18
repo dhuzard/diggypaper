@@ -1,0 +1,24 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.16, pytest-9.1.1, pluggy-1.7.0 -- /tmp/claude-0/-home-user/45c1ef54-0d86-55ab-aeca-8c734e6e679b/scratchpad/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/user/diggypaper/backend
+configfile: pyproject.toml
+plugins: asyncio-1.4.0, anyio-4.15.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 12 items
+
+tests/test_finding_curation_postgres.py::test_finding_curation_and_rights_migrations PASSED [  8%]
+tests/test_review_binding_postgres.py::test_concurrent_blind_posts_commit_only_first PASSED [ 16%]
+tests/test_provenance_migration.py::test_postgres_bound_benchmark_variant_and_decision_immutable PASSED [ 25%]
+tests/test_provenance_migration.py::test_populated_postgres_upgrade_downgrade_and_storage_guards PASSED [ 33%]
+tests/test_provenance_migration.py::test_parent_search_and_invocation_insert_serialize[InferenceJob-inference_job_id] PASSED [ 41%]
+tests/test_provenance_migration.py::test_parent_search_and_invocation_insert_serialize[BenchmarkRun-benchmark_run_id] PASSED [ 50%]
+tests/test_provenance_migration.py::test_capture_source_serializes_with_article_replacement PASSED [ 58%]
+tests/test_provenance_migration.py::test_quote_checks_upgrade_keeps_legacy_null_and_guarded_downgrade PASSED [ 66%]
+tests/test_provenance_migration.py::test_prediction_evidence_graph_scope_immutability_and_guarded_downgrade PASSED [ 75%]
+tests/test_provenance_migration.py::test_support_assessment_sql_guard_and_guarded_downgrade PASSED [ 83%]
+tests/test_provenance_migration.py::test_empty_support_assessment_migration_downgrades PASSED [ 91%]
+tests/test_provenance_migration.py::test_gold_revision_upgrade_immutability_cascade_and_guarded_downgrade PASSED [100%]
+
+============================= 12 passed in 54.30s ==============================
+exit=0

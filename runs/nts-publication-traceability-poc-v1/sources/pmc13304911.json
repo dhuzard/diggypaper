@@ -1,0 +1,69 @@
+{
+  "source_id": "pmc13304911",
+  "identifiers": {
+    "doi": "10.3390/ph19060846",
+    "pmid": "42356464",
+    "pmcid": "PMC13304911"
+  },
+  "title": "Does Kappa Agonism Improve Reversal of 'Tranq-Dope' Overdose? Evidence from a Rodent Model",
+  "authors": [],
+  "pub_types": [
+    "Journal Article"
+  ],
+  "license": {
+    "license_id": "CC-BY-4.0",
+    "url": "https://creativecommons.org/licenses/by/4.0/",
+    "statement": "© 2026 by the authors.",
+    "basis": "PMC license metadata returned by the PubMed connector get_copyright_status (source=pmc, is_open_access=true) on 2026-10-18",
+    "evidence_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13304911/"
+  },
+  "retrieval": {
+    "method": "pubmed-connector get_full_text_article",
+    "retrieved_at": "2026-10-18T08:58:00Z",
+    "completeness": "excerpt",
+    "fidelity": "Paragraphs selected and transcribed verbatim by the executing agent from the connector's plain-text rendering. The connector drops italics and some symbols (for example the statistical symbol n), so the text is NOT a byte-identical publisher or PMC copy. Re-run `python -m app.nts fetch` with network access to replace this excerpt with PMC OA XML. Each section below is one contiguous span copied from the article; spans are never stitched across skipped text.",
+    "public_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13304911/"
+  },
+  "sections": [
+    {
+      "title": "2.1.1. XZ Dose Selection (sentence)",
+      "kind": "results",
+      "text": "To select the XZ dose, we tested 0.13, 0.39, 1, 3, and 5 mg/kg administered alone."
+    },
+    {
+      "title": "2.1.1. XZ Dose Selection (sentence pair)",
+      "kind": "results",
+      "text": "Animals at 3 mg/kg and all animals at 5 mg/kg doses required the administration of atipamezole to survive. The reported values reflect combined data (two females + two males per group; total= 4)."
+    },
+    {
+      "title": "2.1.2. FT Dose Selection (sentence)",
+      "kind": "results",
+      "text": "For this study, we also evaluated low, medium, and high FT doses at 0.05, 0.104, or 0.13 mg/kg, which correspond to a 0.6–1.5 mg human dose—just under the 2 mg lethal dose []—and are likely to be more representative of the fentanyl contents in street opioids."
+    },
+    {
+      "title": "2.1.2. FT Dose Selection (sentence pair)",
+      "kind": "results",
+      "text": "With FT alone, overdose onset occurred at ~3200 s (low), 360 s (medium), and 150 s (high), as shown onC. The reported values reflect combined data (two females + two males per group; total= 4)."
+    },
+    {
+      "title": "4.1. Animals",
+      "kind": "methods",
+      "text": "A total of 146—Wistar breed, males and females (non-pregnant), aged 4–6 months and with body weights of 163–430 g (average body weight: 278 g)—were used. The test groups were homogeneous in terms of body weight and male-to-female ratio. The rats were purchased from the accredited Laboratory Animals Unit of the Experimental Medicine Center, University of Medicine and Pharmacy, Cluj-Napoca, Romania.\n\nAll procedures in the study complied with the guidelines of Directive 63/2010/EU and National Law 43/2014 on the protection of animals used for scientific purposes. The project was carried out with the approval of the Bioethics and Research Ethics Committee of the University of Agricultural Sciences and Veterinary Medicine Cluj Napoca (435/13 March 2024), and the project authorization was issued by the National Sanitary Veterinary and Food Safety Authority (406/29 April 2024). The animals were accommodated and used for the experiments within the project at the Unit for Breeding and Use of Laboratory Animals of the University of Agricultural Sciences and Veterinary Medicine Cluj Napoca, which operates on the basis of the Veterinary authorization 926/6 June 2021. The ALURES code for the research is: NTS-RO-406074 v.1, 8 October 2025."
+    },
+    {
+      "title": "4.2.1. Xylazine Overdose Model—Determination of Optimal Dose",
+      "kind": "methods",
+      "text": "To determine the optimal xylazine dose for inducing overdose, a single ascending dose study was performed in 20 rats. Xylazine (Xilazin Bio 2%, 20 mg/mL, Bioveta a.s., Ivanovice na Hané, Czech Republic) was administered at five doses (0.13, 0.39, 1, 3, and 5 mg/kg) to separate groups (2 males and 2 females per dose)."
+    },
+    {
+      "title": "4.2.2. Fentanyl and Xylazine Combination Overdose Model",
+      "kind": "methods",
+      "text": "This phase of the study aimed to establish the optimal Fentanyl dose to induce overdose when combined with xylazine (1 mg/kg). Fentanyl (Fentanyl Kalceks, 500 µg/10 mL, Kalcex, Riga, Latvia) was administered at three doses (0.052, 0.104, and 0.130 mg/kg) to separate groups (2 males and 2 females per dose). For confirmatory purposes, additional rats were tested in groups where overdose was consistently observed: the 0.104 mg/kg group (dose selected for the main study) was expanded with 6 additional males and 6 females; the 0.130 mg/kg group received 1 additional male and 1 female."
+    },
+    {
+      "title": "4.2.4. Main Study Protocol",
+      "kind": "methods",
+      "text": "The main study (A) included six active treatment groups, each consisting of 5 males and 5 females, receiving NX (0.20 mg/kg), NX90 (0.26 mg/kg), ½NX + NB (0.10 + 0.10 mg/kg), NX + NB (0.20 + 0.10 mg/kg), ½NX90 + NB (0.13 + 0.10 mg/kg), or NX90 + NB (0.26 + 0.10 mg/kg). In addition, the positive control NX group and the negative control ‘no-antidote’ group each consisted of 7 males and 7 females, providing larger reference cohorts for between-group comparisons."
+    }
+  ]
+}
