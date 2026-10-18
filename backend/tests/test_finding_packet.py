@@ -278,12 +278,11 @@ def test_empty_export_is_withheld_and_validates(tmp_path):
     assert res["counts"]["findings"] == 0
 
 
-def test_unknown_commit_and_normalized_match(tmp_path):
+def test_commit_recorded_and_normalized_match(tmp_path):
     data = _data([_paper("art-a")], [_finding("f-n", ev=[_ev("ev-1", "normalized")])])
-    data["producer_commit"] = "not-a-commit"
     result = build_packet(data)
     _validate(result, tmp_path)
-    assert json.loads(result.files["manifest.json"])["producer"]["commit"] == "unknown"
+    assert json.loads(result.files["manifest.json"])["producer"]["commit"] == COMMIT
 
 
 # --- redistribution rights ---------------------------------------------------------------
@@ -398,12 +397,10 @@ def test_packet_scope_options_rejected(extra, message):
         build_packet({**_data([_paper("art-a")], [_finding("f1")]), **extra})
 
 
-def test_public_packet_requires_producer_commit():
-    data = {
-        **_data([_paper("art-a")], [_finding("f1")]),
-        "access_level": "public",
-        "metadata_license": "CC0-1.0",
-    }
-    for commit in (None, "unknown", "C" * 40):
-        with pytest.raises(ValueError, match="producer commit"):
-            build_packet({**data, "producer_commit": commit})
+@pytest.mark.parametrize("access", [{}, {"access_level": "public", "metadata_license": "CC0-1.0"}])
+@pytest.mark.parametrize("commit", [None, "", "unknown", "synthetic-fixture", "C" * 40, "c" * 39])
+def test_packet_requires_producer_commit(access, commit):
+    # The frozen 0.1.0 schema has no "unknown" commit; a real export never invents one.
+    data = {**_data([_paper("art-a")], [_finding("f1")]), **access, "producer_commit": commit}
+    with pytest.raises(ValueError, match="producer commit"):
+        build_packet(data)

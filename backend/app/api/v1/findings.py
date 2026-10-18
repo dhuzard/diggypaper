@@ -673,12 +673,10 @@ async def export_findings(
     if access_level == "public" and metadata_license is None:
         raise HTTPException(status_code=422, detail="a public export requires metadata_license")
     commit = os.environ.get("GIT_COMMIT", "")
-    commit = commit if re.fullmatch(r"[0-9a-f]{40}", commit) else "unknown"
-    if access_level == "public" and commit == "unknown":
-        # Consumers pinned to the frozen 0.1.0 schema refuse "unknown"; a redistributable
-        # packet must name the producer code that built it.
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        # A packet must name the producer code that built it (frozen 0.1.0 contract).
         raise HTTPException(
-            status_code=409, detail="a public export requires the server's GIT_COMMIT"
+            status_code=409, detail="packet export requires the server's GIT_COMMIT (40 hex)"
         )
     findings = await _load(db, project_id)
     article_ids = sorted({uuid.UUID(f["article_id"]) for f in findings}, key=str)
