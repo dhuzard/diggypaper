@@ -413,9 +413,8 @@ def test_cli_offline_run_writes_every_deliverable(tmp_path):
 
     cfg = write_study(tmp_path, {"a": source("a", [ANIMALS])})
     (tmp_path / "study-config.json").write_text(json.dumps(cfg))
-    (tmp_path / "output").mkdir()
     assert main(["run", "--run-dir", str(tmp_path), "--offline"]) == 0
-    out = tmp_path / "output"
+    out = tmp_path
     for name in (
         "run-manifest.json",
         "publication-nts-links.csv",

@@ -16,12 +16,32 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from app.nts import COMPANION_SCHEMA, crt, gate0, review
+from app.nts import COMPANION_SCHEMA, crt, gate0, interop, review, summary
 from app.nts.pipeline import _csv, _dump, gate0_verdict, link_fields, observation_fields, run_study
 from app.rights import REDISTRIBUTABLE_LICENSES
 
 REPO = Path(__file__).resolve().parents[3]
 VALIDATOR = REPO / "docs/contracts/source-evidence-packet/v0.1.0/validator/sep_validate.py"
+
+
+OUTPUT_NAMES = (
+    "gate0-acquisition.json",
+    "publication-nts-links.csv",
+    "publication-nts-links.json",
+    "animal-count-observations.csv",
+    "finding-extraction-report.json",
+    "review-queue.json",
+    "review-queue.md",
+    "comparisons.json",
+    "packet-validation-report.json",
+    "crt-import-report.json",
+    "crt-interoperability-report.json",
+    "crt-interoperability-report.md",
+    "nts-companion.json",
+    "case-summary.md",
+    "source-evidence-packet",
+    "source-evidence-packet-exploratory",
+)
 
 
 def _validator():
@@ -71,14 +91,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     g0: dict[str, Any] | None = None
     if not args.offline:
         g0 = gate0.acquire(alures_dir, config["alures"]["landing_url"])
-        (run_dir / "output" / "gate0-acquisition.json").write_text(_dump(g0))
+        (run_dir / "gate0-acquisition.json").write_text(_dump(g0))
     else:
-        existing = run_dir / "output" / "gate0-acquisition.json"
+        existing = run_dir / "gate0-acquisition.json"
         g0 = json.loads(existing.read_text()) if existing.exists() else None
 
     res = run_study(config, run_dir, alures_dir, commit, g0)
-    out = run_dir / "output"
-    out.mkdir(exist_ok=True)
+    out = run_dir
 
     links, obs = res["links"], res["observations"]
     nts_links = [
@@ -158,6 +177,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     (out / "review-queue.json").write_text(_dump(res["queue"]))
     (out / "review-queue.md").write_text(review.render_markdown(res["queue"]))
     (out / "comparisons.json").write_text(_dump(res["comparisons"]))
+    (out / "case-summary.md").write_text(summary.markdown(summary.rows(res)))
 
     # --- CRT -------------------------------------------------------------------------------
     crt_checkout = Path(args.crt_checkout).resolve() if args.crt_checkout else None
@@ -178,6 +198,17 @@ def cmd_run(args: argparse.Namespace) -> int:
         "validators_weakened": False,
     }
     (out / "crt-import-report.json").write_text(_dump(crt_report))
+
+    interop_report = interop.build(
+        crt_results,
+        validation,
+        {
+            "production": _digest(out / "source-evidence-packet"),
+            "exploratory": _digest(out / "source-evidence-packet-exploratory"),
+        },
+    )
+    (out / "crt-interoperability-report.json").write_text(_dump(interop_report))
+    (out / "crt-interoperability-report.md").write_text(interop.markdown(interop_report))
 
     # --- companion -------------------------------------------------------------------------
     companion = {
