@@ -1,0 +1,6 @@
+{
+  "errors": [
+    "private-identifier-leak"
+  ],
+  "packet": "public"
+}
