@@ -111,6 +111,7 @@ class Cluster:
     window: tuple[int, int]
     quote: str
     observations: list[CountObservation]
+    kind: str = "methods"
 
 
 def _species(sentence: str, section: str) -> tuple[str, str]:
@@ -360,7 +361,16 @@ def extract_counts(article_ref: str, sections: list[dict[str, Any]]) -> list[Clu
         cluster_obs = [h[1] for h in hits]
         for o in cluster_obs:
             o.window = window
-        clusters.append(Cluster(si, title, window, text[window[0] : window[1]], cluster_obs))
+        clusters.append(
+            Cluster(
+                si,
+                title,
+                window,
+                text[window[0] : window[1]],
+                cluster_obs,
+                section.get("kind", "methods"),
+            )
+        )
     _fill_article_context(clusters)
     _flag_overlap(clusters, sections)
     return clusters
@@ -420,7 +430,7 @@ def reconcile_total(clusters: list[Cluster]) -> dict[str, Any]:
         for o in c.observations
         if o.count_scope == "cohort-total"
         and o.rule_id in ("derived-cohort-total", "performed-in-N-species")
-        and c.section_title.startswith("4.")
+        and c.kind == "methods"
     ]
     additional = [
         o for c in clusters for o in c.observations if o.count_scope == "additional-to-group"

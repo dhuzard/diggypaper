@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from app.finding_packet import build_packet
-from app.nts import alures, compare, packets, review
+from app.nts import alures, compare, dedup, packets, review
 from app.nts.extract import propose
 from app.nts.source import FrozenSource, freeze, load_source, stable_uuid
 from app.rights import REDISTRIBUTABLE_LICENSES
@@ -23,6 +23,16 @@ PROJECT_ID = uuid.UUID(
     "0b6d6c52-1e55-5f9e-8f43-2a4f8c1d9a01"
 )  # fixed: packets must be reproducible
 BLOCKED = "BLOCKED_NO_VERIFIED_PAIR"
+PASSED = "PASS_AT_LEAST_ONE_VERIFIED_PAIR"
+
+
+def gate0_verdict(links: list[dict[str, Any]]) -> str:
+    """PASS only when an article-confirmed NTS ID joined exactly to a real ALURES record."""
+    ok = any(
+        lk["identifier_system"] == "ALURES-NTS" and lk["link_state"].startswith("VERIFIED")
+        for lk in links
+    )
+    return PASSED if ok else BLOCKED
 
 
 def rights_from_source(source: dict[str, Any]) -> dict[str, Any]:
@@ -67,7 +77,33 @@ def load_alures(alures_dir: Path | None) -> dict[str, Any]:
         (s["country_column_candidates"] or [None])[0],
         None,
     )
-    return {"schemas": tables, "index": index, "table": nts_name, "path": path}
+    animals = rar = None
+    for name, t in tables.items():
+        if name == nts_name or not (
+            t["id_column_candidates"]
+            and t["species_column_candidates"]
+            and t["count_column_candidates"]
+        ):
+            continue
+        entry = {
+            "table": name,
+            "species_column": t["species_column_candidates"][0],
+            "count_column": t["count_column_candidates"][0],
+            "rows": alures.rows_by_id(alures_dir / name, t["id_column_candidates"][0]),
+            "path": alures_dir / name,
+        }
+        if any(w in name.lower() for w in ("rar", "retrospective")):
+            rar = rar or entry
+        else:
+            animals = animals or entry
+    return {
+        "schemas": tables,
+        "index": index,
+        "table": nts_name,
+        "path": path,
+        "animals": animals,
+        "rar": rar,
+    }
 
 
 def _csv(rows: list[dict[str, Any]], fields: list[str]) -> str:
@@ -365,7 +401,7 @@ def run_study(
                 }
             )
 
-        # ALURES planned counts (explicit not-reported rows when absent)
+        # ALURES planned (ceiling) and RAR (actual use) rows; explicit "not reported" when absent
         for lk in [
             x
             for x in links
@@ -373,56 +409,88 @@ def run_study(
             and x["identifier_system"] == "ALURES-NTS"
             and x["identifier_normalized"]
         ]:
-            obs_rows.append(
-                {
-                    "observation_id": str(stable_uuid("obs", lk["link_id"], "planned")),
+            confirmed = lk["link_state"].startswith("VERIFIED")
+            planned = None
+            for kind, table in (("planned", al.get("animals")), ("rar", al.get("rar"))):
+                rows = (table or {}).get("rows", {}).get(lk["identifier_normalized"], [])
+                spec_kind = {
+                    "planned": (
+                        "alures",
+                        "NTS_planned_or_authorized",
+                        "project-authorization-ceiling",
+                        "ALURES",
+                    ),
+                    "rar": (
+                        "rar",
+                        "RAR_actual_used",
+                        "project-actual-use",
+                        "retrospective assessment",
+                    ),
+                }[kind]
+                base = {
                     "case_id": spec["case_id"],
                     "doi": ids.get("doi"),
-                    "source_kind": "alures",
-                    "count_category": "NTS_planned_or_authorized",
-                    "species": "not reported",
+                    "source_kind": spec_kind[0],
+                    "count_category": spec_kind[1],
                     "strain": "not reported",
-                    "number": "not reported",
-                    "unit_counted": "not reported",
                     "sex": "not reported",
                     "cohort_label": lk["identifier_normalized"],
-                    "count_scope": "project-authorization-ceiling",
+                    "count_scope": spec_kind[2],
                     "derived": False,
-                    "method_section": "ALURES",
-                    "rule_id": "alures-join",
-                    "notes": "ALURES record not confirmed in this run: " + lk["link_state"],
+                    "method_section": spec_kind[3],
                     "snapshot_sha256": frozen.snapshot.sha256,
                 }
-            )
-            obs_rows.append(
-                {
-                    "observation_id": str(stable_uuid("obs", lk["link_id"], "rar")),
-                    "case_id": spec["case_id"],
-                    "doi": ids.get("doi"),
-                    "source_kind": "rar",
-                    "count_category": "RAR_actual_used",
-                    "species": "not reported",
-                    "strain": "not reported",
-                    "number": "not reported",
-                    "unit_counted": "not reported",
-                    "sex": "not reported",
-                    "cohort_label": lk["identifier_normalized"],
-                    "count_scope": "project-actual-use",
-                    "derived": False,
-                    "method_section": "retrospective assessment",
-                    "rule_id": "rar-not-supplied",
-                    "notes": "no official, resolvable retrospective assessment was obtained; none matched",
-                    "snapshot_sha256": frozen.snapshot.sha256,
-                }
-            )
-
-        for lk in [
-            x
-            for x in links
-            if x["case_id"] == spec["case_id"]
-            and x["identifier_system"] == "ALURES-NTS"
-            and x["identifier_normalized"]
-        ]:
+                if confirmed and rows:
+                    cells = alures.planned_animals(
+                        rows, table["species_column"], table["count_column"]
+                    )
+                    for r, row in zip(cells, rows, strict=True):
+                        r["dataset_cell"] = {
+                            "file": table["table"],
+                            "row": int(row["_row_number"]),
+                            "columns": [table["species_column"], table["count_column"]],
+                        }
+                        note = (
+                            r["meaning"]
+                            if kind == "planned"
+                            else "retrospective assessment figure as written"
+                        )
+                        obs_rows.append(
+                            {
+                                **base,
+                                "observation_id": str(
+                                    stable_uuid("obs", lk["link_id"], kind, row["_row_number"])
+                                ),
+                                "species": r["species"],
+                                "number": r["authorized_number"],
+                                "unit_counted": "animals (as written in the table)",
+                                "rule_id": f"alures-{kind}-table",
+                                "notes": note,
+                                "dataset_cell": r["dataset_cell"],
+                            }
+                        )
+                    if kind == "planned":
+                        planned = cells
+                else:
+                    why = (
+                        "ALURES record not confirmed in this run: " + lk["link_state"]
+                        if kind == "planned"
+                        else "no official, resolvable retrospective assessment was matched; none inferred"
+                    )
+                    obs_rows.append(
+                        {
+                            **base,
+                            "observation_id": str(stable_uuid("obs", lk["link_id"], kind)),
+                            "species": "not reported",
+                            "number": "not reported",
+                            "unit_counted": "not reported",
+                            "rule_id": "alures-not-available"
+                            if kind == "planned"
+                            else "rar-not-available",
+                            "notes": why,
+                        }
+                    )
+            state = lk["alures_state"] if confirmed else "not-verified:" + lk["link_state"]
             comparisons.append(
                 {
                     "case_id": spec["case_id"],
@@ -430,12 +498,8 @@ def run_study(
                     "nts_id": lk["identifier_normalized"],
                     **compare.compare(
                         ex["observations"],
-                        {
-                            "state": lk["link_state"]
-                            if lk["link_state"].startswith("VERIFIED")
-                            else lk["alures_state"]
-                        },
-                        None,
+                        {"state": state},
+                        planned,
                         lk["shared_with_other_articles_in_run"],
                         ex["reconciliation"],
                     ),
@@ -498,6 +562,16 @@ def run_study(
         "production": production,
         "exploratory": exploratory,
         "queue": queue,
+        "deduplication": dedup.classify(
+            [
+                {
+                    "case_id": c["spec"]["case_id"],
+                    "identifiers": c["frozen"].source["identifiers"],
+                    "relations": c["spec"].get("relations", []),
+                }
+                for c in cases
+            ]
+        ),
         "frozen_cases": frozen_cases,
     }
 

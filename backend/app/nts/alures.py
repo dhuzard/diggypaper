@@ -272,3 +272,14 @@ def planned_animals(
             }
         )
     return out
+
+
+def rows_by_id(path: Path, id_column: str) -> dict[str, list[dict[str, str]]]:
+    """All rows of a linked table grouped by normalized NTS ID (rows kept exactly as written)."""
+    _, rows = _read(path)
+    grouped: dict[str, list[dict[str, str]]] = defaultdict(list)
+    for n, row in enumerate(rows, start=2):
+        m = _NTS_FULL.match((row.get(id_column) or "").strip())
+        if m:
+            grouped[normalize_nts(m.group(1), m.group(2))].append({**row, "_row_number": str(n)})
+    return dict(grouped)

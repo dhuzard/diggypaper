@@ -17,7 +17,8 @@ from pathlib import Path
 from typing import Any
 
 from app.nts import COMPANION_SCHEMA, crt, gate0, review
-from app.nts.pipeline import BLOCKED, _csv, _dump, link_fields, observation_fields, run_study
+from app.nts.pipeline import _csv, _dump, gate0_verdict, link_fields, observation_fields, run_study
+from app.rights import REDISTRIBUTABLE_LICENSES
 
 REPO = Path(__file__).resolve().parents[3]
 VALIDATOR = REPO / "docs/contracts/source-evidence-packet/v0.1.0/validator/sep_validate.py"
@@ -85,8 +86,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         for lk in links
         if lk["identifier_system"] == "ALURES-NTS" and lk["identifier_normalized"]
     ]
-    verified = [lk for lk in nts_links if lk["link_state"].startswith("VERIFIED")]
-    verdict = "PASS_AT_LEAST_ONE_VERIFIED_PAIR" if verified else BLOCKED
+    verdict = gate0_verdict(links)
     (out / "publication-nts-links.json").write_text(
         _dump(sorted(links, key=lambda lk: (lk["case_id"], lk["link_id"])))
     )
@@ -214,6 +214,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         "links": links,
         "count_observations": obs,
         "comparisons": res["comparisons"],
+        "deduplication": res["deduplication"],
         "traces": [
             {
                 "article": lk["doi"],
@@ -301,6 +302,40 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_fetch(args: argparse.Namespace) -> int:
+    """Replace an excerpt with PMC open-access JATS text (needs network access to NCBI)."""
+    from app.nts import jats
+
+    run_dir = Path(args.run_dir).resolve()
+    pmcid = args.pmcid if args.pmcid.upper().startswith("PMC") else "PMC" + args.pmcid
+    url = (
+        "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pmc&id="
+        f"{pmcid.upper().removeprefix('PMC')}&rettype=xml"
+    )
+    status, body, error = gate0.fetch(url)
+    if body is None:
+        print(json.dumps({"fetched": False, "url": url, "http_status": status, "error": error}))
+        return 1
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    src = jats.parse(
+        body, pmcid.lower(), now, f"https://pmc.ncbi.nlm.nih.gov/articles/{pmcid.upper()}/"
+    )
+    open_ok = src["license"]["license_id"] in REDISTRIBUTABLE_LICENSES
+    dest = run_dir / ("sources" if open_ok else "cache") / f"{pmcid.lower()}.json"
+    dest.write_text(json.dumps(src, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(
+        json.dumps(
+            {
+                "fetched": True,
+                "path": str(dest),
+                "license": src["license"]["license_id"],
+                "sections": len(src["sections"]),
+            }
+        )
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m app.nts")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -313,6 +348,10 @@ def main(argv: list[str] | None = None) -> int:
         help="skip network acquisition (reuse the last acquisition log)",
     )
     run.set_defaults(func=cmd_run)
+    fetch = sub.add_parser("fetch", help="replace an excerpt with PMC OA JATS text (network)")
+    fetch.add_argument("--run-dir", required=True)
+    fetch.add_argument("--pmcid", required=True)
+    fetch.set_defaults(func=cmd_fetch)
     args = ap.parse_args(argv)
     return args.func(args)
 
