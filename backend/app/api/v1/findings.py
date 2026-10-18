@@ -27,6 +27,7 @@ from app.api.v1.gold import _require_lead
 from app.db.models import (
     Article,
     ArticlePrediction,
+    ArticleRightsDeclaration,
     Finding,
     FindingEvidence,
     FindingReview,
@@ -39,6 +40,7 @@ from app.db.models import (
 from app.evidence_links import EvidenceEnvelopeV1
 from app.finding_schema import FindingContent
 from app.pseudonym import anonymized_actor_ref, reviewer_reference
+from app.rights import PACKET_METADATA_LICENSES, REDISTRIBUTABLE_LICENSES
 
 router = APIRouter(prefix="/projects", tags=["findings"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -525,14 +527,159 @@ def _zip_bytes(files: dict[str, bytes]) -> bytes:
     return buffer.getvalue()
 
 
+# --- redistribution rights ---------------------------------------------------------------
+
+
+class RightsBody(BaseModel):
+    """One redistribution decision for an article. ``allowed`` needs an open licence + URL."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    license_id: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^([A-Za-z0-9][A-Za-z0-9.+-]*|proprietary|unknown)$",
+    )
+    redistribution: Literal["allowed", "metadata-only", "restricted"]
+    basis: str = Field(min_length=1, max_length=4000)
+    evidence_url: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def valid(self):
+        if not self.basis.strip():
+            raise ValueError("basis must state why this decision is correct")
+        if self.evidence_url is not None and not re.fullmatch(r"https://\S+", self.evidence_url):
+            raise ValueError("evidence_url must be an https URL")
+        if self.redistribution == "allowed":
+            if self.license_id not in REDISTRIBUTABLE_LICENSES:
+                raise ValueError(
+                    "redistribution 'allowed' requires one of "
+                    + ", ".join(REDISTRIBUTABLE_LICENSES)
+                )
+            if self.evidence_url is None:
+                raise ValueError(
+                    "redistribution 'allowed' requires evidence_url stating the licence"
+                )
+        return self
+
+
+def _rights_out(project_id: uuid.UUID, d: ArticleRightsDeclaration) -> dict:
+    return {
+        "id": str(d.id),
+        "article_id": str(d.article_id),
+        "revision": d.revision,
+        "license_id": d.license_id,
+        "redistribution": d.redistribution,
+        "basis": d.basis,
+        "evidence_url": d.evidence_url,
+        "declared_by_ref": reviewer_reference(project_id, d.declared_by_ref),
+        "created_at": _iso(d.created_at),
+    }
+
+
+@router.post("/{project_id}/articles/{article_id}/rights", status_code=201)
+async def declare_rights(
+    project_id: uuid.UUID, article_id: uuid.UUID, body: RightsBody, db: DbDep, user: UserDep
+) -> dict:
+    """LEAD-only, append-only: a new revision supersedes; nothing is edited or deleted."""
+    article = await _require_article(db, project_id, article_id, user)
+    await _require_lead(db, project_id, user)
+    latest = await db.scalar(
+        select(func.max(ArticleRightsDeclaration.revision)).where(
+            ArticleRightsDeclaration.project_id == project_id,
+            ArticleRightsDeclaration.article_id == article.id,
+        )
+    )
+    declaration = ArticleRightsDeclaration(
+        project_id=project_id,
+        article_id=article.id,
+        revision=(latest or 0) + 1,
+        license_id=body.license_id,
+        redistribution=body.redistribution,
+        basis=body.basis.strip(),
+        evidence_url=body.evidence_url,
+        declared_by_id=user.id,
+        declared_by_ref=anonymized_actor_ref(user.email),
+    )
+    db.add(declaration)
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="concurrent rights declaration") from exc
+    await db.refresh(declaration)
+    return _rights_out(project_id, declaration)
+
+
+@router.get("/{project_id}/articles/{article_id}/rights")
+async def list_rights(
+    project_id: uuid.UUID, article_id: uuid.UUID, db: DbDep, user: UserDep
+) -> dict:
+    """Full declaration history (the audit trail); the last revision is the one that applies."""
+    article = await _require_article(db, project_id, article_id, user)
+    rows = (
+        await db.execute(
+            select(ArticleRightsDeclaration)
+            .where(
+                ArticleRightsDeclaration.project_id == project_id,
+                ArticleRightsDeclaration.article_id == article.id,
+            )
+            .order_by(ArticleRightsDeclaration.revision)
+        )
+    ).scalars()
+    return {"declarations": [_rights_out(project_id, d) for d in rows]}
+
+
+async def _latest_rights(
+    db: AsyncSession, project_id: uuid.UUID, article_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, ArticleRightsDeclaration]:
+    rows = (
+        await db.execute(
+            select(ArticleRightsDeclaration)
+            .where(
+                ArticleRightsDeclaration.project_id == project_id,
+                ArticleRightsDeclaration.article_id.in_(article_ids),
+            )
+            .order_by(ArticleRightsDeclaration.revision)
+        )
+    ).scalars()
+    return {d.article_id: d for d in rows}  # ordered by revision: the last one wins
+
+
 @router.get("/{project_id}/findings/export")
-async def export_findings(project_id: uuid.UUID, db: DbDep, user: UserDep) -> Response:
-    """LEAD-only deterministic source-evidence packet of reviewed latest revisions."""
+async def export_findings(
+    project_id: uuid.UUID,
+    db: DbDep,
+    user: UserDep,
+    access_level: Literal["restricted", "public"] = "restricted",
+    metadata_license: str | None = None,
+) -> Response:
+    """LEAD-only deterministic source-evidence packet of reviewed latest revisions.
+
+    Restricted by default. ``public`` is an explicit choice and needs a packet-metadata
+    licence. Quotations are included only for articles whose latest rights declaration
+    allows redistribution under an allowlisted licence; every other quotation stays withheld.
+    """
     from app.finding_packet import build_packet  # lazy: built concurrently
 
     if await db.get(Project, project_id) is None:
         raise HTTPException(status_code=404, detail="Project not found")
     await _require_lead(db, project_id, user)
+    if metadata_license is not None and metadata_license not in PACKET_METADATA_LICENSES:
+        raise HTTPException(
+            status_code=422,
+            detail="metadata_license must be one of " + ", ".join(PACKET_METADATA_LICENSES),
+        )
+    if access_level == "public" and metadata_license is None:
+        raise HTTPException(status_code=422, detail="a public export requires metadata_license")
+    commit = os.environ.get("GIT_COMMIT", "")
+    commit = commit if re.fullmatch(r"[0-9a-f]{40}", commit) else "unknown"
+    if access_level == "public" and commit == "unknown":
+        # Consumers pinned to the frozen 0.1.0 schema refuse "unknown"; a redistributable
+        # packet must name the producer code that built it.
+        raise HTTPException(
+            status_code=409, detail="a public export requires the server's GIT_COMMIT"
+        )
     findings = await _load(db, project_id)
     article_ids = sorted({uuid.UUID(f["article_id"]) for f in findings}, key=str)
     articles = {
@@ -555,9 +702,11 @@ async def export_findings(project_id: uuid.UUID, db: DbDep, user: UserDep) -> Re
         .all()
         if s.project_id == project_id
     }
+    rights = await _latest_rights(db, project_id, article_ids)
     papers, records = [], []
     for article_id in article_ids:
         article = articles[article_id]
+        declaration = rights.get(article_id)
         used = [
             snapshots[uuid.UUID(e["source_snapshot_id"])]
             for f in findings
@@ -577,6 +726,15 @@ async def export_findings(project_id: uuid.UUID, db: DbDep, user: UserDep) -> Re
                 "title": article.title,
                 "authors": list(article.authors or []),
                 "pub_types": list(article.pub_types or []),
+                "rights": (
+                    {
+                        "revision": declaration.revision,
+                        "license_id": declaration.license_id,
+                        "redistribution": declaration.redistribution,
+                    }
+                    if declaration
+                    else None
+                ),
                 "snapshot": (
                     {
                         "id": str(snap.id),
@@ -622,10 +780,11 @@ async def export_findings(project_id: uuid.UUID, db: DbDep, user: UserDep) -> Re
                     ],
                 }
             )
-    commit = os.environ.get("GIT_COMMIT", "")
     packet = build_packet(
         {
-            "producer_commit": commit if re.fullmatch(r"[0-9a-f]{40}", commit) else "unknown",
+            "producer_commit": commit,
+            "access_level": access_level,
+            "metadata_license": metadata_license,
             "papers": papers,
             "findings": records,
         }

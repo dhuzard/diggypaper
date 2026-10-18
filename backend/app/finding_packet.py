@@ -5,6 +5,12 @@ A finding is exported only when it is the latest revision, approved by independe
 reviewers, supported by a human supports/contradicts judgment on an exact/normalized
 matched passage of a paper with a public identifier and a captured snapshot. Everything
 else is omitted and counted by reason; nothing is guessed or defaulted into approval.
+
+Rights (app.rights): a quotation is included only when the article's latest rights
+declaration allows redistribution under an allowlisted licence. Without one, quotations are
+withheld (hash only) and the paper is ``metadata-only``. A ``restricted`` declaration omits
+the article's findings, because an approved finding may not sit on a restricted paper.
+The packet is ``restricted`` unless the caller explicitly asks for ``public``.
 """
 
 from __future__ import annotations
@@ -15,6 +21,8 @@ import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
+
+from app.rights import ACCESS_LEVELS, PACKET_METADATA_LICENSES, quotes_redistributable
 
 SCHEMA_VERSION = "source-evidence-packet/0.1.0"
 EMPTY_TIMESTAMP = "1970-01-01T00:00:00Z"
@@ -163,6 +171,8 @@ def _evaluate(f: dict[str, Any], papers: dict[str, dict[str, Any]]) -> tuple[str
         return "no-matched-passage", {}
     if paper is None or not any(_text(paper.get(k)) for k in ("doi", "pmid", "pmcid")):
         return "no-public-identifier", {}
+    if (paper.get("rights") or {}).get("redistribution") == "restricted":
+        return "paper-rights-restricted", {}
     snap_sha = _snapshot_sha(paper.get("snapshot"))
     if snap_id is None or snap_sha is None:
         return "no-source-snapshot", {}
@@ -188,9 +198,30 @@ def _evaluate(f: dict[str, Any], papers: dict[str, dict[str, Any]]) -> tuple[str
     return None, {"passages": passages, "snap_sha": snap_sha, "level": level}
 
 
+def _paper_rights(rights: dict[str, Any] | None) -> dict[str, Any]:
+    """Packet rights block. Only an allowlisted ``allowed`` declaration is ever ``allowed``."""
+    if quotes_redistributable(rights):
+        return {"license": rights["license_id"], "redistribution": "allowed"}
+    license_id = (rights or {}).get("license_id")
+    return {
+        "license": license_id if isinstance(license_id, str) and license_id else "unknown",
+        "redistribution": "metadata-only",
+    }
+
+
 def build_packet(data: dict[str, Any]) -> PacketResult:
+    access_level = data.get("access_level") or "restricted"
+    metadata_license = data.get("metadata_license")
+    if access_level not in ACCESS_LEVELS:
+        raise ValueError(f"unknown access level {access_level!r}")
+    if metadata_license is not None and metadata_license not in PACKET_METADATA_LICENSES:
+        raise ValueError(f"metadata licence {metadata_license!r} is not allowed")
+    if access_level == "public" and metadata_license is None:
+        raise ValueError("a public packet needs a packet-metadata licence")
     commit = data.get("producer_commit")
     commit = commit if isinstance(commit, str) and _HEX40.match(commit) else "unknown"
+    if access_level == "public" and commit == "unknown":
+        raise ValueError("a public packet needs the producer commit")
     papers = {p["article_id"]: p for p in data.get("papers", [])}
 
     exported: list[tuple[dict[str, Any], dict[str, Any]]] = []
@@ -211,11 +242,14 @@ def build_packet(data: dict[str, Any]) -> PacketResult:
     finding_recs: list[dict[str, Any]] = []
     assessment_recs: list[dict[str, Any]] = []
     stamps: list[str] = []
+    rights_used: dict[str, dict[str, Any]] = {}
 
     for f, detail in exported:
         article = papers[f["article_id"]]
         paper_id = "paper:" + article["article_id"]
         snap = article["snapshot"]
+        rights = article.get("rights")
+        include_quotes = quotes_redistributable(rights)
         if paper_id not in paper_recs:
             ids = {k: _text(article.get(k)) or NA for k in ("doi", "pmid", "pmcid")}
             paper_recs[paper_id] = {
@@ -229,11 +263,7 @@ def build_packet(data: dict[str, Any]) -> PacketResult:
                     "snapshot_ref": str(snap["id"]),
                     "sha256": detail["snap_sha"],
                 },
-                "rights": {
-                    "license": "unknown",
-                    "redistribution": "metadata-only",
-                    "full_text_included": False,
-                },
+                "rights": {**_paper_rights(rights), "full_text_included": False},
                 "producer_ids": {"article_ref": article["article_id"]},
             }
         evidence = {e["evidence_ref"]: e for e in f["evidence"]}
@@ -244,11 +274,23 @@ def build_packet(data: dict[str, Any]) -> PacketResult:
                 continue
             p = passages[ref]
             quote = evidence[ref]["quote"]
+            used = rights_used.setdefault(
+                article["article_id"],
+                {
+                    "article_id": article["article_id"],
+                    "declaration_revision": (rights or {}).get("revision"),
+                    "redistribution": _paper_rights(rights)["redistribution"],
+                    "license_id": _paper_rights(rights)["license"],
+                    "quotes_included": 0,
+                    "quotes_withheld": 0,
+                },
+            )
+            used["quotes_included" if include_quotes else "quotes_withheld"] += 1
             passage_recs[pid] = {
                 "passage_id": pid,
                 "paper_id": paper_id,
-                "quote_state": "withheld-rights",
-                "quote": "withheld",
+                "quote_state": "included" if include_quotes else "withheld-rights",
+                "quote": quote if include_quotes else "withheld",
                 "quote_sha256": _sha(quote.encode("utf-8")),
                 "source": {
                     "snapshot_ref": str(snap["id"]),
@@ -362,8 +404,16 @@ def build_packet(data: dict[str, Any]) -> PacketResult:
             ],
         },
         "artifacts": artifacts,
-        "licenses": [{"license_id": "unknown", "applies_to": "packet-metadata"}],
-        "access_scope": {"level": "restricted", "redistributable_full_text": False},
+        "licenses": [
+            {"license_id": metadata_license or "unknown", "applies_to": "packet-metadata"},
+            *(
+                {"license_id": license_id, "applies_to": "quotes"}
+                for license_id in sorted(
+                    {u["license_id"] for u in rights_used.values() if u["quotes_included"]}
+                )
+            ),
+        ],
+        "access_scope": {"level": access_level, "redistributable_full_text": False},
         "export_status": {
             "state": state,
             "withheld_counts": {
@@ -383,6 +433,8 @@ def build_packet(data: dict[str, Any]) -> PacketResult:
         "exported": len(exported),
         "omitted": n_omitted,
         "omitted_by_reason": dict(sorted(omitted.items())),
+        "access_level": access_level,
+        "rights": [rights_used[k] for k in sorted(rights_used)],
         "findings": per_finding,
     }
     return PacketResult(files=dict(sorted(files.items())), report=report)
