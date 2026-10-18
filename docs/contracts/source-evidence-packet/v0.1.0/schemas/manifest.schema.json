@@ -271,7 +271,7 @@
       "additionalProperties": false,
       "properties": {
         "commit": {
-          "pattern": "^([0-9a-f]{40}|synthetic-fixture|unknown)$",
+          "pattern": "^([0-9a-f]{40}|synthetic-fixture)$",
           "type": "string"
         },
         "name": {

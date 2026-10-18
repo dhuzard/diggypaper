@@ -92,6 +92,7 @@ services:
       DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-fr}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}  # base des liens des e-mails (invitations, exports)
       LAYA_URL: ${LAYA_URL:-}
+      GIT_COMMIT: ${GIT_COMMIT:-}  # 40-hex producer commit; required for findings packet export
       KEV_URL: ${KEV_URL:-}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-diggypaper}:${POSTGRES_PASSWORD:-diggypaper}@postgres:5432/${POSTGRES_DB:-diggypaper}
       REDIS_URL: redis://redis:6379/0

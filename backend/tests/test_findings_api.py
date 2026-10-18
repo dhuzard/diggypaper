@@ -41,6 +41,11 @@ REV2 = ("rev2@lab.fr", PASSWORD)
 OUTSIDER = ("outsider@lab.fr", PASSWORD)
 
 
+@pytest.fixture(autouse=True)
+def _producer_commit(monkeypatch):
+    monkeypatch.setenv("GIT_COMMIT", "fedcba9876543210fedcba9876543210fedcba98")
+
+
 def _load_validator():
     spec = importlib.util.spec_from_file_location("sep_validate_findings", VALIDATOR)
     module = importlib.util.module_from_spec(spec)

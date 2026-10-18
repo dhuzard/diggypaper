@@ -219,9 +219,9 @@ def build_packet(data: dict[str, Any]) -> PacketResult:
     if access_level == "public" and metadata_license is None:
         raise ValueError("a public packet needs a packet-metadata licence")
     commit = data.get("producer_commit")
-    commit = commit if isinstance(commit, str) and _HEX40.match(commit) else "unknown"
-    if access_level == "public" and commit == "unknown":
-        raise ValueError("a public packet needs the producer commit")
+    if not (isinstance(commit, str) and _HEX40.match(commit)):
+        # The frozen 0.1.0 contract has no "unknown" commit, and producers never invent one.
+        raise ValueError("a packet needs the 40-hex producer commit")
     papers = {p["article_id"]: p for p in data.get("papers", [])}
 
     exported: list[tuple[dict[str, Any], dict[str, Any]]] = []

@@ -200,3 +200,17 @@ def test_cli_reports_packet_digest(tmp_path):
         check=True,
     )
     assert json.loads(proc.stdout)["packet_digest"].startswith("sha256:")
+
+
+@pytest.mark.parametrize("commit", ["unknown", "", "C" * 40])
+def test_producer_commit_must_be_40_hex_or_synthetic_fixture(tmp_path, commit):
+    # Frozen in #47: consumers pin this schema, so "unknown" is never a valid commit.
+    out = _copy_canonical(tmp_path)
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    manifest["producer"]["commit"] = commit
+    (out / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    result = sep.validate_packet(out, "for-import")
+    assert result["valid"] is False
+    assert "schema-invalid:manifest.json" in {e["code"] for e in result["errors"]}

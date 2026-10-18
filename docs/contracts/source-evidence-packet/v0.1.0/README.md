@@ -106,7 +106,7 @@ Producers MUST NOT invent a value to avoid these literals. Consumers MUST NOT co
 | `packet_id` | MUST | `packet:` id |
 | `created_at` | MUST | timestamp |
 | `creation_method` | MUST | enum (3.3) |
-| `producer` | MUST | `{name: string, commit: 40-hex, `"synthetic-fixture"`, or `"unknown"` (build provenance not recorded; never invented), schema_refs: [{name, version}]}` (e.g. `evidence-envelope-v1`, `seip-support-v1`, `evidence-links-v1`) |
+| `producer` | MUST | `{name: string, commit: 40-hex or "synthetic-fixture", schema_refs: [{name, version}]}` (e.g. `evidence-envelope-v1`, `seip-support-v1`, `evidence-links-v1`) |
 | `artifacts` | MUST | object with exactly keys `papers`, `findings`, `passages`, `assessments`; each `{path, sha256, bytes, record_count}`. `path` is the fixed filename; `sha256` and `bytes` cover the exact file bytes. |
 | `licenses` | MUST | array, at least 1: `{license_id: SPDX id or "proprietary" or "unknown", applies_to: "packet-metadata" or "quotes" or "source-text"}` |
 | `access_scope` | MUST | `{level, embargo_until, redistributable_full_text}`. `embargo_until` is a timestamp, MUST be present iff `level` is `embargoed`. `redistributable_full_text` MUST be `false`. |

@@ -25,7 +25,9 @@ RO-Crate behaviour. Export follows the frozen contract
   else is omitted and counted by reason (`partial`/`withheld`), never exported as approved.
   Quotations follow the article's redistribution rights (below); by default every quote is
   withheld (hash kept) and the packet is `restricted`. `GIT_COMMIT` (40 hex) is recorded as
-  the producer commit, otherwise `unknown`.
+  the producer commit; without it the export is refused (409), because the frozen 0.1.0
+  contract has no "unknown" commit and a producer never invents one. `make up` passes
+  `git rev-parse HEAD` through `docker-compose.yml`.
 - **Redistribution rights** (`article_rights_declarations`, migration 0030, append-only):
   `POST /projects/{id}/articles/{article_id}/rights` (LEAD only) records one decision per
   revision (`license_id`, `redistribution` = `allowed | metadata-only | restricted`, a
@@ -43,8 +45,7 @@ RO-Crate behaviour. Export follows the frozen contract
     manifest like any other omission.
   - The packet scope is a separate, explicit export choice:
     `?access_level=public&metadata_license=CC0-1.0|CC-BY-4.0`. Default stays `restricted`.
-    `public` needs a metadata licence and a real `GIT_COMMIT` (409 otherwise), because
-    consumers pinned to the frozen #47 schema refuse `producer.commit: unknown`.
+    `public` needs a metadata licence.
   - A Computational Review Template S2 import accepts a finding only from a `public` packet
     whose quotes are included. `tests/test_article_rights_api.py` runs CRT's importer on a
     real export when `CRT_CHECKOUT` points to a CRT checkout.

@@ -317,22 +317,21 @@ async def test_export_scope_options_rejected(client, session, researcher_user, d
     assert response.status_code == 422, response.text
 
 
-async def test_public_export_requires_a_producer_commit(
+async def test_export_requires_a_producer_commit(
     client, session, researcher_user, do_login, monkeypatch
 ):
     project, _, _ = await _world(session, researcher_user)
     await _login(do_login, LEAD)
-    params = {"access_level": "public", "metadata_license": "CC0-1.0"}
-    for value in (None, "unknown", "abc123"):
-        if value is None:
-            monkeypatch.delenv("GIT_COMMIT")
-        else:
-            monkeypatch.setenv("GIT_COMMIT", value)
-        response = await client.get(_export_url(project), params=params)
-        assert response.status_code == 409, response.text
-    # A restricted export still builds and records the commit as unknown.
     files = await _export(client, project)
-    assert json.loads(files["manifest.json"])["producer"]["commit"] == "unknown"
+    assert json.loads(files["manifest.json"])["producer"]["commit"] == COMMIT
+    for params in ({}, {"access_level": "public", "metadata_license": "CC0-1.0"}):
+        for value in (None, "unknown", "abc123"):
+            if value is None:
+                monkeypatch.delenv("GIT_COMMIT", raising=False)
+            else:
+                monkeypatch.setenv("GIT_COMMIT", value)
+            response = await client.get(_export_url(project), params=params)
+            assert response.status_code == 409, response.text
 
 
 async def test_annotator_cannot_export_public(client, session, researcher_user, do_login):
