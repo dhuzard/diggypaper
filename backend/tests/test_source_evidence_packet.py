@@ -141,3 +141,62 @@ def test_round_trip_loses_nothing(tmp_path):
     # manifest re-serialization is stable too
     raw_manifest = (CANONICAL / "manifest.json").read_text(encoding="utf-8")
     assert json.loads(raw_manifest) == manifest
+
+
+# --- packet digest (README section 2.1) -------------------------------------------------------
+
+
+def _copy_canonical(tmp_path):
+    out = tmp_path / "packet"
+    shutil.copytree(CANONICAL, out)
+    return out
+
+
+def test_packet_digest_is_sha256_of_exact_manifest_bytes():
+    import hashlib
+
+    result = sep.validate_packet(CANONICAL, "for-import")
+    expected = "sha256:" + hashlib.sha256((CANONICAL / "manifest.json").read_bytes()).hexdigest()
+    assert result["packet_digest"] == expected
+
+
+@pytest.mark.parametrize("case", INVALID_CASES)
+def test_invalid_packets_have_no_packet_digest(case):
+    assert "packet_digest" not in sep.validate_packet(INVALID_DIR / case, "for-import")
+
+
+def test_same_manifest_content_with_different_bytes_is_a_different_packet(tmp_path):
+    out = _copy_canonical(tmp_path)
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    # Indent 4 is also canonical, so this is a valid packet with identical JSON content.
+    (out / "manifest.json").write_text(
+        json.dumps(manifest, indent=4, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    original = sep.validate_packet(CANONICAL, "for-import")
+    rewritten = sep.validate_packet(out, "for-import")
+    assert rewritten["valid"] is True
+    assert rewritten["packet_digest"] != original["packet_digest"]
+
+
+def test_artifact_tampering_removes_the_digest(tmp_path):
+    out = _copy_canonical(tmp_path)
+    passages = out / "passages.jsonl"
+    lines = passages.read_text(encoding="utf-8").split("\n")
+    first = json.loads(lines[0])
+    first["producer_ids"]["evidence_ref"] += "-tampered"  # canonical, but not the recorded bytes
+    lines[0] = _canonical_line(first)
+    passages.write_text("\n".join(lines), encoding="utf-8")
+    result = sep.validate_packet(out, "for-import")
+    assert result["valid"] is False
+    assert "artifact-hash-mismatch" in {e["code"] for e in result["errors"]}
+    assert "packet_digest" not in result
+
+
+def test_cli_reports_packet_digest(tmp_path):
+    proc = subprocess.run(
+        [sys.executable, "-I", str(VALIDATOR_PATH), str(CANONICAL)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert json.loads(proc.stdout)["packet_digest"].startswith("sha256:")

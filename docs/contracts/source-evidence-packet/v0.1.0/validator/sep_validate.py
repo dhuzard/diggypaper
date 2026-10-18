@@ -720,6 +720,10 @@ def validate_packet(
         "warnings": _dedupe_sorted(rep.warnings),
         "counts": _counts(manifest or {}, data, rep),
     }
+    if result["valid"]:
+        # Packet digest (README section 2.1): SHA-256 of the exact manifest.json bytes. Emitted only
+        # for a valid packet, because only then does the manifest bind every artifact it lists.
+        result["packet_digest"] = _sha256_hex((directory / MANIFEST_FILE).read_bytes())
     if with_mapping_report and usable is not None and manifest is not None:
         result["mapping_report"] = mapping_report(data, manifest, min_verification)
     return result
