@@ -34,3 +34,4 @@ backups/
 runs/*/cache/
 runs/*/alures/*.csv
 runs/*/alures/*.zip
+!runs/*/logs/*.log

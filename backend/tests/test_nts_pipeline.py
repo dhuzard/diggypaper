@@ -247,6 +247,13 @@ def test_rights_unknown_restricted_and_permitted(
     papers = [json.loads(x) for x in (tmp_path / "pk/papers.jsonl").read_text().splitlines()]
     assert papers[0]["rights"]["redistribution"] == expected_rights
     assert all(r["quote"] is None for r in res["queue"]) == (expected_state != "included")
+    findings_text = (tmp_path / "pk/findings.jsonl").read_text(encoding="utf-8")
+    verbatim_leaked = "A total of 40 rats were used" in findings_text
+    assert verbatim_leaked == (
+        expected_state == "included"
+    )  # statement must not leak withheld text
+    if expected_state != "included":
+        assert {json.loads(x)["origin"] for x in findings_text.splitlines()} == {"ai-paraphrase"}
     assert sep.validate_packet(tmp_path / "pk")["valid"]
 
 

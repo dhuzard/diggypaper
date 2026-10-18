@@ -36,6 +36,34 @@ PROPOSER_REF = "automation:nts-deterministic-extractor-v1"  # not a human, not a
 EMPTY = "1970-01-01T00:00:00Z"
 
 
+def redacted_content(p: Proposal) -> dict[str, Any]:
+    """Machine-worded statement for articles whose quotation rights are not established.
+
+    The verbatim sentence must not leak through ``statement`` while the passage quote is withheld.
+    The closest contract enum for text worded by a tool, not by the authors, is ``ai-paraphrase``.
+    """
+    digest = hashlib.sha256(p.quote.encode("utf-8")).hexdigest()[:12]
+    if p.kind == "nts-identifier":
+        ids = ", ".join(
+            f"{m['normalized']} (cited version {m['version_cited'] or 'not cited'})"
+            for m in p.typed["nts_mentions"]
+        )
+        what = f"an ALURES NTS identifier: {ids}"
+    elif p.kind == "national-authorization":
+        what = "a national or institutional authorization number: " + ", ".join(
+            f"{a['kind']} {a['value']}" for a in p.typed["authorizations"]
+        )
+    else:
+        n = len(p.content["numeric_results"])
+        what = f"animal numbers ({n} typed values, see numeric_results)"
+    statement = (
+        f"The passage with quote sha256 {digest} reports {what}. "
+        "Statement worded by an extraction rule; the verbatim sentence is withheld because "
+        "quotation rights are not established."
+    )
+    return {**p.content, "statement": statement, "origin": "ai-paraphrase"}
+
+
 def _paper_input(frozen: FrozenSource, rights: dict[str, Any] | None) -> dict[str, Any]:
     ids = frozen.source["identifiers"]
     return {
@@ -91,7 +119,9 @@ def producer_input(
                     "article_id": art,
                     "revision": 1,
                     "is_latest": True,
-                    "content": p.content,
+                    "content": p.content
+                    if quotes_redistributable(declared_rights.get(art))
+                    else redacted_content(p),
                     "proposer_ref": PROPOSER_REF,
                     "created_at": frozen.snapshot.captured_at.isoformat(),
                     "evidence": [_evidence(frozen, p)],
@@ -179,8 +209,8 @@ def build_exploratory_packet(
                     "finding_id": "finding:" + p.finding_id,
                     "revision": 1,
                     "paper_id": paper_id,
-                    "statement": p.content["statement"],
-                    "origin": p.content["origin"],
+                    "statement": (p.content if include else redacted_content(p))["statement"],
+                    "origin": (p.content if include else redacted_content(p))["origin"],
                     "export_state": "proposed",
                     "review_state": "unreviewed",
                     "verification_level": "unverified",
