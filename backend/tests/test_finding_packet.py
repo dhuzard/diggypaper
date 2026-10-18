@@ -9,6 +9,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 from app.finding_packet import build_packet
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -282,3 +284,126 @@ def test_unknown_commit_and_normalized_match(tmp_path):
     result = build_packet(data)
     _validate(result, tmp_path)
     assert json.loads(result.files["manifest.json"])["producer"]["commit"] == "unknown"
+
+
+# --- redistribution rights ---------------------------------------------------------------
+
+CC_BY = {"revision": 1, "license_id": "CC-BY-4.0", "redistribution": "allowed"}
+
+
+def _passages(result):
+    return _recs(result, "passages.jsonl")
+
+
+def test_no_declaration_withholds_quotes_and_stays_restricted(tmp_path):
+    result = build_packet(_data([_paper("art-a")], [_finding("f1")]))
+    _validate(result, tmp_path)
+    (passage,) = _passages(result)
+    assert passage["quote_state"] == "withheld-rights"
+    assert passage["quote"] == "withheld"
+    assert passage["quote_sha256"] == "sha256:" + hashlib.sha256("the quote é".encode()).hexdigest()
+    (paper,) = _recs(result, "papers.jsonl")
+    assert paper["rights"]["redistribution"] == "metadata-only"
+    assert paper["rights"]["license"] == "unknown"
+    manifest = json.loads(result.files["manifest.json"])
+    assert manifest["access_scope"]["level"] == "restricted"
+    assert [x["applies_to"] for x in manifest["licenses"]] == ["packet-metadata"]
+    assert b"the quote" not in b"".join(result.files.values())
+
+
+def test_allowed_open_licence_includes_quotes_and_validates(tmp_path):
+    paper = {**_paper("art-a"), "rights": CC_BY}
+    result = build_packet(
+        {
+            **_data([paper], [_finding("f1")]),
+            "access_level": "public",
+            "metadata_license": "CC0-1.0",
+        }
+    )
+    _validate(result, tmp_path)
+    (passage,) = _passages(result)
+    assert passage["quote_state"] == "included"
+    assert passage["quote"] == "the quote é"
+    assert passage["quote_sha256"] == "sha256:" + hashlib.sha256("the quote é".encode()).hexdigest()
+    (paper_rec,) = _recs(result, "papers.jsonl")
+    assert paper_rec["rights"] == {
+        "license": "CC-BY-4.0",
+        "redistribution": "allowed",
+        "full_text_included": False,
+    }
+    manifest = json.loads(result.files["manifest.json"])
+    assert manifest["access_scope"] == {"level": "public", "redistributable_full_text": False}
+    assert manifest["licenses"] == [
+        {"license_id": "CC0-1.0", "applies_to": "packet-metadata"},
+        {"license_id": "CC-BY-4.0", "applies_to": "quotes"},
+    ]
+    assert result.report["rights"] == [
+        {
+            "article_id": "art-a",
+            "declaration_revision": 1,
+            "redistribution": "allowed",
+            "license_id": "CC-BY-4.0",
+            "quotes_included": 1,
+            "quotes_withheld": 0,
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    "rights",
+    [
+        # A non-allowlisted licence never releases quotes, even if marked allowed upstream.
+        {"revision": 1, "license_id": "CC-BY-NC-4.0", "redistribution": "allowed"},
+        {"revision": 1, "license_id": "CC-BY-ND-4.0", "redistribution": "allowed"},
+        {"revision": 1, "license_id": "proprietary", "redistribution": "allowed"},
+        {"revision": 1, "license_id": "CC-BY-4.0", "redistribution": "metadata-only"},
+        {"revision": 1, "license_id": "CC-BY-4.0", "redistribution": "ALLOWED"},
+        {"revision": 1, "license_id": None, "redistribution": "allowed"},
+    ],
+)
+def test_anything_but_allowlisted_allowed_withholds(tmp_path, rights):
+    paper = {**_paper("art-a"), "rights": rights}
+    result = build_packet(_data([paper], [_finding("f1")]))
+    _validate(result, tmp_path)
+    (passage,) = _passages(result)
+    assert passage["quote_state"] == "withheld-rights"
+    assert b"the quote" not in b"".join(result.files.values())
+    (paper_rec,) = _recs(result, "papers.jsonl")
+    assert paper_rec["rights"]["redistribution"] == "metadata-only"
+
+
+def test_restricted_declaration_omits_the_finding(tmp_path):
+    restricted = {"revision": 2, "license_id": "proprietary", "redistribution": "restricted"}
+    papers = [{**_paper("art-a"), "rights": restricted}, {**_paper("art-b"), "rights": CC_BY}]
+    result = build_packet(_data(papers, [_finding("f1"), _finding("f2", article="art-b")]))
+    _validate(result, tmp_path)
+    assert [f["finding_id"] for f in _recs(result, "findings.jsonl")] == ["finding:f2"]
+    assert [p["title"] for p in _recs(result, "papers.jsonl")] == ["Paper art-b"]
+    assert result.report["omitted_by_reason"] == {"paper-rights-restricted": 1}
+    manifest = json.loads(result.files["manifest.json"])
+    assert "paper-rights-restricted" in json.dumps(manifest["export_status"])
+
+
+@pytest.mark.parametrize(
+    ("extra", "message"),
+    [
+        ({"access_level": "open"}, "access level"),
+        ({"access_level": "public"}, "packet-metadata licence"),
+        ({"metadata_license": "CC-BY-NC-4.0"}, "metadata licence"),
+        ({"access_level": "public", "metadata_license": "unknown"}, "metadata licence"),
+    ],
+)
+def test_packet_scope_options_rejected(extra, message):
+    with pytest.raises(ValueError, match=message):
+        build_packet({**_data([_paper("art-a")], [_finding("f1")]), **extra})
+
+
+def test_public_packet_requires_producer_commit():
+    data = {
+        **_data([_paper("art-a")], [_finding("f1")]),
+        "access_level": "public",
+        "metadata_license": "CC0-1.0",
+    }
+    for commit in (None, "unknown", "C" * 40):
+        with pytest.raises(ValueError, match="producer commit"):
+            build_packet({**data, "producer_commit": commit})

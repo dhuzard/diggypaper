@@ -18,6 +18,8 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import delete, insert, select, text, update
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError
@@ -542,7 +544,9 @@ async def test_populated_postgres_upgrade_downgrade_and_storage_guards(postgres_
     blocked = await alembic(url, "downgrade", "0021", success=False)
     assert "refusing to discard retained provenance" in blocked.stderr
     async with engine.begin() as connection:
-        assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == "0028"
+        # The refused downgrade rolls back as one transaction, so the database stays at head.
+        head = ScriptDirectory.from_config(Config(str(BACKEND / "alembic.ini"))).get_current_head()
+        assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == head
         assert await connection.scalar(text("SELECT count(*) FROM source_snapshots")) == 2
         # Explicit ownership deletion remains the documented retention boundary.
         await connection.execute(delete(Project).where(Project.id == pid))

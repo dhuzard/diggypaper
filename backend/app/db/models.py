@@ -32,6 +32,7 @@ from sqlalchemy.schema import DefaultClause
 from sqlalchemy.sql.elements import ClauseElement
 
 from app.db.base import Base
+from app.rights import REDISTRIBUTABLE_LICENSES, REDISTRIBUTION_DECISIONS, sql_in
 
 # JSON portable : JSON générique (SQLite/tests), JSONB sur PostgreSQL.
 JSONB = JSON().with_variant(_PG_JSONB, "postgresql")
@@ -1694,11 +1695,61 @@ class FindingReview(Base):
     )
 
 
+class ArticleRightsDeclaration(Base):
+    """Append-only, attributable redistribution decision for one article (app.rights).
+
+    The latest revision applies to exports. ``allowed`` requires an allowlisted licence and
+    a public https URL stating it; the CHECK constraint enforces this in the database too.
+    """
+
+    __tablename__ = "article_rights_declarations"
+    __table_args__ = (
+        UniqueConstraint("article_id", "revision", name="uq_article_rights_revision"),
+        ForeignKeyConstraint(
+            ["article_id", "project_id"],
+            ["articles.id", "articles.project_id"],
+            ondelete="CASCADE",
+            name="fk_article_rights_article_scope",
+        ),
+        CheckConstraint("revision >= 1", name="ck_article_rights_revision"),
+        CheckConstraint(
+            f"redistribution IN ({sql_in(REDISTRIBUTION_DECISIONS)})",
+            name="ck_article_rights_redistribution",
+        ),
+        CheckConstraint("length(trim(basis)) > 0", name="ck_article_rights_basis"),
+        CheckConstraint(
+            "redistribution <> 'allowed' OR ("
+            f"license_id IN ({sql_in(REDISTRIBUTABLE_LICENSES)}) "
+            "AND evidence_url IS NOT NULL AND evidence_url LIKE 'https://%')",
+            name="ck_article_rights_allowed",
+        ),
+        CheckConstraint("length(declared_by_ref) = 64", name="ck_article_rights_declared_by"),
+        Index("ix_article_rights_article", "project_id", "article_id", "revision"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
+    project_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    article_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    license_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    redistribution: Mapped[str] = mapped_column(String(16), nullable=False)
+    basis: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_url: Mapped[str | None] = mapped_column(Text)
+    declared_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    declared_by_ref: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 # Append-only: only nulling the actor FK (account deletion) may update a row.
 for _table, _actor, _others in (
     ("finding_revisions", "proposer_id", None),
     ("finding_reviews", "reviewer_id", None),
     ("finding_evidence", None, None),
+    ("article_rights_declarations", "declared_by_id", None),
 ):
     _allow = f"NOT (OLD.{_actor} IS NOT NULL AND NEW.{_actor} IS NULL)" if _actor else "1"
     event.listen(

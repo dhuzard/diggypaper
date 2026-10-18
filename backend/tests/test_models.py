@@ -78,6 +78,7 @@ EXPECTED_TABLES = {
     "finding_revisions",
     "finding_evidence",
     "finding_reviews",
+    "article_rights_declarations",  # append-only quotation redistribution decisions
 }
 
 
