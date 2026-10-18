@@ -1,0 +1,472 @@
+{
+  "source-evidence-packet": {
+    "allow-restricted": {
+      "counts": {
+        "assessments": 0,
+        "findings": 0,
+        "findings_by_export_state": {},
+        "findings_by_verification": {},
+        "omitted": {
+          "assessments": 0,
+          "findings": 13,
+          "papers": 0,
+          "passages": 0
+        },
+        "papers": 0,
+        "passages": 0,
+        "rejected": {
+          "assessments": 0,
+          "findings": 0,
+          "papers": 0,
+          "passages": 0
+        }
+      },
+      "errors": [],
+      "mapping_report": {
+        "findings": [],
+        "min_verification": "human-reviewed",
+        "totals": {
+          "importable": 0,
+          "incompatible": 0,
+          "restricted": 0
+        },
+        "withheld_quote_passages": []
+      },
+      "packet_digest": "sha256:9e97100feae5a44fc58ae1923d095a8289b864a6b2a122bb4d98f7851c0021ab",
+      "valid": true,
+      "warnings": []
+    },
+    "for-import": {
+      "counts": {
+        "assessments": 0,
+        "findings": 0,
+        "findings_by_export_state": {},
+        "findings_by_verification": {},
+        "omitted": {
+          "assessments": 0,
+          "findings": 13,
+          "papers": 0,
+          "passages": 0
+        },
+        "papers": 0,
+        "passages": 0,
+        "rejected": {
+          "assessments": 0,
+          "findings": 0,
+          "papers": 0,
+          "passages": 0
+        }
+      },
+      "errors": [],
+      "mapping_report": {
+        "findings": [],
+        "min_verification": "human-reviewed",
+        "totals": {
+          "importable": 0,
+          "incompatible": 0,
+          "restricted": 0
+        },
+        "withheld_quote_passages": []
+      },
+      "packet_digest": "sha256:9e97100feae5a44fc58ae1923d095a8289b864a6b2a122bb4d98f7851c0021ab",
+      "valid": true,
+      "warnings": []
+    }
+  },
+  "source-evidence-packet-exploratory": {
+    "allow-restricted": {
+      "counts": {
+        "assessments": 0,
+        "findings": 13,
+        "findings_by_export_state": {
+          "proposed": 13
+        },
+        "findings_by_verification": {
+          "unverified": 13
+        },
+        "omitted": {
+          "assessments": 0,
+          "findings": 0,
+          "papers": 0,
+          "passages": 0
+        },
+        "papers": 3,
+        "passages": 13,
+        "rejected": {
+          "assessments": 0,
+          "findings": 0,
+          "papers": 0,
+          "passages": 0
+        }
+      },
+      "errors": [],
+      "mapping_report": {
+        "findings": [
+          {
+            "finding_id": "finding:0be9a8af-d854-5acb-97f0-d4e7a694ced1",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:12ad6768-16e8-53ae-8449-6ccce6e98345",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:1bdd6a20-0e33-5eb7-b982-4b6f5db28e6c",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:4f07c051-d5a3-5d0a-a490-85613c44cd73",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:532d0817-c5d0-5199-b473-39085250de61",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:5dd3459f-d56c-52b9-b2c8-379ef3bbb6b2",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:72406249-b574-5305-89fc-cec724ffd049",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [
+              "private-rights",
+              "withheld-quote"
+            ],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:78697e4e-f3ba-54b3-91b0-dafb39980ca8",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:8cc57ee6-771a-5818-9ea1-3b3c47164421",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:92527a16-6b09-5af0-abf7-7770303d3786",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [
+              "private-rights",
+              "withheld-quote"
+            ],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:b05e62cb-8864-50b5-a79b-311d2e7a3000",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:b96a935f-c976-540b-9758-a248695a76a8",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [
+              "private-rights",
+              "withheld-quote"
+            ],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:c53666f7-3378-55a8-8f6c-2cdd84d11718",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [],
+            "revision": 1
+          }
+        ],
+        "min_verification": "human-reviewed",
+        "totals": {
+          "importable": 0,
+          "incompatible": 13,
+          "restricted": 0
+        },
+        "withheld_quote_passages": [
+          "passage:583d3c74-0f58-5d07-ab47-8d46ffb69dd5",
+          "passage:8eef2abe-17e9-534e-a089-d15ce24b6bbb",
+          "passage:e05245f2-3acd-58c3-855a-38d5c39b2a43"
+        ]
+      },
+      "packet_digest": "sha256:c51f114f67c60b28a7c72fd48d0fb34c313c03d57ad9790e00f5d6e4dfd68009",
+      "valid": true,
+      "warnings": []
+    },
+    "for-import": {
+      "counts": {
+        "assessments": 0,
+        "findings": 13,
+        "findings_by_export_state": {
+          "proposed": 13
+        },
+        "findings_by_verification": {
+          "unverified": 13
+        },
+        "omitted": {
+          "assessments": 0,
+          "findings": 0,
+          "papers": 0,
+          "passages": 0
+        },
+        "papers": 3,
+        "passages": 13,
+        "rejected": {
+          "assessments": 0,
+          "findings": 0,
+          "papers": 0,
+          "passages": 0
+        }
+      },
+      "errors": [],
+      "mapping_report": {
+        "findings": [
+          {
+            "finding_id": "finding:0be9a8af-d854-5acb-97f0-d4e7a694ced1",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:12ad6768-16e8-53ae-8449-6ccce6e98345",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:1bdd6a20-0e33-5eb7-b982-4b6f5db28e6c",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:4f07c051-d5a3-5d0a-a490-85613c44cd73",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:532d0817-c5d0-5199-b473-39085250de61",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:5dd3459f-d56c-52b9-b2c8-379ef3bbb6b2",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:72406249-b574-5305-89fc-cec724ffd049",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [
+              "private-rights",
+              "withheld-quote"
+            ],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:78697e4e-f3ba-54b3-91b0-dafb39980ca8",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:8cc57ee6-771a-5818-9ea1-3b3c47164421",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:92527a16-6b09-5af0-abf7-7770303d3786",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [
+              "private-rights",
+              "withheld-quote"
+            ],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:b05e62cb-8864-50b5-a79b-311d2e7a3000",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:b96a935f-c976-540b-9758-a248695a76a8",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [
+              "private-rights",
+              "withheld-quote"
+            ],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:c53666f7-3378-55a8-8f6c-2cdd84d11718",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [],
+            "revision": 1
+          }
+        ],
+        "min_verification": "human-reviewed",
+        "totals": {
+          "importable": 0,
+          "incompatible": 13,
+          "restricted": 0
+        },
+        "withheld_quote_passages": [
+          "passage:583d3c74-0f58-5d07-ab47-8d46ffb69dd5",
+          "passage:8eef2abe-17e9-534e-a089-d15ce24b6bbb",
+          "passage:e05245f2-3acd-58c3-855a-38d5c39b2a43"
+        ]
+      },
+      "packet_digest": "sha256:c51f114f67c60b28a7c72fd48d0fb34c313c03d57ad9790e00f5d6e4dfd68009",
+      "valid": true,
+      "warnings": []
+    }
+  }
+}

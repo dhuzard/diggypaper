@@ -1,0 +1,33 @@
+{
+  "study_id": "nts-publication-traceability-poc-v1",
+  "issue_refs": ["dhuzard/diggypaper#11", "dhuzard/diggypaper#46", "dhuzard/diggypaper#47", "Neuronautix/ComputationalReviewTemplate_trust-knowledge#10"],
+  "alures": {
+    "landing_url": "https://environmental-data.ec.europa.eu/alures/datasets.html",
+    "wanted_tables": ["alures_nts_projects.csv", "linked animal/species tables", "retrospective assessments"]
+  },
+  "cases": [
+    {
+      "case_id": "A-ES-mouse",
+      "role": "positive-seed (article-confirmed identifier, not yet ALURES-confirmed)",
+      "source": "cache/pmc11731260.json",
+      "expected_nts_id": "NTS-ES-414463",
+      "scope_note": "The Spanish NTS is attached by the article to the db/db mouse procedures (antisense oligonucleotide treatment). Pax6os1 null mouse experiments were authorized in the UK under a Project Licence and must not be attributed to this NTS. The sentence 'All experiments were performed in male and female adult mice' spans both and is not split."
+    },
+    {
+      "case_id": "B-RO-rat",
+      "role": "positive-seed (article-confirmed identifier, not yet ALURES-confirmed)",
+      "source": "sources/pmc13304911.json",
+      "expected_nts_id": "NTS-RO-406074",
+      "expected_version": "1",
+      "relations": [{"type": "has-preprint", "status": "not-located", "note": "the task states a preprint exists; its DOI could not be resolved because preprint hosts are unreachable from this environment. No preprint is counted as an independent output."}],
+      "scope_note": "Romanian national numbers (ethics approval 435/13 March 2024, project authorization 406/29 April 2024, facility authorization 926/6 June 2021) are stored separately and are not NTS identifiers; the project-authorization number '406' merely shares leading digits with NTS-RO-406074."
+    },
+    {
+      "case_id": "C-FR-negative-control",
+      "role": "negative-control (national authorization number, no NTS identifier)",
+      "source": "sources/pmc6392334.json",
+      "expected_nts_id": null,
+      "scope_note": "French APAFIS reference only. Mice are blood-meal hosts for mosquitoes (the experimental unit of the paper is the mosquito). No NTS crosswalk is assumed."
+    }
+  ]
+}

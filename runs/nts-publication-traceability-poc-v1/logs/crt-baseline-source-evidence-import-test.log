@@ -1,0 +1,197 @@
+TAP version 13
+# Subtest: validator reproduces the producer reference validator on every upstream fixture
+ok 1 - validator reproduces the producer reference validator on every upstream fixture
+  ---
+  duration_ms: 96.555206
+  type: 'test'
+  ...
+# Subtest: private and embargoed packets are refused by default and only warn with allowRestricted
+ok 2 - private and embargoed packets are refused by default and only warn with allowRestricted
+  ---
+  duration_ms: 10.385521
+  type: 'test'
+  ...
+# Subtest: canonical-encoding check ignores number spelling but not layout
+ok 3 - canonical-encoding check ignores number spelling but not layout
+  ---
+  duration_ms: 0.40265
+  type: 'test'
+  ...
+# Subtest: G2: two findings from one article and one from another import with exact source and reviewer provenance
+ok 4 - G2: two findings from one article and one from another import with exact source and reviewer provenance
+  ---
+  duration_ms: 9.734833
+  type: 'test'
+  ...
+# Subtest: the two findings of one article stay distinct and keep their own context, passages and verification
+ok 5 - the two findings of one article stay distinct and keep their own context, passages and verification
+  ---
+  duration_ms: 5.585225
+  type: 'test'
+  ...
+# Subtest: Phase 2 mapping keeps N definition, never invents effect size, replication or text access
+ok 6 - Phase 2 mapping keeps N definition, never invents effect size, replication or text access
+  ---
+  duration_ms: 6.826017
+  type: 'test'
+  ...
+# Subtest: every non-accepted record has an explicit status and reasons, and is absent from the outputs
+ok 7 - every non-accepted record has an explicit status and reasons, and is absent from the outputs
+  ---
+  duration_ms: 5.463432
+  type: 'test'
+  ...
+# Subtest: the verification threshold is configurable and defaults to human-reviewed
+ok 8 - the verification threshold is configurable and defaults to human-reviewed
+  ---
+  duration_ms: 6.763397
+  type: 'test'
+  ...
+# Subtest: the producer canonical fixture imports its one approved finding and accounts for the rest
+ok 9 - the producer canonical fixture imports its one approved finding and accounts for the rest
+  ---
+  duration_ms: 5.101623
+  type: 'test'
+  ...
+# Subtest: idempotent replay: identical input bytes yield identical files and digests
+ok 10 - idempotent replay: identical input bytes yield identical files and digests
+  ---
+  duration_ms: 18.943538
+  type: 'test'
+  ...
+# Subtest: imports are immutable: a different result is never written over an existing sidecar
+ok 11 - imports are immutable: a different result is never written over an existing sidecar
+  ---
+  duration_ms: 10.889021
+  type: 'test'
+  ...
+# Subtest: fixture generator is deterministic and the committed G2 packet is current
+ok 12 - fixture generator is deterministic and the committed G2 packet is current
+  ---
+  duration_ms: 2.333962
+  type: 'test'
+  ...
+# Subtest: corrupt hash, length, version and bytes fail closed with no outputs
+ok 13 - corrupt hash, length, version and bytes fail closed with no outputs
+  ---
+  duration_ms: 9.04176
+  type: 'test'
+  ...
+# Subtest: cross-paper links fail: finding to foreign passage, and assessment to a passage the finding does not cite
+ok 14 - cross-paper links fail: finding to foreign passage, and assessment to a passage the finding does not cite
+  ---
+  duration_ms: 13.586298
+  type: 'test'
+  ...
+# Subtest: mismatched review and dangling references fail
+ok 15 - mismatched review and dangling references fail
+  ---
+  duration_ms: 8.807859
+  type: 'test'
+  ...
+# Subtest: restricted and private content is withheld or refused, never published
+ok 16 - restricted and private content is withheld or refused, never published
+  ---
+  duration_ms: 11.517436
+  type: 'test'
+  ...
+# Subtest: a paper whose rights are not redistributable cannot reach the outputs even if the producer approved it
+ok 17 - a paper whose rights are not redistributable cannot reach the outputs even if the producer approved it
+  ---
+  duration_ms: 4.246938
+  type: 'test'
+  ...
+# Subtest: partial packets stay partial and producer-withheld counts are reported separately from rejections
+ok 18 - partial packets stay partial and producer-withheld counts are reported separately from rejections
+  ---
+  duration_ms: 11.4369
+  type: 'test'
+  ...
+# Subtest: null or unknown N, unit and context are kept honest rather than defaulted
+ok 19 - null or unknown N, unit and context are kept honest rather than defaulted
+  ---
+  duration_ms: 8.897813
+  type: 'test'
+  ...
+# Subtest: a numeric value absent from the source passage is flagged, not asserted as sourced
+ok 20 - a numeric value absent from the source passage is flagged, not asserted as sourced
+  ---
+  duration_ms: 8.009285
+  type: 'test'
+  ...
+# Subtest: revisions are never collapsed: only the latest revision of a finding can be imported
+ok 21 - revisions are never collapsed: only the latest revision of a finding can be imported
+  ---
+  duration_ms: 7.183904
+  type: 'test'
+  ...
+# Subtest: findings are never merged by text, even when two share a sentence
+ok 22 - findings are never merged by text, even when two share a sentence
+  ---
+  duration_ms: 6.525178
+  type: 'test'
+  ...
+# Subtest: outputs carry no TRUST, replication or full-text fields and no reviewer identity beyond the pseudonym
+ok 23 - outputs carry no TRUST, replication or full-text fields and no reviewer identity beyond the pseudonym
+  ---
+  duration_ms: 5.099107
+  type: 'test'
+  ...
+# Subtest: Gate G2: imported packages pass the Phase 2 import gate and the Phase 5 shape and curation gates
+ok 24 - Gate G2: imported packages pass the Phase 2 import gate and the Phase 5 shape and curation gates
+  ---
+  duration_ms: 5.606829
+  type: 'test'
+  ...
+# Subtest: Phase 5 gates still reject what they always rejected
+ok 25 - Phase 5 gates still reject what they always rejected
+  ---
+  duration_ms: 13.042295
+  type: 'test'
+  ...
+# Subtest: text_access "unknown" is accepted only for a package whose lineage sidecar hash verifies
+ok 26 - text_access "unknown" is accepted only for a package whose lineage sidecar hash verifies
+  ---
+  duration_ms: 4.952866
+  type: 'test'
+  ...
+# Subtest: imported findings are bound to the verified sidecar: editing a finding after import fails the gates
+ok 27 - imported findings are bound to the verified sidecar: editing a finding after import fails the gates
+  ---
+  duration_ms: 12.046502
+  type: 'test'
+  ...
+# Subtest: a legitimate empty conflict set is accepted only when declared, in imports and in native packages
+ok 28 - a legitimate empty conflict set is accepted only when declared, in imports and in native packages
+  ---
+  duration_ms: 5.705566
+  type: 'test'
+  ...
+# Subtest: DOI normalisation accepts resolver URLs and rejects non-DOIs
+ok 29 - DOI normalisation accepts resolver URLs and rejects non-DOIs
+  ---
+  duration_ms: 0.272093
+  type: 'test'
+  ...
+# Subtest: CLI: usage errors, validate-only and the frozen example command
+ok 30 - CLI: usage errors, validate-only and the frozen example command
+  ---
+  duration_ms: 8.991558
+  type: 'test'
+  ...
+# Subtest: importing is opt-in: no native pipeline script or skill invokes the importer
+ok 31 - importing is opt-in: no native pipeline script or skill invokes the importer
+  ---
+  duration_ms: 3.933304
+  type: 'test'
+  ...
+1..31
+# tests 31
+# suites 0
+# pass 31
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 553.435369
+exit=0

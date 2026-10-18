@@ -1,0 +1,72 @@
+{
+  "access_scope": {
+    "level": "restricted",
+    "redistributable_full_text": false
+  },
+  "artifacts": {
+    "assessments": {
+      "bytes": 0,
+      "path": "assessments.jsonl",
+      "record_count": 0,
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "findings": {
+      "bytes": 0,
+      "path": "findings.jsonl",
+      "record_count": 0,
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "papers": {
+      "bytes": 0,
+      "path": "papers.jsonl",
+      "record_count": 0,
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "passages": {
+      "bytes": 0,
+      "path": "passages.jsonl",
+      "record_count": 0,
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "created_at": "1970-01-01T00:00:00Z",
+  "creation_method": "producer-export",
+  "export_status": {
+    "reasons": [
+      "not-approved=13"
+    ],
+    "state": "withheld",
+    "withheld_counts": {
+      "assessments": 0,
+      "findings": 13,
+      "papers": 0,
+      "passages": 0
+    }
+  },
+  "licenses": [
+    {
+      "applies_to": "packet-metadata",
+      "license_id": "unknown"
+    }
+  ],
+  "packet_id": "packet:c9b1ed49f767fd098dab3280ac5828a5",
+  "producer": {
+    "commit": "61a4829e66fc45ccfc46951a03ffd74af8c546ef",
+    "name": "diggypaper",
+    "schema_refs": [
+      {
+        "name": "evidence-envelope-v1",
+        "version": "1"
+      },
+      {
+        "name": "seip-support-v1",
+        "version": "1"
+      },
+      {
+        "name": "quote-matcher-v1",
+        "version": "1"
+      }
+    ]
+  },
+  "schema_version": "source-evidence-packet/0.1.0"
+}

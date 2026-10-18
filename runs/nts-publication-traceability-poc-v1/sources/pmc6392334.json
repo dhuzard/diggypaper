@@ -1,0 +1,39 @@
+{
+  "source_id": "pmc6392334",
+  "identifiers": {
+    "doi": "10.1371/journal.pntd.0006997",
+    "pmid": "30763312",
+    "pmcid": "PMC6392334"
+  },
+  "title": "Potential of Aedes albopictus to cause the emergence of arboviruses in Morocco",
+  "authors": [],
+  "pub_types": [
+    "Journal Article"
+  ],
+  "license": {
+    "license_id": "CC-BY-4.0",
+    "url": "https://creativecommons.org/licenses/by/4.0/",
+    "statement": "© 2019 Amraoui et al",
+    "basis": "PMC license metadata returned by the PubMed connector get_copyright_status (source=pmc, is_open_access=true) on 2026-10-18",
+    "evidence_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6392334/"
+  },
+  "retrieval": {
+    "method": "pubmed-connector get_full_text_article",
+    "retrieved_at": "2026-10-18T08:59:00Z",
+    "completeness": "excerpt",
+    "fidelity": "Paragraphs transcribed verbatim by the executing agent from the connector's plain-text rendering (italic taxon names dropped). Not a byte-identical PMC copy. Each section is one contiguous span.",
+    "public_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6392334/"
+  },
+  "sections": [
+    {
+      "title": "Ethic statements",
+      "kind": "methods",
+      "text": "Animals were housed in the Institut Pasteur animal facilities accredited by the French Ministry of Agriculture for performing experiments on live rodents. Work on animals was performed in compliance with French and European regulations on care and protection of laboratory animals (EC Directive 2010/63, French Law 2013–118, February 6th, 2013). All experiments were approved by the Ethics Committee #89 and registered under the reference APAFIS#6573-201606l412077987 v2."
+    },
+    {
+      "title": "Mosquito collections (sentence)",
+      "kind": "methods",
+      "text": "Females were fed twice a week on anaesthetized mice (OF1 mice, Charles River laboratories, France)."
+    }
+  ]
+}

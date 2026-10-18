@@ -1,0 +1,60 @@
+[
+  {
+    "article_reported_total": "not reported",
+    "article_species": [
+      "not reported"
+    ],
+    "case_id": "A-ES-mouse",
+    "cohort_sum_reconciliation": {
+      "status": "no-article-total",
+      "sum_of_stated_cohorts": 0
+    },
+    "comparability": "not-comparable",
+    "doi": "10.1016/j.isci.2024.111518",
+    "flags": [],
+    "link_state": "not-verified:ARTICLE_CONFIRMED_ALURES_UNAVAILABLE",
+    "nts_id": "NTS-ES-414463",
+    "planned": "not reported (ALURES record not confirmed in this run)",
+    "ratio_computed": false,
+    "reasons": [
+      "no confirmed ALURES record for this article (link state: not-verified:ARTICLE_CONFIRMED_ALURES_UNAVAILABLE)"
+    ],
+    "reported_experimental_animals": "not reported",
+    "unique_animal_matching_established": false
+  },
+  {
+    "article_reported_total": 146,
+    "article_species": [
+      "rat"
+    ],
+    "case_id": "B-RO-rat",
+    "cohort_sum_reconciliation": {
+      "article_reported_total": 146,
+      "caveat": "Stated cohorts may overlap (see possible_overlap) or omit cohorts the passage does not describe; the difference is not attributed to any group.",
+      "status": "cohort-sum-below-total",
+      "sum_of_stated_cohorts": 134,
+      "unattributed_animals": 12
+    },
+    "comparability": "not-comparable",
+    "doi": "10.3390/ph19060846",
+    "flags": [],
+    "link_state": "not-verified:ARTICLE_CONFIRMED_ALURES_UNAVAILABLE",
+    "nts_id": "NTS-RO-406074",
+    "planned": "not reported (ALURES record not confirmed in this run)",
+    "ratio_computed": false,
+    "reasons": [
+      "no confirmed ALURES record for this article (link state: not-verified:ARTICLE_CONFIRMED_ALURES_UNAVAILABLE)"
+    ],
+    "reported_experimental_animals": {
+      "cohorts": [
+        "4.2.1. Xylazine Overdose Model—Determination of Optimal Dose",
+        "4.2.2. Fentanyl and Xylazine Combination Overdose Model",
+        "4.2.4. Main Study Protocol",
+        "4.2.4. Main Study Protocol (controls)"
+      ],
+      "note": "cohort figures may overlap and are not summed here",
+      "value": "see per-cohort observations"
+    },
+    "unique_animal_matching_established": false
+  }
+]
