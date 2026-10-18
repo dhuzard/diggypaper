@@ -1,6 +1,8 @@
 # source-evidence-packet/0.1.0
 
-Status: draft contract for [issue #47](https://github.com/dhuzard/diggypaper/issues/47). Docs, JSON Schemas, synthetic fixtures and an offline validator only. No database migration, API, UI or LLM call is added.
+Status: **frozen** contract for [issue #47](https://github.com/dhuzard/diggypaper/issues/47) (merged in #48). Docs, JSON Schemas, synthetic fixtures and an offline validator only. No database migration, API, UI or LLM call is added.
+
+Revisions within 0.1.x follow the additive rule of section 6. Since the freeze, this document has gained the normative packet-digest rule (section 2.1), the validator's `packet_digest` output (section 10), and the crosswalk to the ComputationalReviewTemplate importer, pinned to that importer's merged implementation (section 8.3). No schema, required field, enum value, hash or canonicalization rule has changed, and every packet that was valid before is still valid.
 
 The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
 
@@ -34,6 +36,18 @@ Encoding rules (violations are `non-canonical-encoding`):
 - JSONL: one JSON object per line, keys sorted, separators `,` and `:` (no spaces), non-ASCII unescaped (`ensure_ascii=False`).
 - `manifest.json`: pretty-printed JSON with sorted keys, final newline.
 - Record order is not significant, but producers SHOULD sort by primary id (and `revision` for findings) for reproducible hashes.
+
+### 2.1 Packet digest (normative)
+
+The **packet digest** identifies one exact packet. It is `sha256:` followed by the lowercase hex SHA-256 of the **exact bytes of `manifest.json` as stored**.
+
+- It MUST be computed over the raw file bytes. Consumers MUST NOT parse and re-serialize the manifest, normalize line endings or whitespace, or strip a BOM before hashing. Two manifests with the same JSON content but different bytes are different packets.
+- The manifest records the SHA-256, byte length and record count of every artifact, and the SHA-256 of the RO-Crate when one is declared. A packet digest therefore identifies the whole packet, **but only for a packet that validates**: the validator is what checks those recorded values against the files. A consumer MUST NOT treat a digest as identifying a packet that fails validation, and MUST re-validate a copy it obtains before relying on the digest.
+- Consumers MAY carry the digest in another notation, for example as bare hex in ComputationalReviewTemplate's `comprev.evidence-packet-links` `packet.sha256`. They MUST compute it exactly as defined here.
+- The digest establishes **integrity** against a recorded value: the bytes are the ones that were recorded. It does **not** establish who produced the packet, and it says nothing about the scientific validity of its contents. This contract has no signature; packet authenticity is out of scope for 0.1.x.
+- A packet deposited for others to fetch (for example a Zenodo record or a GitHub release asset) SHOULD be deposited as the unmodified packet files. A fetched copy is the referenced packet only if it validates and its digest equals the recorded one.
+
+`sep_validate.py` reports `packet_digest` for every valid packet, and omits it for an invalid one (section 10).
 
 JSON Schemas (2020-12, `additionalProperties: false`) are in `schemas/`. They check structure only; the semantic rules in section 7 are enforced by the validator.
 
@@ -273,7 +287,7 @@ A consumer MUST NOT silently drop records. On import it MUST report, per run:
 - `rejected`: records refused, by reason, for **incompatible** (verification below the importer's threshold, `unreviewed`, `proposed`) and **restricted** (withheld quote, private/embargoed rights) classes;
 - `omitted`: records the producer declared withheld (`export_status.withheld_counts`), reported separately from rejections.
 
-A consumer MUST NOT render a partial packet as complete, nor a withheld quote as present. `sep_validate.py --mapping-report` emits these counts per record. The validator output `counts` block carries `findings_by_export_state`, `findings_by_verification`, `omitted` and `rejected`.
+A consumer MUST NOT render a partial packet as complete, nor a withheld quote as present. The minimum `verification_level` a consumer accepts is the consumer's choice and MUST be stated in its import report. The ComputationalReviewTemplate importer defaults to `human-reviewed` (`--min-verification` raises it). `sep_validate.py --mapping-report` emits these counts per record. The validator output `counts` block carries `findings_by_export_state`, `findings_by_verification`, `omitted` and `rejected`.
 
 ### 8.2 Mapping to Diggypaper source contracts
 
@@ -289,20 +303,33 @@ A consumer MUST NOT render a partial packet as complete, nor a withheld quote as
 
 ### 8.3 Crosswalk to ComputationalReviewTemplate (Phase 2 `finding`)
 
-**All target field names below are PROVISIONAL and unverified.** The CRT repository was not available when this was written. Open item: pin the Phase 2 `finding` schema in issue #47 and update this table; until then a CRT importer MUST NOT rely on these names.
+This table is pinned to the importer as merged in [Neuronautix/ComputationalReviewTemplate_trust-knowledge](https://github.com/Neuronautix/ComputationalReviewTemplate_trust-knowledge) at commit `47b7acd20b7bde65d61ea23d584ef0d300400d28` (`scripts/source-evidence/`, documented in `docs/SOURCE_EVIDENCE_IMPORT.md`). It replaces the provisional field names of the original draft. That repository's documentation is authoritative for its own fields; this table records what happens to packet data.
 
-| Packet field | Provisional CRT `finding` field | Dropped / never invented |
+A finding is imported only if it is `approved-for-export`, `human-reviewed`, at or above the importer's verification threshold, on a paper with a DOI, a captured snapshot and `redistribution: allowed`, with at least one `supports` assessment on an `exact`, included passage and no `contradicts`. Every finding receives exactly one result (`accepted`, `rejected`, `withheld` or `incomplete`) with reasons. Producer-declared omissions are reported separately.
+
+| Phase 2 field | From the packet | Rule |
 |---|---|---|
-| `finding_id` + `revision` | `finding.id` / `finding.version` (PROVISIONAL) | Revision is kept as a reference; CRT must not collapse revisions. |
-| `statement` | `finding.statement` (PROVISIONAL) | `origin` should map to a provenance/author-kind field; if CRT has none it is dropped and the finding MUST NOT be attributed as review-authored. |
-| `paper_id`, `paper.identifiers`, `title` | `finding.source` / citation (PROVISIONAL) | `authors` are citation metadata only, never claim author. |
-| `context.*` | `finding.context` / PICO-like fields (PROVISIONAL) | Values kept including `"unknown"`; nothing is filled in. |
-| `numeric_results[]` | `finding.result` (PROVISIONAL) | Only recorded `value`, `unit`, `n`+`definition`. **Effect size**: absent from the packet, so `not-assessed` on the CRT side. Never computed or imputed. |
-| `n` | `finding.sample_size` (PROVISIONAL) | `definition` is carried or the N is dropped; an article-level N is never relabeled as an experimental-unit N. |
-| `passage_ids`, `quote`, `match` | `finding.evidence` / quotes (PROVISIONAL) | Withheld quotes arrive as hash only. Offsets and receipts are dropped unless CRT supports them. |
-| `assessments[]`, `verification_level` | `finding.support_assessment` (PROVISIONAL) | Reviewer pseudonyms only. **Source validation** beyond the packet's `verification_level` is `not-assessed`. |
-| (not in packet) independent replication | `finding.replication` (PROVISIONAL) | Always `not-assessed`/absent. Never inferred from `independently-verified`, which counts reviewers, not replications. |
-| (not in packet) TRUST | none | Out of scope; owned by ORAtlas. |
+| `claim` | `finding.statement` | Worded by `finding.origin`; recorded in the lineage sidecar; never attributed to the article authors. A Phase 2 `claim` is a source-paper finding, **not** a review-authored claim. |
+| `claim_source_sentence` | the supporting passage `quote` | Verbatim, only for an `exact` match whose native assessment is `supports`. Match success alone is not support. |
+| `doi` | `paper.identifiers.doi` | Lower-cased, resolver prefix removed. PMID/PMCID alone are not enough (`missing-doi`). |
+| `study_system` | `context.population` | `"unknown"` stays `"unknown"`. |
+| `n` | `numeric_results[].n.value` | Only when `n.definition` is `experimental-unit` and unambiguous. Article-level, group or unknown N is not relabelled; it stays in `evidence` and the sidecar with its definition. |
+| `evidence` | `context.*`, `numeric_results[]` | Composed text: value, unit, `n` and its definition, as written. |
+| `effect_size`, `effect_size_source_sentence` | none | `null`: this contract has no effect-size field, so none is computed or imputed. |
+| `replication_status`, `replication_evidence_dois` | none | Always `replication_unknown` and `[]`. `independently-verified` counts reviewers, not replications. |
+| `text_access` | none | `"unknown"`. The packet does not say whether a passage comes from the abstract or the body, and this is not deduced. The importer's Phase 5 gate accepts `"unknown"` only for imported findings vouched for by an unaltered lineage sidecar. |
+
+Not carried into the Phase 2 finding, but kept verbatim in the importer's immutable `source-evidence-lineage.json`:
+- `finding_id`, `revision`, `verification_level`, `review_state` and `export_state`;
+- article metadata and the snapshot reference and digest;
+- every passage, with its quote digest, match state and offsets;
+- every native assessment (status, rationale, `protocol: seip-support-v1`, reviewer pseudonym, assessed snapshot digest);
+- all producer IDs;
+- the packet digest of section 2.1, recorded as `manifest_sha256`.
+
+Revisions are never collapsed. TRUST is out of scope: no packet field becomes a TRUST level, score or ORAtlas assessment.
+
+Downstream use of an imported finding as evidence for a specific review claim is a separate, reviewed decision that belongs to the review repository. It is not implied by a finding and a review claim sharing a DOI.
 
 ## 9. Example lineage
 
@@ -329,10 +356,12 @@ python docs/contracts/source-evidence-packet/v0.1.0/validator/sep_validate.py --
 python docs/contracts/source-evidence-packet/v0.1.0/validator/sep_validate.py --mapping-report <dir>
 ```
 
-Default is `--for-import`. Offline, deterministic, no clock or randomness. Prints JSON `{"valid", "errors":[{code,file,id,message}], "warnings", "counts"}` sorted by `(code, file, id)`. Exit 0 valid, 1 invalid, 2 usage. Tests: `backend/tests/test_source_evidence_packet.py`. Regenerate fixtures with `python docs/contracts/source-evidence-packet/v0.1.0/fixtures/build_fixtures.py` (idempotent).
+Default is `--for-import`. Offline, deterministic, no clock or randomness. Prints JSON `{"valid", "errors":[{code,file,id,message}], "warnings", "counts"}` sorted by `(code, file, id)`, plus `"packet_digest"` (section 2.1) when `valid` is true. Exit 0 valid, 1 invalid, 2 usage. Tests: `backend/tests/test_source_evidence_packet.py`. Regenerate fixtures with `python docs/contracts/source-evidence-packet/v0.1.0/fixtures/build_fixtures.py` (idempotent).
 
 ## 11. Open items
 
-1. Pin ComputationalReviewTemplate Phase 2 `finding` field names in issue #47 (section 8.3 is PROVISIONAL).
-2. Decide the importer's minimum `verification_level` threshold for CRT (this contract leaves it to the consumer, section 8.1).
+1. ~~Pin the ComputationalReviewTemplate Phase 2 `finding` field names~~: done, section 8.3.
+2. ~~The importer's minimum `verification_level` for CRT~~: resolved as the consumer's stated choice (section 8.1). The CRT importer defaults to `human-reviewed`.
 3. Confirm whether `unknown`/`restricted` assessment statuses are accepted upstream or remain packet-only.
+4. Packet signing, if consumers need packet authenticity rather than integrity (section 2.1). This would be a new optional field or a new minor version.
+5. A packet exported by Finding Curation (#46) from human-reviewed findings has not yet been validated end to end against this contract. Every packet exercised so far is synthetic.
