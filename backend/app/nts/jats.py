@@ -1,7 +1,9 @@
 """Minimal PMC open-access JATS reader for the optional ``fetch`` command.
 
 Only methods and results sections are kept (the NTS workflow reads nothing else) and each
-paragraph becomes its own contiguous span. DTD/entity declarations are refused outright.
+paragraph becomes its own contiguous span. Entity declarations and DTD internal subsets are
+refused outright; the bare external ``<!DOCTYPE ... PUBLIC "..." "...">`` that every PMC efetch
+response carries is stripped before parsing (expat never fetches external DTDs).
 """
 
 # ruff: noqa: E501
@@ -33,26 +35,50 @@ def _text(el: ET.Element) -> str:
     return re.sub(r"\s+", " ", "".join(el.itertext())).strip()
 
 
-def parse(xml_bytes: bytes, source_id: str, retrieved_at: str, public_url: str) -> dict[str, Any]:
-    head = xml_bytes[:4096].lower()
-    if b"<!doctype" in head or b"<!entity" in xml_bytes.lower():
+def _strip_doctype(xml_bytes: bytes) -> bytes:
+    """Remove one external-identifier-only DOCTYPE; refuse internal subsets and entities."""
+    lowered = xml_bytes.lower()
+    if b"<!entity" in lowered:
         raise ValueError("DTD/entity declarations are refused")
-    root = ET.fromstring(xml_bytes)  # noqa: S314
+    start = lowered.find(b"<!doctype")
+    if start < 0:
+        return xml_bytes
+    end = lowered.find(b">", start)
+    bracket = lowered.find(b"[", start)
+    if end < 0 or (0 <= bracket < end) or lowered.find(b"<!doctype", end) >= 0:
+        raise ValueError("DTD/entity declarations are refused")
+    return xml_bytes[:start] + xml_bytes[end + 1 :]
+
+
+def parse(xml_bytes: bytes, source_id: str, retrieved_at: str, public_url: str) -> dict[str, Any]:
+    root = ET.fromstring(_strip_doctype(xml_bytes))  # noqa: S314
     ids = {}
     for el in root.iter("article-id"):
         ids[el.get("pub-id-type")] = _text(el)
     title_el = root.find(".//article-title")
     sections: list[dict[str, str]] = []
-    for sec in root.iter("sec"):
+
+    def walk(sec: ET.Element, inherited: str) -> None:
         t = sec.find("title")
         title = _text(t) if t is not None else ""
         kind = classify_title(title)
-        if kind not in ("methods", "results"):
-            continue
-        for i, p in enumerate(sec.findall("p"), start=1):
-            text = _text(p)
-            if text:
-                sections.append({"title": f"{title} (paragraph {i})", "kind": kind, "text": text})
+        if kind == "other":
+            kind = classify_title(sec.get("sec-type"))
+        if kind == "other":
+            kind = inherited  # a nested "Ethics statement" belongs to its enclosing Methods
+        if kind in ("methods", "results"):
+            for i, p in enumerate(sec.findall("p"), start=1):
+                text = _text(p)
+                if text:
+                    sections.append(
+                        {"title": f"{title} (paragraph {i})", "kind": kind, "text": text}
+                    )
+        for child in sec.findall("sec"):
+            walk(child, kind)
+
+    body = root.find(".//body")
+    for top in body.findall("sec") if body is not None else []:
+        walk(top, "other")
     license_href = next(
         (el.get("{http://www.w3.org/1999/xlink}href") for el in root.iter("license")), None
     )

@@ -83,7 +83,12 @@ def rows(res: dict[str, Any]) -> list[dict[str, str]]:
                     "species": ", ".join(species + [f"({s})" for s in strains]) or "not reported",
                     "planned": planned
                     if isinstance(planned, str)
-                    else "; ".join(f"{p['species']}: {p['authorized_number']}" for p in planned),
+                    else "; ".join(
+                        f"{p['authorized_number']} (project-wide total, species not split)"
+                        if p["species"] == "not reported"
+                        else f"{p['species']}: {p['authorized_number']}"
+                        for p in planned
+                    ),
                     "reported": _reported(obs, c["ex"]["reconciliation"]),
                     "comparability": (cmp["comparability"] + ": " + "; ".join(cmp["reasons"][:2]))
                     if cmp

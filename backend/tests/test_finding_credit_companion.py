@@ -44,7 +44,11 @@ def _doc(name="public"):
 
 def _write(tmp_path, doc, name="credit.json"):
     path = tmp_path / name
-    path.write_text(json.dumps(doc, indent=2, sort_keys=True, ensure_ascii=False) + "\n", "utf-8")
+    path.write_text(
+        json.dumps(doc, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     return path
 
 
@@ -168,7 +172,9 @@ def test_reformatted_manifest_is_a_different_packet(tmp_path):
     shutil.copytree(PACKETS / "public", packet)
     manifest = json.loads((packet / "manifest.json").read_text(encoding="utf-8"))
     (packet / "manifest.json").write_text(
-        json.dumps(manifest, indent=4, sort_keys=True, ensure_ascii=False) + "\n", "utf-8"
+        json.dumps(manifest, indent=4, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
     )
     assert sep.validate_packet(packet, "for-import")["valid"] is True
     result = fcc.validate_companion(VALID / "public" / "credit.json", packet)

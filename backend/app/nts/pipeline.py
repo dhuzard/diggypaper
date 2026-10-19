@@ -8,6 +8,7 @@ import csv
 import hashlib
 import io
 import json
+import re
 import uuid
 from collections import defaultdict
 from pathlib import Path
@@ -96,6 +97,26 @@ def load_alures(alures_dir: Path | None) -> dict[str, Any]:
             rar = rar or entry
         else:
             animals = animals or entry
+    if animals is None:
+        # The real ALURES projects export carries the project-wide ceiling itself
+        # (``total_number_of_animals``) with no species split; fate/purpose side tables are
+        # not authorization figures and are never used as such.
+        total_col = next(
+            (
+                n
+                for n in s["count_column_candidates"]
+                if re.search(r"total", n.lower()) and re.search(r"animal", n.lower())
+            ),
+            None,
+        )
+        if total_col:
+            animals = {
+                "table": nts_name,
+                "species_column": None,
+                "count_column": total_col,
+                "rows": alures.rows_by_id(path, s["id_column_candidates"][0]),
+                "path": path,
+            }
     return {
         "schemas": tables,
         "index": index,
@@ -448,7 +469,9 @@ def run_study(
                         r["dataset_cell"] = {
                             "file": table["table"],
                             "row": int(row["_row_number"]),
-                            "columns": [table["species_column"], table["count_column"]],
+                            "columns": [
+                                c for c in (table["species_column"], table["count_column"]) if c
+                            ],
                         }
                         note = (
                             r["meaning"]
