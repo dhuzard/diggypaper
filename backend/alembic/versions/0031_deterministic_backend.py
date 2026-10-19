@@ -33,10 +33,11 @@ def upgrade() -> None:
     op.get_bind().execute(
         sa.text(
             "INSERT INTO model_registry (id, name, backend_type, model_identifier, ram_usage_mb, "
-            "is_active) SELECT :id, :name, 'DETERMINISTIC', :ident, 0, true "
-            "WHERE NOT EXISTS (SELECT 1 FROM model_registry WHERE name = :name)"
+            "is_active) SELECT CAST(:id AS uuid), CAST(:name AS varchar), 'DETERMINISTIC', "
+            "CAST(:ident AS varchar), 0, true "
+            "WHERE NOT EXISTS (SELECT 1 FROM model_registry WHERE name = CAST(:name2 AS varchar))"
         ),
-        {"id": uuid.uuid4(), "name": _NTS_NAME, "ident": _NTS_IDENTIFIER},
+        {"id": str(uuid.uuid4()), "name": _NTS_NAME, "ident": _NTS_IDENTIFIER, "name2": _NTS_NAME},
     )
 
 

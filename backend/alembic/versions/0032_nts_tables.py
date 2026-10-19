@@ -23,8 +23,8 @@ _CASCADE = {"ondelete": "CASCADE"}
 _SET_NULL = {"ondelete": "SET NULL"}
 
 
-def _uuid(name: str, **kw) -> sa.Column:
-    return sa.Column(name, UUID(as_uuid=True), **kw)
+def _uuid(name: str, *args, **kw) -> sa.Column:
+    return sa.Column(name, UUID(as_uuid=True), *args, **kw)
 
 
 def _created(name: str = "created_at") -> sa.Column:
