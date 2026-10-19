@@ -17,6 +17,7 @@ from app.api.v1 import (
     gold,
     inference,
     models,
+    nts,
     projects,
     prompts,
     searches,
@@ -74,6 +75,7 @@ def create_app() -> FastAPI:
     app.include_router(projects.router, prefix="/api/v1")
     app.include_router(annotations.router, prefix="/api/v1")
     app.include_router(support_assessments.router, prefix="/api/v1")
+    app.include_router(nts.router, prefix="/api/v1")
     app.include_router(findings.router, prefix="/api/v1")
     app.include_router(team.router, prefix="/api/v1")
     app.include_router(searches.router, prefix="/api/v1")

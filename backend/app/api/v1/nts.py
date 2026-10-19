@@ -1,0 +1,295 @@
+"""NTS publication traceability endpoints (issue #11), under ``/projects/{id}/nts``.
+
+Setup turns a project into an NTS project (question + fields + extractor model); the ordinary
+inference endpoint then runs ``nts-deterministic-extractor-v1``. Proposals, ALURES sync and the
+join derive data from stored predictions; adjudications are the only writes a human makes here
+(finding reviews stay on the findings endpoints).
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import UTC, datetime
+from typing import Annotated, Literal
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_current_user, get_db
+from app.api.v1.gold import _require_lead
+from app.api.v1.projects import _require_project_member
+from app.celery_app import celery_app
+from app.db.models import (
+    Article,
+    ArticlePrediction,
+    BackendType,
+    ImportJob,
+    ModelRegistry,
+    NtsAdjudication,
+    NtsDataset,
+    NtsLink,
+    User,
+)
+from app.nts import service
+from app.nts.backend import MODEL_IDENTIFIER, MODEL_NAME
+from app.nts.fields import NTS_FIELDS, NTS_QUESTION, is_nts_project
+from app.pseudonym import anonymized_actor_ref
+from app.schema import project_fields
+from app.tasks.nts import nts_alures_sync_task, nts_join_task
+
+router = APIRouter(prefix="/projects", tags=["nts"])
+
+DbDep = Annotated[AsyncSession, Depends(get_db)]
+UserDep = Annotated[User, Depends(get_current_user)]
+
+TEXT_SECTIONS = ["methods", "results"]
+
+
+class AdjudicationBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    decision: Literal["confirmed", "rejected", "unresolved"]
+    rationale: str = Field(min_length=1, max_length=5000)
+
+
+class SyncBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    offline: bool = False  # re-receipt the files already on disk, no network
+
+
+async def _ensure_model(db: AsyncSession) -> ModelRegistry:
+    model = await db.scalar(select(ModelRegistry).where(ModelRegistry.name == MODEL_NAME))
+    if model is None:
+        model = ModelRegistry(
+            name=MODEL_NAME,
+            backend_type=BackendType.DETERMINISTIC,
+            model_identifier=MODEL_IDENTIFIER,
+            ram_usage_mb=0,
+        )
+        db.add(model)
+        await db.flush()
+    elif not model.is_active:
+        model.is_active = True
+    return model
+
+
+@router.get("/{project_id}/nts")
+async def status(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
+    project = await _require_project_member(db, project_id, user)
+    predictions = await service.latest_nts_predictions(db, project_id)
+    datasets = (
+        (
+            await db.execute(
+                select(NtsDataset)
+                .where(NtsDataset.project_id == project_id)
+                .order_by(NtsDataset.retrieved_at.desc(), NtsDataset.file_name)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    links = await db.scalar(select(NtsLink.id).where(NtsLink.project_id == project_id).limit(1))
+    jobs = (
+        (
+            await db.execute(
+                select(ImportJob)
+                .where(ImportJob.project_id == project_id, ImportJob.kind.like("nts-%"))
+                .order_by(ImportJob.created_at.desc())
+                .limit(10)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        "is_nts_project": is_nts_project(project_fields(project)),
+        "model_name": MODEL_NAME,
+        "extracted_articles": len(predictions),
+        "datasets": [_dataset_payload(d) for d in datasets],
+        "has_links": links is not None,
+        "review_pending": len(await service.review_queue(db, project_id)),
+        "jobs": [
+            {
+                "id": str(j.id),
+                "kind": j.kind,
+                "status": j.status.value if j.status else None,
+                "result": j.result_json,
+                "error": j.error,
+                "created_at": service._iso(j.created_at),
+                "completed_at": service._iso(j.completed_at),
+            }
+            for j in jobs
+        ],
+    }
+
+
+@router.post("/{project_id}/nts/setup")
+async def setup(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
+    """Make this project an NTS traceability project (question, fields, sections, model)."""
+    project = await _require_project_member(db, project_id, user)
+    await _require_lead(db, project_id, user)
+    fields = project_fields(project)
+    if not is_nts_project(fields):
+        existing = await db.scalar(
+            select(ArticlePrediction.id)
+            .join(Article, Article.id == ArticlePrediction.article_id)
+            .where(Article.project_id == project_id)
+            .limit(1)
+        )
+        if existing is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="project already has predictions for another question",
+            )
+        project.question = NTS_QUESTION
+        project.fields = NTS_FIELDS
+    if not project.text_sections:
+        project.text_sections = TEXT_SECTIONS
+    model = await _ensure_model(db)
+    await db.commit()
+    return {
+        "is_nts_project": True,
+        "question": project.question,
+        "fields": project.fields,
+        "text_sections": project.text_sections,
+        "model_name": model.name,
+    }
+
+
+@router.post("/{project_id}/nts/propose", status_code=201)
+async def propose(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
+    """Create finding proposals (automation proposer) from the latest extractor predictions."""
+    await _require_project_member(db, project_id, user)
+    await _require_lead(db, project_id, user)
+    results = []
+    for prediction in await service.latest_nts_predictions(db, project_id):
+        try:
+            results.append(await service.propose_findings(db, project_id, prediction))
+        except ValueError as exc:
+            await db.rollback()
+            raise HTTPException(status_code=409, detail=str(exc)) from None
+    return {
+        "predictions": len(results),
+        "created": sum(len(r["created"]) for r in results),
+        "skipped": sum(r["skipped"] for r in results),
+        "items": results,
+    }
+
+
+def _dataset_payload(d: NtsDataset) -> dict:
+    return {
+        "id": str(d.id),
+        "kind": d.kind,
+        "file_name": d.file_name,
+        "source_url": d.source_url,
+        "retrieved_at": service._iso(d.retrieved_at),
+        "http_status": d.http_status,
+        "bytes": d.bytes,
+        "sha256": d.sha256,
+        "row_count": d.row_count,
+    }
+
+
+@router.post("/{project_id}/nts/alures/sync", status_code=202)
+async def alures_sync(
+    project_id: uuid.UUID, db: DbDep, user: UserDep, body: SyncBody | None = None
+) -> dict:
+    """Acquire the official ALURES exports with receipts (Celery task)."""
+    await _require_project_member(db, project_id, user)
+    await _require_lead(db, project_id, user)
+    offline = bool(body and body.offline)
+    result = nts_alures_sync_task.delay(str(project_id), offline)
+    status = result.state if celery_app.conf.task_always_eager else "PENDING"
+    return {"job_id": result.id, "status": status}
+
+
+@router.get("/{project_id}/nts/alures/datasets")
+async def alures_datasets(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
+    await _require_project_member(db, project_id, user)
+    rows = (
+        (
+            await db.execute(
+                select(NtsDataset)
+                .where(NtsDataset.project_id == project_id)
+                .order_by(NtsDataset.retrieved_at.desc(), NtsDataset.file_name)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {"items": [_dataset_payload(d) for d in rows]}
+
+
+@router.post("/{project_id}/nts/join", status_code=202)
+async def join(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
+    """Recompute publication-NTS links and count observations (Celery task)."""
+    await _require_project_member(db, project_id, user)
+    await _require_lead(db, project_id, user)
+    result = nts_join_task.delay(str(project_id))
+    status = result.state if celery_app.conf.task_always_eager else "PENDING"
+    return {"job_id": result.id, "status": status}
+
+
+@router.get("/{project_id}/nts/links")
+async def links(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
+    await _require_project_member(db, project_id, user)
+    return {"items": await service.links(db, project_id)}
+
+
+@router.get("/{project_id}/nts/observations")
+async def observations(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
+    await _require_project_member(db, project_id, user)
+    return {"items": await service.observations(db, project_id)}
+
+
+@router.get("/{project_id}/nts/summary")
+async def summary(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
+    await _require_project_member(db, project_id, user)
+    return {"items": await service.summary(db, project_id)}
+
+
+@router.get("/{project_id}/nts/review-queue")
+async def review_queue(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
+    await _require_project_member(db, project_id, user)
+    return {"items": await service.review_queue(db, project_id)}
+
+
+@router.post("/{project_id}/nts/links/{link_id}/adjudications", status_code=201)
+async def adjudicate(
+    project_id: uuid.UUID,
+    link_id: uuid.UUID,
+    body: AdjudicationBody,
+    db: DbDep,
+    user: UserDep,
+) -> dict:
+    """Append a human decision on one link; a later decision supersedes, nothing is edited."""
+    await _require_project_member(db, project_id, user)
+    link = await db.get(NtsLink, link_id)
+    if link is None or link.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Link not found")
+    if link.identifier_system != "ALURES-NTS" or not link.identifier_normalized:
+        raise HTTPException(status_code=409, detail="only publication-NTS links are adjudicated")
+    db.add(
+        NtsAdjudication(
+            link_id=link.id,
+            decision=body.decision,
+            rationale=body.rationale.strip(),
+            adjudicator_id=user.id,
+            adjudicator_ref=anonymized_actor_ref(user.email),
+            created_at=datetime.now(UTC),  # microsecond order; DB now() is second-grained
+        )
+    )
+    await db.commit()
+    rows = (
+        (
+            await db.execute(
+                select(NtsAdjudication)
+                .where(NtsAdjudication.link_id == link.id)
+                .order_by(NtsAdjudication.created_at, NtsAdjudication.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return service.link_payload(link, rows)
