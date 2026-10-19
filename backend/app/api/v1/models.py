@@ -32,7 +32,15 @@ router = APIRouter(prefix="/models", tags=["models"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
 
-_BACKENDS = {"OLLAMA", "LLAMA_CPP", "TRANSFORMERS", "ONNX_LOCAL", "SYSTEMONE", "OPENAI_API"}
+_BACKENDS = {
+    "OLLAMA",
+    "LLAMA_CPP",
+    "TRANSFORMERS",
+    "ONNX_LOCAL",
+    "SYSTEMONE",
+    "OPENAI_API",
+    "DETERMINISTIC",
+}
 
 
 class ModelCreate(BaseModel):

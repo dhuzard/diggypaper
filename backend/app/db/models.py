@@ -141,6 +141,7 @@ class BackendType(enum.StrEnum):
     ONNX_LOCAL = "ONNX_LOCAL"
     SYSTEMONE = "SYSTEMONE"
     OPENAI_API = "OPENAI_API"  # API externe compatible OpenAI (URL + clé + modèle)
+    DETERMINISTIC = "DETERMINISTIC"  # programme déterministe en process (extracteur NTS)
 
 
 class BenchmarkStatus(enum.StrEnum):
@@ -1759,4 +1760,178 @@ for _table, _actor, _others in (
             f"CREATE TRIGGER {_table}_append_only BEFORE UPDATE ON {_table} "
             f"WHEN {_allow} BEGIN SELECT RAISE(ABORT, '{_table} are append-only'); END"
         ).execute_if(dialect="sqlite"),
+    )
+
+
+# --- NTS publication traceability (issue #11): derived, recomputable link data ---------------
+
+
+class NtsDataset(Base):
+    """Receipt for one official ALURES export file obtained for a project.
+
+    The file itself is kept on disk under ``settings.nts_data_dir`` (content-addressed by
+    sha256); the row records where it came from, when, and what was received.
+    """
+
+    __tablename__ = "nts_datasets"
+    __table_args__ = (
+        UniqueConstraint("project_id", "sha256", name="uq_nts_datasets_project_sha"),
+        Index("ix_nts_datasets_project", "project_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)  # nts | ra | statistics | other
+    file_name: Mapped[str] = mapped_column(String, nullable=False)
+    source_url: Mapped[str] = mapped_column(String, nullable=False)
+    landing_url: Mapped[str | None] = mapped_column(String)
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    http_status: Mapped[int | None] = mapped_column(Integer)
+    bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    stored_path: Mapped[str] = mapped_column(String, nullable=False)  # relative to nts_data_dir
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class NtsLink(Base):
+    """One identifier reported by an article, as joined to ALURES at ``computed_at``.
+
+    Recomputed as a whole per prediction (delete + insert); never patched row by row.
+    ``identifier_system`` is ``ALURES-NTS`` or ``national-authorization:<kind>``; a national
+    number is never equated with an NTS id (``link_state = NO_NTS_CROSSWALK``).
+    """
+
+    __tablename__ = "nts_links"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "prediction_id",
+            "identifier_system",
+            "identifier_verbatim",
+            "quote_index",
+            name="uq_nts_links_identity",
+        ),
+        ForeignKeyConstraint(
+            ["article_id", "project_id"],
+            ["articles.id", "articles.project_id"],
+            ondelete="CASCADE",
+            name="fk_nts_links_article_scope",
+        ),
+        Index("ix_nts_links_project_article", "project_id", "article_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
+    project_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    article_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    prediction_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("article_predictions.id", ondelete="CASCADE"), nullable=False
+    )
+    finding_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("findings.id", ondelete="SET NULL")
+    )
+    quote_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    identifier_system: Mapped[str] = mapped_column(String(64), nullable=False)
+    identifier_verbatim: Mapped[str] = mapped_column(String(200), nullable=False)
+    identifier_normalized: Mapped[str | None] = mapped_column(String(64))
+    country: Mapped[str | None] = mapped_column(String(8))
+    version_cited: Mapped[str | None] = mapped_column(String(32))
+    date_cited: Mapped[str | None] = mapped_column(String(64))
+    alures_state: Mapped[str] = mapped_column(String(48), nullable=False)
+    alures_reasons: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    alures_versions: Mapped[list | None] = mapped_column(JSONB)
+    alures_current_version: Mapped[str | None] = mapped_column(String(32))
+    alures_row_numbers: Mapped[list | None] = mapped_column(JSONB)
+    alures_candidates: Mapped[list | None] = mapped_column(JSONB)
+    dataset_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("nts_datasets.id", ondelete="SET NULL")
+    )
+    link_state: Mapped[str] = mapped_column(String(48), nullable=False)
+    planned_json: Mapped[list | None] = mapped_column(JSONB)  # authorization ceilings, as written
+    scope_note: Mapped[str | None] = mapped_column(Text)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class NtsCountObservation(Base):
+    """A typed animal number exactly as written (article) or as published (ALURES / RAR)."""
+
+    __tablename__ = "nts_count_observations"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "prediction_id", "observation_id", name="uq_nts_count_obs_identity"
+        ),
+        ForeignKeyConstraint(
+            ["article_id", "project_id"],
+            ["articles.id", "articles.project_id"],
+            ondelete="CASCADE",
+            name="fk_nts_count_obs_article_scope",
+        ),
+        Index("ix_nts_count_obs_project_article", "project_id", "article_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
+    project_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    article_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    prediction_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("article_predictions.id", ondelete="CASCADE"), nullable=False
+    )
+    finding_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("findings.id", ondelete="SET NULL")
+    )
+    observation_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    source_kind: Mapped[str] = mapped_column(String(16), nullable=False)  # article|alures|rar
+    count_category: Mapped[str] = mapped_column(String(40), nullable=False)
+    species: Mapped[str] = mapped_column(String(120), nullable=False)
+    strain: Mapped[str] = mapped_column(String(120), nullable=False)
+    sex: Mapped[str] = mapped_column(String(32), nullable=False)
+    number: Mapped[int | None] = mapped_column(Integer)
+    unit_counted: Mapped[str] = mapped_column(String(64), nullable=False)
+    cohort_label: Mapped[str] = mapped_column(String(200), nullable=False)
+    count_scope: Mapped[str] = mapped_column(String(64), nullable=False)
+    group_count: Mapped[int | None] = mapped_column(Integer)
+    derived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    derivation: Mapped[str | None] = mapped_column(Text)
+    method_section: Mapped[str | None] = mapped_column(String(200))
+    rule_id: Mapped[str | None] = mapped_column(String(64))
+    possible_overlap: Mapped[list | None] = mapped_column(JSONB)
+    notes: Mapped[str | None] = mapped_column(Text)
+    dataset_cell: Mapped[dict | None] = mapped_column(JSONB)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class NtsAdjudication(Base):
+    """Append-only human decision on one publication-NTS link (issue #11, step 3)."""
+
+    __tablename__ = "nts_adjudications"
+    __table_args__ = (
+        CheckConstraint(
+            "decision IN ('confirmed','rejected','unresolved')",
+            name="ck_nts_adjudications_decision",
+        ),
+        CheckConstraint(
+            "length(adjudicator_ref) = 64", name="ck_nts_adjudications_adjudicator_ref"
+        ),
+        Index("ix_nts_adjudications_link", "link_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
+    link_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("nts_links.id", ondelete="CASCADE"), nullable=False
+    )
+    decision: Mapped[str] = mapped_column(String(16), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    adjudicator_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    adjudicator_ref: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )

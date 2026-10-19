@@ -54,6 +54,7 @@ from app.inference import (
     make_inference_service,
 )
 from app.inference.scoring import is_scorer, score_prediction
+from app.nts import backend as nts_backend
 from app.provenance import invocation_from_record
 from app.provenance_capture import capture_article_source
 from app.provenance_chat import PersistedChatTrace
@@ -361,6 +362,7 @@ async def _do_inference(
             examples=shots if not light else "",
             example_ref=f"job:{job.id}:gold_examples" if shots and not light else None,
         )
+        deterministic = nts_backend.is_deterministic(model)
         trace = PersistedChatTrace(
             session,
             snapshot=snapshot,
@@ -372,15 +374,20 @@ async def _do_inference(
             group_id=invocation_groups.setdefault(article.id, uuid.uuid4()),
             stage="prefilter" if light else "main",
             sequence=invocation_sequences.get(article.id, 0),
+            transport="deterministic-program" if deterministic else "HTTP",
         )
-        out = await infer_with(
-            model,
-            inference,
-            rendered.system.text,
-            rendered.user.text,
-            name=job.model_used,
-            trace=trace,
-        )
+        if deterministic:
+            # In-process extractor: same snapshot, invocation and quote checks as a chat model.
+            out = await nts_backend.run_traced(model, project, snapshot, view_id, rendered, trace)
+        else:
+            out = await infer_with(
+                model,
+                inference,
+                rendered.system.text,
+                rendered.user.text,
+                name=job.model_used,
+                trace=trace,
+            )
         if not isinstance(out, dict):
             raise InferenceError("invalid_json")  # JSON valide mais pas un objet
         invocation_sequences[article.id] = invocation_sequences.get(article.id, 0) + 1

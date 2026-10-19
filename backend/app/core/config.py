@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     models_dir: str = "models"
     # Serveurs de modèles de décision (protocole /v1/systemone) pré-enregistrés au démarrage.
     laya_url: str = ""  # ex. http://laya:8000 (service du compose)
+    nts_data_dir: str = "./data/nts"  # exports ALURES téléchargés (par projet, par sha256)
     kev_url: str = ""  # ex. http://kev:8080 (llama.cpp : llama serve -hf ggml-org/Kev-4B-GGUF)
     admin_email: str = ""
     admin_password: str = ""

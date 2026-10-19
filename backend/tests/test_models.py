@@ -79,6 +79,10 @@ EXPECTED_TABLES = {
     "finding_evidence",
     "finding_reviews",
     "article_rights_declarations",  # append-only quotation redistribution decisions
+    "nts_datasets",  # ALURES export receipts (issue #11)
+    "nts_links",  # publication-NTS exact joins, recomputed per prediction
+    "nts_count_observations",  # typed animal numbers as written / as published
+    "nts_adjudications",  # append-only human decisions on links
 }
 
 
@@ -363,6 +367,7 @@ def test_model_registry_columns():
         "ONNX_LOCAL",
         "SYSTEMONE",
         "OPENAI_API",
+        "DETERMINISTIC",
     ]
     assert c["backend_type"].server_default.arg == "OLLAMA"
     assert not c["model_identifier"].nullable

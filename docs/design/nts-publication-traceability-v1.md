@@ -57,3 +57,50 @@ AnswerRecord, screening, gold, RO-Crate or Finding Curation behaviour changes. C
   deterministic, not predictions, so they are fed to the pure producer directly instead of the
   DB-backed endpoint. Creating them through the API (and the human review) is the next step.
 - ALURES access was blocked in the first run (see the run's `research-report.md`).
+
+## Platform integration (database, API, UI) — 2026-10-19
+
+The file-based PoC above stays as the offline, reproducible study. The same extractor is now
+also a first-class producer inside the platform, without any change to the frozen Finding
+Curation tables or to the `source-evidence-packet/0.1.0` contract:
+
+1. **Deterministic inference backend.** `model_registry.backend_type = DETERMINISTIC`
+   (migration 0031 seeds `nts-deterministic-extractor-v1`). An ordinary inference job runs
+   `app/nts/backend.py` in process: the platform captures the `SourceSnapshot`, prepares the
+   `Invocation` from the rendered messages, records the program's JSON output verbatim
+   (sha256) as the response, checks every quote with the real matcher and builds the
+   structured evidence envelope. The reconciliation names the transport
+   (`deterministic-program`), so nothing pretends an HTTP call happened. No confidence is
+   reported: every NTS prediction is `NEEDS_HUMAN_REVIEW`.
+2. **NTS project template.** `POST /projects/{id}/nts/setup` (LEAD) installs the question and
+   the three text fields (`nts_identifier`, `national_authorization`, `animal_counts`), the
+   `methods`/`results` sections and the model. A project that already holds predictions for
+   another question is refused (409). The typed extraction (proposals, mentions, count
+   observations, receipts) is stored under `decision_json.nts_extraction`, never as a field.
+3. **Proposals as findings.** `POST /projects/{id}/nts/propose` creates one finding per
+   extractor proposal: revision 1, `proposer_ref = sha256("automation:<identifier>")`,
+   `proposer_id = NULL`, evidence = the prediction's own (answer, evidence) link. Idempotent by
+   `uuid5(prediction_id, proposal.finding_id)`. Review, support judgments, rights and the
+   packet export are the existing findings endpoints; any member other than the automation
+   proposer can review, two distinct reviewers give `independently-verified`.
+4. **ALURES with receipts.** `POST …/nts/alures/sync` (Celery, `import_jobs.kind =
+   nts-alures`) downloads the official exports into `settings.nts_data_dir/<project>/alures`
+   and records `nts_datasets` rows (sha256, bytes, rows, url, time). `offline=true` re-receipts
+   files placed there by hand.
+5. **Join and observations.** `POST …/nts/join` (Celery, `nts-join`) recomputes `nts_links`
+   and `nts_count_observations` per latest NTS prediction (delete + insert, never patched):
+   exact-ID join states as in the PoC, `VERIFIED_PAIR` only for an exact article receipt and a
+   confirmed ALURES row, national numbers always `NO_NTS_CROSSWALK`, planned figures read
+   from `alures_nts_projects.total_number_of_animals` (a project-wide ceiling, species not
+   split; fate/purpose side tables are never used as authorization figures).
+6. **Adjudication.** `POST …/nts/links/{id}/adjudications` appends a human decision
+   (`confirmed` / `rejected` / `unresolved`, rationale, pseudonymous adjudicator) on a
+   publication-NTS link; a Postgres trigger makes the table append-only. A re-join produces new
+   derived rows, so adjudications are read together with the link they were made on.
+7. **Read models.** `GET …/nts` (status), `/links`, `/observations`, `/summary` (one row per
+   article: confirmed ids, planned ceiling, reported numbers, comparability note and flags, no
+   ratio), `/review-queue` (automation proposals not yet reviewed, with quote, match status and
+   the ids needed to open the review), `/alures/datasets`.
+
+Tests: `tests/test_nts_backend.py` (backend, provenance) and `tests/test_nts_api.py` (end to end
+on a real extractor run with a synthetic ALURES export).
