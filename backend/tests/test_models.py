@@ -363,6 +363,7 @@ def test_model_registry_columns():
         "ONNX_LOCAL",
         "SYSTEMONE",
         "OPENAI_API",
+        "DETERMINISTIC",
     ]
     assert c["backend_type"].server_default.arg == "OLLAMA"
     assert not c["model_identifier"].nullable

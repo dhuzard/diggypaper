@@ -54,8 +54,10 @@ class PersistedChatTrace(ChatCallTrace):
         benchmark_user_template: str | None = None,
         benchmark_template_id: uuid.UUID | None = None,
         benchmark_template_version: str | None = None,
+        transport: str = "HTTP",
     ) -> None:
         self.session = session
+        self.transport = transport  # names what was actually received in the reconciliation
         self.snapshot = snapshot
         self.rendered = rendered
         if benchmark_run is not None:
@@ -166,7 +168,7 @@ class PersistedChatTrace(ChatCallTrace):
                     ),
                     reconciliation=Reconciliation(
                         actor_ref=self.actor_ref,
-                        reason="actual oversized HTTP response received",
+                        reason=f"actual oversized {self.transport} response received",
                     ),
                 )
                 await self.session.commit()
@@ -184,7 +186,7 @@ class PersistedChatTrace(ChatCallTrace):
             response=response,
             reconciliation=Reconciliation(
                 actor_ref=self.actor_ref,
-                reason="actual HTTP response received after dispatch marker",
+                reason=f"actual {self.transport} response received after dispatch marker",
             ),
         )
         await self.session.commit()
