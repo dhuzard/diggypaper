@@ -1,17 +1,173 @@
 {
   "attempts": [
     {
-      "at": "2026-10-18T09:19:53Z",
-      "bytes": 0,
-      "error": "URLError: <urlopen error Tunnel connection failed: 403 Forbidden>",
-      "http_status": null,
+      "at": "2026-10-19T12:59:11Z",
+      "bytes": 14906,
+      "error": null,
+      "http_status": 200,
       "kind": "landing-page",
-      "ok": false,
+      "ok": true,
       "url": "https://environmental-data.ec.europa.eu/alures/datasets.html"
+    },
+    {
+      "at": "2026-10-19T12:59:12Z",
+      "bytes": 376273,
+      "error": null,
+      "http_status": 200,
+      "kind": "dataset",
+      "ok": true,
+      "url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_animals_fate.csv"
+    },
+    {
+      "at": "2026-10-19T12:59:13Z",
+      "bytes": 2882474,
+      "error": null,
+      "http_status": 200,
+      "kind": "dataset",
+      "ok": true,
+      "url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_expected_harms.csv"
+    },
+    {
+      "at": "2026-10-19T12:59:13Z",
+      "bytes": 6434544,
+      "error": null,
+      "http_status": 200,
+      "kind": "dataset",
+      "ok": true,
+      "url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_keywords.csv"
+    },
+    {
+      "at": "2026-10-19T12:59:14Z",
+      "bytes": 5966751,
+      "error": null,
+      "http_status": 200,
+      "kind": "dataset",
+      "ok": true,
+      "url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_purposes.csv"
+    },
+    {
+      "at": "2026-10-19T12:59:29Z",
+      "bytes": 438133100,
+      "error": null,
+      "http_status": 200,
+      "kind": "dataset",
+      "ok": true,
+      "url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_projects.csv"
+    },
+    {
+      "at": "2026-10-19T12:59:33Z",
+      "bytes": 233807,
+      "error": null,
+      "http_status": 200,
+      "kind": "dataset",
+      "ok": true,
+      "url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_retrospective_assessment_reasons.csv"
+    },
+    {
+      "at": "2026-10-19T12:59:34Z",
+      "bytes": 76101,
+      "error": null,
+      "http_status": 200,
+      "kind": "dataset",
+      "ok": true,
+      "url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/ra/alures_ra_retrospective_assessment_reasons.csv"
+    },
+    {
+      "at": "2026-10-19T12:59:34Z",
+      "bytes": 11034060,
+      "error": null,
+      "http_status": 200,
+      "kind": "dataset",
+      "ok": true,
+      "url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/ra/alures_ra_retrospective_assessments.csv"
     }
   ],
-  "datasets": [],
-  "discovered_links": [],
+  "datasets": [
+    {
+      "bytes": 376273,
+      "file_name": "alures_nts_project_animals_fate.csv",
+      "http_status": 200,
+      "retrieved_at": "2026-10-19T12:59:12Z",
+      "rows": 11510,
+      "sha256": "23f1388e41292efcd3832f9cb51b8208443594105698943012950457d0f61713",
+      "source_url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_animals_fate.csv"
+    },
+    {
+      "bytes": 2882474,
+      "file_name": "alures_nts_project_expected_harms.csv",
+      "http_status": 200,
+      "retrieved_at": "2026-10-19T12:59:13Z",
+      "rows": 98344,
+      "sha256": "8ddcefdfdcc2e186c96ddacff52a1df2e6d1a4cd29574ba5481ef29791b0efd9",
+      "source_url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_expected_harms.csv"
+    },
+    {
+      "bytes": 6434544,
+      "file_name": "alures_nts_project_keywords.csv",
+      "http_status": 200,
+      "retrieved_at": "2026-10-19T12:59:13Z",
+      "rows": 229391,
+      "sha256": "6e5184da17c0a3c65c985ed806ce86dd48afa8d66270b2a6ede906aea1036f78",
+      "source_url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_keywords.csv"
+    },
+    {
+      "bytes": 5966751,
+      "file_name": "alures_nts_project_purposes.csv",
+      "http_status": 200,
+      "retrieved_at": "2026-10-19T12:59:14Z",
+      "rows": 92466,
+      "sha256": "f91f27d74b0bf85f9f0a5402a7e767346c7b1c25cf6e3328d065f0a5db081d19",
+      "source_url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_purposes.csv"
+    },
+    {
+      "bytes": 438133100,
+      "file_name": "alures_nts_projects.csv",
+      "http_status": 200,
+      "retrieved_at": "2026-10-19T12:59:29Z",
+      "rows": 60519,
+      "sha256": "ce6f9c25d6bf3c127f7261870b7200417e3ec98b6ba8cb1f37b50f0a3ddbf2ae",
+      "source_url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_projects.csv"
+    },
+    {
+      "bytes": 233807,
+      "file_name": "alures_nts_retrospective_assessment_reasons.csv",
+      "http_status": 200,
+      "retrieved_at": "2026-10-19T12:59:33Z",
+      "rows": 10328,
+      "sha256": "cd56cfe21b61e1dda2527e1780c54bca204dfadf0857242d19a5e488e12a115a",
+      "source_url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_retrospective_assessment_reasons.csv"
+    },
+    {
+      "bytes": 76101,
+      "file_name": "alures_ra_retrospective_assessment_reasons.csv",
+      "http_status": 200,
+      "retrieved_at": "2026-10-19T12:59:34Z",
+      "rows": 3592,
+      "sha256": "6c3725279aaffc6dccd6daf2c80f33c434ef39ee019c5e90c0724032e39d3bc5",
+      "source_url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/ra/alures_ra_retrospective_assessment_reasons.csv"
+    },
+    {
+      "bytes": 11034060,
+      "file_name": "alures_ra_retrospective_assessments.csv",
+      "http_status": 200,
+      "retrieved_at": "2026-10-19T12:59:34Z",
+      "rows": 3527,
+      "sha256": "9682ca8d99287e278fb12b60a70216987c45bbe2e620e3a23cbe6082eedcd384",
+      "source_url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/ra/alures_ra_retrospective_assessments.csv"
+    }
+  ],
+  "discovered_links": [
+    "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_animals_fate.csv",
+    "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_expected_harms.csv",
+    "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_keywords.csv",
+    "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_purposes.csv",
+    "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_projects.csv",
+    "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_retrospective_assessment_reasons.csv",
+    "https://publicstorage.data.env.service.ec.europa.eu/alures/export/ra/alures_ra_actual_harms.csv",
+    "https://publicstorage.data.env.service.ec.europa.eu/alures/export/ra/alures_ra_retrospective_assessment_reasons.csv",
+    "https://publicstorage.data.env.service.ec.europa.eu/alures/export/ra/alures_ra_retrospective_assessments.csv",
+    "https://publicstorage.data.env.service.ec.europa.eu/alures/export/statistics/alures_statistics_data_published.csv"
+  ],
   "landing_url": "https://environmental-data.ec.europa.eu/alures/datasets.html",
-  "obtained_any_dataset": false
+  "obtained_any_dataset": true
 }

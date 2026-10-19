@@ -2,10 +2,10 @@
 
 Status: **HUMAN_REVIEW_PENDING**. Nothing below is a human decision. Proposed judgments are automation proposals and are not in any packet.
 
-## A-ES-mouse - national-authorization - `92527a16-6b09-5af0-abf7-7770303d3786`
+## A-ES-mouse - national-authorization - `232d05c6-aa36-59ad-b0fb-a0a4e962f678`
 
-- Article: 10.1016/j.isci.2024.111518 (PMC11731260); snapshot `e1e53f2fbc43bd30`
-- Passage: view offsets 116-411, match **exact**, quote sha256 `4390c7b95d08bc35`
+- Article: 10.1016/j.isci.2024.111518 (PMC11731260); snapshot `61bbedbf46f84fbb`
+- Passage: view offsets 4076-4371, match **exact**, quote sha256 `4390c7b95d08bc35`
 - Quote: _withheld (rights not established); open the private source copy_
 - Suggested extraction: `{'context': {'population': 'Pax6os1 null mice', 'exposure': 'unknown', 'comparator': 'unknown', 'outcome': 'unknown', 'time': 'unknown', 'experimental_unit': 'unknown'}, 'numeric_results': [], 'typed': {'authorizations': [{'kind': 'uk-ppl', 'jurisdiction': 'GB', 'verbatim': 'Project License PPL PA03F7F07', 'value': 'PA03F7F07', 'start': 272, 'end': 281}], 'note': 'national/institutional numbers; not NTS identifiers and not equal to one'}}`
 - Proposed judgment: **supports** (AUTOMATION PROPOSAL - not a human assessment and not a reviewer judgment)
@@ -15,24 +15,24 @@ Status: **HUMAN_REVIEW_PENDING**. Nothing below is a human decision. Proposed ju
   - national/institutional numbers are not NTS identifiers; no crosswalk is assumed
 - Review state: **HUMAN_REVIEW_PENDING**
 
-## A-ES-mouse - nts-identifier - `b96a935f-c976-540b-9758-a248695a76a8`
+## A-ES-mouse - nts-identifier - `72d62d11-d224-59a6-8dc7-aad714341ca1`
 
-- Article: 10.1016/j.isci.2024.111518 (PMC11731260); snapshot `e1e53f2fbc43bd30`
-- Passage: view offsets 412-653, match **exact**, quote sha256 `00bea6a2d5be9f0c`
+- Article: 10.1016/j.isci.2024.111518 (PMC11731260); snapshot `61bbedbf46f84fbb`
+- Passage: view offsets 4372-4613, match **exact**, quote sha256 `00bea6a2d5be9f0c`
 - Quote: _withheld (rights not established); open the private source copy_
 - Suggested extraction: `{'context': {'population': 'Db/db mice', 'exposure': 'unknown', 'comparator': 'unknown', 'outcome': 'unknown', 'time': 'unknown', 'experimental_unit': 'unknown'}, 'numeric_results': [], 'typed': {'nts_mentions': [{'verbatim': 'nts-es-414463', 'normalized': 'NTS-ES-414463', 'country': 'ES', 'version_cited': None, 'date_cited': None, 'start': 556, 'end': 569}], 'same_passage_authorizations': [{'kind': 'es-regional', 'jurisdiction': 'ES', 'verbatim': '3/11/2021/171/A', 'value': '3/11/2021/171/A', 'start': 528, 'end': 543}]}}`
 - Proposed judgment: **supports** (AUTOMATION PROPOSAL - not a human assessment and not a reviewer judgment)
 - Uncertainties:
   - quotation redistribution is not established for this article: the quote is withheld from public outputs (hash only)
   - source text is a contiguous excerpt transcribed from a connector rendering, not a byte-identical publisher copy
-  - identifier is as reported by the article; ALURES join state: alures-unavailable
+  - identifier is as reported by the article; ALURES join state: unmatched
   - the NTS covers only part of the article's animal work: Pax6os1 null mice
 - Review state: **HUMAN_REVIEW_PENDING**
 
-## A-ES-mouse - national-authorization - `72406249-b574-5305-89fc-cec724ffd049`
+## A-ES-mouse - national-authorization - `3706c577-ee87-5523-80fe-5358a2413d2e`
 
-- Article: 10.1016/j.isci.2024.111518 (PMC11731260); snapshot `e1e53f2fbc43bd30`
-- Passage: view offsets 412-653, match **exact**, quote sha256 `00bea6a2d5be9f0c`
+- Article: 10.1016/j.isci.2024.111518 (PMC11731260); snapshot `61bbedbf46f84fbb`
+- Passage: view offsets 4372-4613, match **exact**, quote sha256 `00bea6a2d5be9f0c`
 - Quote: _withheld (rights not established); open the private source copy_
 - Suggested extraction: `{'context': {'population': 'Db/db mice', 'exposure': 'unknown', 'comparator': 'unknown', 'outcome': 'unknown', 'time': 'unknown', 'experimental_unit': 'unknown'}, 'numeric_results': [], 'typed': {'authorizations': [{'kind': 'es-regional', 'jurisdiction': 'ES', 'verbatim': '3/11/2021/171/A', 'value': '3/11/2021/171/A', 'start': 528, 'end': 543}], 'note': 'same sentence as an NTS identifier; kept as a separate finding because the two identifier systems are not interchangeable'}}`
 - Proposed judgment: **supports** (AUTOMATION PROPOSAL - not a human assessment and not a reviewer judgment)
@@ -75,7 +75,7 @@ Status: **HUMAN_REVIEW_PENDING**. Nothing below is a human decision. Proposed ju
 - Proposed judgment: **supports** (AUTOMATION PROPOSAL - not a human assessment and not a reviewer judgment)
 - Uncertainties:
   - source text is a contiguous excerpt transcribed from a connector rendering, not a byte-identical publisher copy
-  - identifier is as reported by the article; ALURES join state: alures-unavailable
+  - identifier is as reported by the article; ALURES join state: confirmed-exact
 - Review state: **HUMAN_REVIEW_PENDING**
 
 ## B-RO-rat - animal-counts - `1bdd6a20-0e33-5eb7-b982-4b6f5db28e6c`
@@ -162,8 +162,8 @@ Status: **HUMAN_REVIEW_PENDING**. Nothing below is a human decision. Proposed ju
 
 ## C-FR-negative-control - national-authorization - `4f07c051-d5a3-5d0a-a490-85613c44cd73`
 
-- Article: 10.1371/journal.pntd.0006997 (PMC6392334); snapshot `859a387800e369c9`
-- Passage: view offsets 363-488, match **exact**, quote sha256 `cf9f2a7b68cd679a`
+- Article: 10.1371/journal.pntd.0006997 (PMC6392334); snapshot `61d05b68dadaa8e3`
+- Passage: view offsets 377-502, match **exact**, quote sha256 `cf9f2a7b68cd679a`
 - Quote: > All experiments were approved by the Ethics Committee #89 and registered under the reference APAFIS#6573-201606l412077987 v2.
 - Suggested extraction: `{'context': {'population': 'unknown', 'exposure': 'unknown', 'comparator': 'unknown', 'outcome': 'unknown', 'time': 'unknown', 'experimental_unit': 'unknown'}, 'numeric_results': [], 'typed': {'authorizations': [{'kind': 'apafis', 'jurisdiction': 'FR', 'verbatim': 'APAFIS#6573-201606l412077987', 'value': '6573-201606l412077987', 'start': 446, 'end': 467}], 'note': 'national/institutional numbers; not NTS identifiers and not equal to one'}}`
 - Proposed judgment: **supports** (AUTOMATION PROPOSAL - not a human assessment and not a reviewer judgment)

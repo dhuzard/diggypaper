@@ -51,7 +51,7 @@
   ],
   "packet_id": "packet:c9b1ed49f767fd098dab3280ac5828a5",
   "producer": {
-    "commit": "61a4829e66fc45ccfc46951a03ffd74af8c546ef",
+    "commit": "a34d18f752377b2a6df01555d1963b2a43c0dca9",
     "name": "diggypaper",
     "schema_refs": [
       {

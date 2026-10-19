@@ -1,28 +1,192 @@
 {
-  "command": "/home/user/diggypaper/backend/app/nts/__main__.py run --run-dir /home/user/diggypaper/runs/nts-publication-traceability-poc-v1 --crt-checkout /home/user/ComputationalReviewTemplate_trust-knowledge",
+  "command": "C:\\Users\\damie\\Documents\\GitHub\\diggypaper\\backend\\app\\nts\\__main__.py run --run-dir C:/Users/damie/Documents/GitHub/diggypaper/runs/nts-publication-traceability-poc-v1 --crt-checkout C:/Users/damie/AppData/Local/Temp/claude/c--Users-damie-Documents-GitHub-diggypaper/a506bd6b-9b0e-4e8c-9a36-478316f99694/scratchpad/crt --offline",
   "contract": "source-evidence-packet/0.1.0",
-  "crt_commit": "ce8f29cf251aadfc4c44d109db65d15dd0f629c0",
-  "diggypaper_commit": "61a4829e66fc45ccfc46951a03ffd74af8c546ef",
-  "executed_at": "2026-10-18T09:19:53Z",
+  "crt_commit": null,
+  "diggypaper_commit": "a34d18f752377b2a6df01555d1963b2a43c0dca9",
+  "executed_at": "2026-10-19T13:10:05Z",
   "gate0": {
     "acquisition": {
       "attempts": [
         {
-          "at": "2026-10-18T09:19:53Z",
-          "bytes": 0,
-          "error": "URLError: <urlopen error Tunnel connection failed: 403 Forbidden>",
-          "http_status": null,
+          "at": "2026-10-19T12:59:11Z",
+          "bytes": 14906,
+          "error": null,
+          "http_status": 200,
           "kind": "landing-page",
-          "ok": false,
+          "ok": true,
           "url": "https://environmental-data.ec.europa.eu/alures/datasets.html"
+        },
+        {
+          "at": "2026-10-19T12:59:12Z",
+          "bytes": 376273,
+          "error": null,
+          "http_status": 200,
+          "kind": "dataset",
+          "ok": true,
+          "url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_animals_fate.csv"
+        },
+        {
+          "at": "2026-10-19T12:59:13Z",
+          "bytes": 2882474,
+          "error": null,
+          "http_status": 200,
+          "kind": "dataset",
+          "ok": true,
+          "url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_expected_harms.csv"
+        },
+        {
+          "at": "2026-10-19T12:59:13Z",
+          "bytes": 6434544,
+          "error": null,
+          "http_status": 200,
+          "kind": "dataset",
+          "ok": true,
+          "url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_keywords.csv"
+        },
+        {
+          "at": "2026-10-19T12:59:14Z",
+          "bytes": 5966751,
+          "error": null,
+          "http_status": 200,
+          "kind": "dataset",
+          "ok": true,
+          "url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_purposes.csv"
+        },
+        {
+          "at": "2026-10-19T12:59:29Z",
+          "bytes": 438133100,
+          "error": null,
+          "http_status": 200,
+          "kind": "dataset",
+          "ok": true,
+          "url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_projects.csv"
+        },
+        {
+          "at": "2026-10-19T12:59:33Z",
+          "bytes": 233807,
+          "error": null,
+          "http_status": 200,
+          "kind": "dataset",
+          "ok": true,
+          "url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_retrospective_assessment_reasons.csv"
+        },
+        {
+          "at": "2026-10-19T12:59:34Z",
+          "bytes": 76101,
+          "error": null,
+          "http_status": 200,
+          "kind": "dataset",
+          "ok": true,
+          "url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/ra/alures_ra_retrospective_assessment_reasons.csv"
+        },
+        {
+          "at": "2026-10-19T12:59:34Z",
+          "bytes": 11034060,
+          "error": null,
+          "http_status": 200,
+          "kind": "dataset",
+          "ok": true,
+          "url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/ra/alures_ra_retrospective_assessments.csv"
         }
       ],
-      "datasets": [],
-      "discovered_links": [],
+      "datasets": [
+        {
+          "bytes": 376273,
+          "file_name": "alures_nts_project_animals_fate.csv",
+          "http_status": 200,
+          "retrieved_at": "2026-10-19T12:59:12Z",
+          "rows": 11510,
+          "sha256": "23f1388e41292efcd3832f9cb51b8208443594105698943012950457d0f61713",
+          "source_url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_animals_fate.csv"
+        },
+        {
+          "bytes": 2882474,
+          "file_name": "alures_nts_project_expected_harms.csv",
+          "http_status": 200,
+          "retrieved_at": "2026-10-19T12:59:13Z",
+          "rows": 98344,
+          "sha256": "8ddcefdfdcc2e186c96ddacff52a1df2e6d1a4cd29574ba5481ef29791b0efd9",
+          "source_url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_expected_harms.csv"
+        },
+        {
+          "bytes": 6434544,
+          "file_name": "alures_nts_project_keywords.csv",
+          "http_status": 200,
+          "retrieved_at": "2026-10-19T12:59:13Z",
+          "rows": 229391,
+          "sha256": "6e5184da17c0a3c65c985ed806ce86dd48afa8d66270b2a6ede906aea1036f78",
+          "source_url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_keywords.csv"
+        },
+        {
+          "bytes": 5966751,
+          "file_name": "alures_nts_project_purposes.csv",
+          "http_status": 200,
+          "retrieved_at": "2026-10-19T12:59:14Z",
+          "rows": 92466,
+          "sha256": "f91f27d74b0bf85f9f0a5402a7e767346c7b1c25cf6e3328d065f0a5db081d19",
+          "source_url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_purposes.csv"
+        },
+        {
+          "bytes": 438133100,
+          "file_name": "alures_nts_projects.csv",
+          "http_status": 200,
+          "retrieved_at": "2026-10-19T12:59:29Z",
+          "rows": 60519,
+          "sha256": "ce6f9c25d6bf3c127f7261870b7200417e3ec98b6ba8cb1f37b50f0a3ddbf2ae",
+          "source_url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_projects.csv"
+        },
+        {
+          "bytes": 233807,
+          "file_name": "alures_nts_retrospective_assessment_reasons.csv",
+          "http_status": 200,
+          "retrieved_at": "2026-10-19T12:59:33Z",
+          "rows": 10328,
+          "sha256": "cd56cfe21b61e1dda2527e1780c54bca204dfadf0857242d19a5e488e12a115a",
+          "source_url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_retrospective_assessment_reasons.csv"
+        },
+        {
+          "bytes": 76101,
+          "file_name": "alures_ra_retrospective_assessment_reasons.csv",
+          "http_status": 200,
+          "retrieved_at": "2026-10-19T12:59:34Z",
+          "rows": 3592,
+          "sha256": "6c3725279aaffc6dccd6daf2c80f33c434ef39ee019c5e90c0724032e39d3bc5",
+          "source_url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/ra/alures_ra_retrospective_assessment_reasons.csv"
+        },
+        {
+          "bytes": 11034060,
+          "file_name": "alures_ra_retrospective_assessments.csv",
+          "http_status": 200,
+          "retrieved_at": "2026-10-19T12:59:34Z",
+          "rows": 3527,
+          "sha256": "9682ca8d99287e278fb12b60a70216987c45bbe2e620e3a23cbe6082eedcd384",
+          "source_url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/ra/alures_ra_retrospective_assessments.csv"
+        }
+      ],
+      "discovered_links": [
+        "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_animals_fate.csv",
+        "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_expected_harms.csv",
+        "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_keywords.csv",
+        "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_project_purposes.csv",
+        "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_projects.csv",
+        "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_retrospective_assessment_reasons.csv",
+        "https://publicstorage.data.env.service.ec.europa.eu/alures/export/ra/alures_ra_actual_harms.csv",
+        "https://publicstorage.data.env.service.ec.europa.eu/alures/export/ra/alures_ra_retrospective_assessment_reasons.csv",
+        "https://publicstorage.data.env.service.ec.europa.eu/alures/export/ra/alures_ra_retrospective_assessments.csv",
+        "https://publicstorage.data.env.service.ec.europa.eu/alures/export/statistics/alures_statistics_data_published.csv"
+      ],
       "landing_url": "https://environmental-data.ec.europa.eu/alures/datasets.html",
-      "obtained_any_dataset": false
+      "obtained_any_dataset": true
     },
-    "dataset": null,
+    "dataset": {
+      "bytes": 438133100,
+      "file_name": "alures_nts_projects.csv",
+      "http_status": 200,
+      "retrieved_at": "2026-10-19T12:59:29Z",
+      "rows": 60519,
+      "sha256": "ce6f9c25d6bf3c127f7261870b7200417e3ec98b6ba8cb1f37b50f0a3ddbf2ae",
+      "source_url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_projects.csv"
+    },
     "landing_url": "https://environmental-data.ec.europa.eu/alures/datasets.html"
   },
   "llm": {
@@ -30,74 +194,82 @@
     "used": false
   },
   "outputs_sha256": {
-    "animal-count-observations.csv": "e9b31fb68821b5234d57a9692d90183dc681cc7d6e0e677c260679b038bbebbb",
-    "cache/pmc11731260.json": "013ed6808753162a248c6f3d81ba1e87c7f483726d33dab60504fd48117c9cdd",
-    "case-summary.md": "e897a5e6759745cf17de3d3a32edbfeaf2e8dc2da4042eb18d7b9f53bee29b86",
-    "comparisons.json": "fe0699b3dd26dd905e4dcfc8eb892cc017640b5dd0988bcf4b0d7790e70be665",
-    "crt-import-report.json": "78d194ace3a3ab0092a394532334d425f2c63a1bad9348991b8155a2d074b68b",
-    "crt-interoperability-report.json": "2a25aa99cc2f18561159c60b252b3d7f576f1379ecd8c16ac4de67e8cac208ca",
-    "crt-interoperability-report.md": "7c9e5e181ce0a940fe979c2e42cde98ceedd043a235066b66d029d71d2a6a950",
-    "discovery-log.md": "81dcd535a1f695aef6ce7c7ee8ce0fa6b90d55e2a70b52f055478ec6a9dde873",
-    "finding-extraction-report.json": "f53e12e88133e076af5b08dc974c026253fd964f175808f004d58bf69b6c4f89",
-    "gate0-acquisition.json": "38aa3212f14890bfc05d860fd34f9044b29b86c31e87526d2e8e1049a52bbf61",
-    "logs/backend-baseline-before-nts.log": "6981622390bf042334b7b1eb11dc272ffe7e2d182e8cacc32494e2f69149e2de",
-    "logs/backend-full-after-nts.log": "db0c208ec224c3bbd61eefdf1d4d3059aff5abd6e0edf03c63c81c09410d40a3",
-    "logs/crt-baseline-source-evidence-import-test.log": "3859ef01a9d841dcbea339b9bd9db93af084761b7745cde9a60c6d7a7322fde1",
-    "logs/postgres-0029-0030.log": "c5784ccffb8c17eb9988d6475c5e315f05a7246be022b932b568749a10373ce5",
-    "logs/reproduce-run.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "nts-companion.json": "45d7814f6c3b89c521a2827f7e15529ae89cc5bd96ab46d3ea1747ba140a41bf",
-    "packet-validation-report.json": "303ec0864b88e438757a2c901bd6ba8f9cb5f215b9f35d02e427a5510101105a",
-    "publication-nts-links.csv": "a78bf550d83e6a2ca66a82c44bed2bd138814d0c3145a444f695984b8a2e6e84",
-    "publication-nts-links.json": "ed4efd1b1164b94efbbf2f3b29366ee2a15584a216fa05444564fd0a69742dff",
+    "alures\\alures_nts_project_animals_fate.csv": "23f1388e41292efcd3832f9cb51b8208443594105698943012950457d0f61713",
+    "alures\\alures_nts_project_expected_harms.csv": "8ddcefdfdcc2e186c96ddacff52a1df2e6d1a4cd29574ba5481ef29791b0efd9",
+    "alures\\alures_nts_project_keywords.csv": "6e5184da17c0a3c65c985ed806ce86dd48afa8d66270b2a6ede906aea1036f78",
+    "alures\\alures_nts_project_purposes.csv": "f91f27d74b0bf85f9f0a5402a7e767346c7b1c25cf6e3328d065f0a5db081d19",
+    "alures\\alures_nts_projects.csv": "ce6f9c25d6bf3c127f7261870b7200417e3ec98b6ba8cb1f37b50f0a3ddbf2ae",
+    "alures\\alures_nts_retrospective_assessment_reasons.csv": "cd56cfe21b61e1dda2527e1780c54bca204dfadf0857242d19a5e488e12a115a",
+    "alures\\alures_ra_retrospective_assessment_reasons.csv": "6c3725279aaffc6dccd6daf2c80f33c434ef39ee019c5e90c0724032e39d3bc5",
+    "alures\\alures_ra_retrospective_assessments.csv": "9682ca8d99287e278fb12b60a70216987c45bbe2e620e3a23cbe6082eedcd384",
+    "animal-count-observations.csv": "cb1ad02d1cd207ece6162a9c7393525a2d94cbfe026e9dea0992ed405acc4d42",
+    "cache\\pmc11731260.json": "985c313e4e2956030809a7a23cdf716fb7215033ef694b460f747da5125ad1f4",
+    "case-summary.md": "2a3cabcba59257c455b79d23585231d365c47dc42dbff1923685a03fd46e4f49",
+    "comparisons.json": "d79dbfb9928cad45352a8c7f033cee2a7bae0ad24baeb78b1a63bdd7e80455e2",
+    "crt-import-report.json": "5cef46cd901e105a781238a81415b6a25bb0d11cf1b5fea9279c2c10b845c143",
+    "crt-interoperability-report.json": "814dcefe955c5404683ca1e115a7b6319f7a37476f38c6ccd41873448e80d100",
+    "crt-interoperability-report.md": "5a8361ccb1f6c8fd817c79f1b1c04dfbcdc49cbbc8e4b6958ab0f53160cc2c9a",
+    "discovery-log.md": "3157261655c4e4b36edb49c4a95f2b6319284a9b291c7f23a402914e55bfd239",
+    "finding-extraction-report.json": "6791a17cd3a2e47bb8abbf822d5770ad0e28e1c4c8cf1c8962d549a1e03be407",
+    "gate0-acquisition.json": "7e20280eb4077961ad62bf91fb467de84496204757ea854de3c8758b84dc7da4",
+    "logs\\backend-baseline-before-nts.log": "cff8b7c16d1e8c03484ffdc0d7488c4d88817cbfa3f068108d6090911262db04",
+    "logs\\backend-full-after-nts.log": "47738c101f77b57b489649cc9bdf091cba2af841da7fb1f65d68c2058fe6f3f2",
+    "logs\\crt-baseline-source-evidence-import-test.log": "42bd0826df02698715af171045ced340942d6fb6ec52b04b476e467188aa2f3f",
+    "logs\\postgres-0029-0030.log": "3fe221494a11ee9f42630788093e4cd5caf23205aa90f397c0dcd46d96766af0",
+    "logs\\reproduce-run.log": "e7a50e5a8d7398f2065911a470f77a656d5c68b9fd6d28dd789a1f8417d0aba5",
+    "nts-companion.json": "575b65472a9c11dcd074ca65446929fe19214d045fd085988577278887922a7b",
+    "packet-validation-report.json": "d931f13f605c6ffbdf9e5460033ddb402a1db055b41eb02673dbaa94ba645abd",
+    "publication-nts-links.csv": "c2350e02e633ed783b308dcb5388f238335bd4a341e388a68a88845b235ef118",
+    "publication-nts-links.json": "3b783344d0a3e4071fd68dcaf3b0275a6e900beb8ddc60020d4837c54b4f7524",
     "reproduce.sh": "7579d7e128ec613be8120b06d2fa16538c4128615f2345d01c48d62672ab5e11",
-    "research-report.md": "1dae996e480b83b9d687997a23199b8aa6bf9be68dacdf489cca0690a23ca459",
-    "review-queue.json": "5d39fc0bb8f84d78d30ddf47d2b45d669627e16c90dc156a6444398f15845560",
-    "review-queue.md": "728b97395c10ce34e652da46a0f8df43398b64e1db8d1bac96b47b1abfce4972",
-    "source-evidence-packet-exploratory/assessments.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "source-evidence-packet-exploratory/findings.jsonl": "ae584a048b4a04da77e40c7a16dbea122fa167055ac772cbbfaa36d6878ab571",
-    "source-evidence-packet-exploratory/manifest.json": "c51f114f67c60b28a7c72fd48d0fb34c313c03d57ad9790e00f5d6e4dfd68009",
-    "source-evidence-packet-exploratory/papers.jsonl": "d15ff682f129536cff1d88a235d4198fdcc87204deec5f91f086719994844691",
-    "source-evidence-packet-exploratory/passages.jsonl": "0d1768227a61b32f8d18452b7375d3c1475ccfe14b410dbba3befc27a9626b16",
-    "source-evidence-packet/assessments.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "source-evidence-packet/findings.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "source-evidence-packet/manifest.json": "9e97100feae5a44fc58ae1923d095a8289b864a6b2a122bb4d98f7851c0021ab",
-    "source-evidence-packet/papers.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "source-evidence-packet/passages.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "sources/pmc13304911.json": "417fe47536f8dea05578f02e88b974e5bf0a64298819afee47e91f0a3ff4a4d9",
-    "sources/pmc6392334.json": "b23c36c5a8fea708e322814e689246f01087bf056e9ac2f8e800cb9018bd7234",
-    "study-config.json": "53d65c51c95f3cf7164580db57ab2848b15d401c8660d7926b32a0039413d817"
+    "research-report.md": "2aacbf8b7a2b27aa6b64056af43350db98ddf5195905f2cdbae44db6269cbab6",
+    "review-queue.json": "0533db4ebdd1c016c9e6f53f96e327da005bb33ebbd224562aa1b710efd860da",
+    "review-queue.md": "5b9e9b523bc6b6683145535c267df80e94bcd5c80f6e43a9b9ed1f522e31fa13",
+    "source-evidence-packet-exploratory\\assessments.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source-evidence-packet-exploratory\\findings.jsonl": "f8307c8b3bf541f823cc22a18c75dca3ff6277023e547a3a9984a64f6585fa64",
+    "source-evidence-packet-exploratory\\manifest.json": "b4e3f04a37ac0f68331cd4e34e1576499c348059020a573c131b2736af35ed12",
+    "source-evidence-packet-exploratory\\papers.jsonl": "ec1e7148db8306121ec488a6f55a5eb8c612bf76112d44a8b4927e6eaa6abedb",
+    "source-evidence-packet-exploratory\\passages.jsonl": "eeaa87295a1daca32142a6259d4e559d380ab3f3744c2463da6039dfd3478ec9",
+    "source-evidence-packet\\assessments.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source-evidence-packet\\findings.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source-evidence-packet\\manifest.json": "3f11417d7cffb135a0e22660a68bb02e7b602363b895df7c2d61fff33f3e7377",
+    "source-evidence-packet\\papers.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source-evidence-packet\\passages.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sources\\pmc13304911.json": "cc7e53496afa6ff3f3bd62ada357c1c80dd8025ed035b5a76616d31960b5874c",
+    "sources\\pmc6392334.json": "001a9cadb0e21f4e0ff61fc9adf523824eca730b55c9bbaa5fc0ad4f54fbc2f2",
+    "study-config.json": "60c8db712b5e8c6203e03b588f6d1f174ec79f36f901fa23644e89a7690641fe"
   },
   "parameters": {
-    "crt_checkout": "/home/user/ComputationalReviewTemplate_trust-knowledge",
-    "offline": false
+    "crt_checkout": "C:\\Users\\damie\\AppData\\Local\\Temp\\claude\\c--Users-damie-Documents-GitHub-diggypaper\\a506bd6b-9b0e-4e8c-9a36-478316f99694\\scratchpad\\crt",
+    "offline": true
   },
-  "platform": "Linux-6.18.44-fc-v139-x86_64-with-glibc2.39",
-  "python": "3.13.16",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.12.6",
   "quote_matcher": {
     "algorithm": "article-input-quote-v1.2",
     "allow_normalized": true
   },
-  "repo_dirty": false,
+  "repo_dirty": true,
   "sources": [
     {
       "case_id": "A-ES-mouse",
       "file": "cache/pmc11731260.json",
       "license": {
-        "basis": "PubMed connector get_copyright_status returned license.type=null and is_open_access=false (checked_sources=[pubmed]); the licence was NOT independently verified, so quotation redistribution is not established",
+        "basis": "licence URL read from the PMC JATS <license> element",
         "evidence_url": null,
         "license_id": "unknown",
-        "statement": "© 2024 The Authors.",
+        "statement": null,
         "url": null
       },
       "retrieval": {
-        "completeness": "excerpt",
-        "fidelity": "Paragraph transcribed verbatim by the executing agent from the connector's plain-text rendering (italic gene symbols and figure panel callouts are dropped by the connector). Not a byte-identical publisher or PMC copy. Each section is one contiguous span.",
-        "method": "pubmed-connector get_full_text_article",
+        "completeness": "methods+results paragraphs",
+        "fidelity": "text of <p> elements of methods/results sections; tags removed, whitespace collapsed",
+        "method": "pmc-efetch-jats",
         "public_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11731260/",
-        "retrieved_at": "2026-10-18T08:58:00Z"
+        "retrieved_at": "2026-10-19T13:08:41Z"
       },
-      "snapshot_sha256": "e1e53f2fbc43bd30c545170901720a8160990a618c0b3549b3cb1a279814f3dc",
-      "source_sha256": "013ed6808753162a248c6f3d81ba1e87c7f483726d33dab60504fd48117c9cdd"
+      "snapshot_sha256": "61bbedbf46f84fbb5b25250d9bdbbfccd6416d790f28048576bf492d5464fcbb",
+      "source_sha256": "985c313e4e2956030809a7a23cdf716fb7215033ef694b460f747da5125ad1f4"
     },
     {
       "case_id": "B-RO-rat",
@@ -117,27 +289,27 @@
         "retrieved_at": "2026-10-18T08:58:00Z"
       },
       "snapshot_sha256": "26de5eaf7daea5dd0504e385d6b743ef771481f01d693838e54302913262e7e1",
-      "source_sha256": "417fe47536f8dea05578f02e88b974e5bf0a64298819afee47e91f0a3ff4a4d9"
+      "source_sha256": "cc7e53496afa6ff3f3bd62ada357c1c80dd8025ed035b5a76616d31960b5874c"
     },
     {
       "case_id": "C-FR-negative-control",
       "file": "sources/pmc6392334.json",
       "license": {
-        "basis": "PMC license metadata returned by the PubMed connector get_copyright_status (source=pmc, is_open_access=true) on 2026-10-18",
+        "basis": "licence URL read from the PMC JATS <license> element",
         "evidence_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6392334/",
         "license_id": "CC-BY-4.0",
-        "statement": "© 2019 Amraoui et al",
-        "url": "https://creativecommons.org/licenses/by/4.0/"
+        "statement": null,
+        "url": "http://creativecommons.org/licenses/by/4.0/"
       },
       "retrieval": {
-        "completeness": "excerpt",
-        "fidelity": "Paragraphs transcribed verbatim by the executing agent from the connector's plain-text rendering (italic taxon names dropped). Not a byte-identical PMC copy. Each section is one contiguous span.",
-        "method": "pubmed-connector get_full_text_article",
+        "completeness": "methods+results paragraphs",
+        "fidelity": "text of <p> elements of methods/results sections; tags removed, whitespace collapsed",
+        "method": "pmc-efetch-jats",
         "public_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6392334/",
-        "retrieved_at": "2026-10-18T08:59:00Z"
+        "retrieved_at": "2026-10-19T13:07:20Z"
       },
-      "snapshot_sha256": "859a387800e369c9d720cfbd779f9e4e92d9178200fd0df9bdea6261d7100906",
-      "source_sha256": "b23c36c5a8fea708e322814e689246f01087bf056e9ac2f8e800cb9018bd7234"
+      "snapshot_sha256": "61d05b68dadaa8e31b5aa20ba4638e1b7496a4e42d3b01ec2ab169bb7dc1d80d",
+      "source_sha256": "001a9cadb0e21f4e0ff61fc9adf523824eca730b55c9bbaa5fc0ad4f54fbc2f2"
     }
   ],
   "study_id": "nts-publication-traceability-poc-v1"

@@ -12,12 +12,12 @@
     "comparability": "not-comparable",
     "doi": "10.1016/j.isci.2024.111518",
     "flags": [],
-    "link_state": "not-verified:ARTICLE_CONFIRMED_ALURES_UNAVAILABLE",
+    "link_state": "not-verified:ARTICLE_CONFIRMED_ID_ABSENT_IN_ALURES",
     "nts_id": "NTS-ES-414463",
     "planned": "not reported (ALURES record not confirmed in this run)",
     "ratio_computed": false,
     "reasons": [
-      "no confirmed ALURES record for this article (link state: not-verified:ARTICLE_CONFIRMED_ALURES_UNAVAILABLE)"
+      "no confirmed ALURES record for this article (link state: not-verified:ARTICLE_CONFIRMED_ID_ABSENT_IN_ALURES)"
     ],
     "reported_experimental_animals": "not reported",
     "unique_animal_matching_established": false
@@ -37,13 +37,32 @@
     },
     "comparability": "not-comparable",
     "doi": "10.3390/ph19060846",
-    "flags": [],
-    "link_state": "not-verified:ARTICLE_CONFIRMED_ALURES_UNAVAILABLE",
+    "flags": [
+      "article species 'rat' has no matching species row in the NTS"
+    ],
+    "link_state": "confirmed-exact",
     "nts_id": "NTS-RO-406074",
-    "planned": "not reported (ALURES record not confirmed in this run)",
+    "planned": [
+      {
+        "authorized_number": 145,
+        "count_category": "NTS_planned_or_authorized",
+        "dataset_cell": {
+          "columns": [
+            "total_number_of_animals"
+          ],
+          "file": "alures_nts_projects.csv",
+          "row": 51586
+        },
+        "meaning": "maximum authorized for the whole project, not animals used",
+        "raw_value": "145.0",
+        "species": "not reported"
+      }
+    ],
     "ratio_computed": false,
     "reasons": [
-      "no confirmed ALURES record for this article (link state: not-verified:ARTICLE_CONFIRMED_ALURES_UNAVAILABLE)"
+      "planned figure is a project-wide authorization ceiling, not animals used",
+      "no unique-animal cohort matching is established between article and NTS",
+      "article cohorts carry overlap flags"
     ],
     "reported_experimental_animals": {
       "cohorts": [

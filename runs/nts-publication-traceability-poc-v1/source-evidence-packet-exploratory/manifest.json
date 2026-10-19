@@ -14,22 +14,22 @@
       "bytes": 14098,
       "path": "findings.jsonl",
       "record_count": 13,
-      "sha256": "sha256:ae584a048b4a04da77e40c7a16dbea122fa167055ac772cbbfaa36d6878ab571"
+      "sha256": "sha256:f8307c8b3bf541f823cc22a18c75dca3ff6277023e547a3a9984a64f6585fa64"
     },
     "papers": {
       "bytes": 1862,
       "path": "papers.jsonl",
       "record_count": 3,
-      "sha256": "sha256:d15ff682f129536cff1d88a235d4198fdcc87204deec5f91f086719994844691"
+      "sha256": "sha256:ec1e7148db8306121ec488a6f55a5eb8c612bf76112d44a8b4927e6eaa6abedb"
     },
     "passages": {
-      "bytes": 9923,
+      "bytes": 9929,
       "path": "passages.jsonl",
       "record_count": 13,
-      "sha256": "sha256:0d1768227a61b32f8d18452b7375d3c1475ccfe14b410dbba3befc27a9626b16"
+      "sha256": "sha256:eeaa87295a1daca32142a6259d4e559d380ab3f3744c2463da6039dfd3478ec9"
     }
   },
-  "created_at": "2026-10-18T08:59:00Z",
+  "created_at": "2026-10-19T13:08:41Z",
   "creation_method": "manual",
   "export_status": {
     "reasons": [],
@@ -51,9 +51,9 @@
       "license_id": "CC-BY-4.0"
     }
   ],
-  "packet_id": "packet:08436a9b02560c72d4e5e7c58a567b76",
+  "packet_id": "packet:bbff7b308efb682cceb1c7cc6301440d",
   "producer": {
-    "commit": "61a4829e66fc45ccfc46951a03ffd74af8c546ef",
+    "commit": "a34d18f752377b2a6df01555d1963b2a43c0dca9",
     "name": "diggypaper",
     "schema_refs": [
       {
