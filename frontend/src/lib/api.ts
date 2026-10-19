@@ -1240,3 +1240,228 @@ export const renameSearch = (projectId: string, searchId: string, name: string):
 
 export const deleteSearch = (projectId: string, searchId: string): Promise<void> =>
   request(`/projects/${projectId}/searches/${searchId}`, { method: "DELETE" });
+
+// --- NTS publication traceability (issue #11) ---------------------------------
+
+export const NTS_MODEL_NAME = "nts-deterministic-extractor-v1";
+
+export interface NtsDataset {
+  id: string;
+  kind: "nts" | "ra" | "statistics" | "other";
+  file_name: string;
+  source_url: string;
+  retrieved_at: string | null;
+  http_status: number | null;
+  bytes: number;
+  sha256: string;
+  row_count: number;
+}
+
+export interface NtsJob {
+  id: string;
+  kind: string;
+  status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | null;
+  result: Record<string, unknown> | null;
+  error: string | null;
+  created_at: string | null;
+  completed_at: string | null;
+}
+
+export interface NtsStatus {
+  is_nts_project: boolean;
+  model_name: string;
+  extracted_articles: number;
+  datasets: NtsDataset[];
+  has_links: boolean;
+  review_pending: number;
+  jobs: NtsJob[];
+}
+
+export interface NtsAdjudication {
+  decision: "confirmed" | "rejected" | "unresolved";
+  rationale: string;
+  adjudicator_ref: string;
+  created_at: string | null;
+  count: number;
+}
+
+export interface NtsDatasetCell {
+  file: string;
+  row: number;
+  columns: string[];
+}
+
+export interface NtsPlannedCell {
+  species: string;
+  authorized_number: number | "not reported";
+  raw_value: string | null;
+  count_category: string;
+  meaning: string;
+  dataset_cell?: NtsDatasetCell;
+}
+
+export interface NtsLink {
+  id: string;
+  article_id: string;
+  prediction_id: string;
+  finding_id: string | null;
+  quote_index: number;
+  identifier_system: string;
+  identifier_verbatim: string;
+  identifier_normalized: string | null;
+  country: string | null;
+  version_cited: string | null;
+  date_cited: string | null;
+  alures_state: string;
+  alures_reasons: string[];
+  alures_versions: string[] | null;
+  alures_current_version: string | null;
+  alures_row_numbers: number[][] | null;
+  alures_candidates: string[] | null;
+  dataset_id: string | null;
+  link_state: string;
+  planned: NtsPlannedCell[] | null;
+  scope_note: string | null;
+  computed_at: string | null;
+  adjudication: NtsAdjudication | null;
+}
+
+export interface NtsObservation {
+  id: string;
+  article_id: string;
+  prediction_id: string;
+  finding_id: string | null;
+  observation_id: string;
+  source_kind: "article" | "alures" | "rar";
+  count_category: string;
+  species: string;
+  strain: string;
+  sex: string;
+  number: number | null;
+  unit_counted: string;
+  cohort_label: string;
+  count_scope: string;
+  group_count: number | null;
+  derived: boolean;
+  derivation: string | null;
+  method_section: string | null;
+  rule_id: string | null;
+  possible_overlap: string[];
+  notes: string | null;
+  dataset_cell: NtsDatasetCell | null;
+}
+
+export interface NtsSummaryRow {
+  article_id: string;
+  doi: string | null;
+  pmid: string | null;
+  title: string | null;
+  nts_identifiers: {
+    normalized: string | null;
+    version_cited: string | null;
+    link_state: string;
+    alures_state: string;
+    adjudication: NtsAdjudication | null;
+  }[];
+  national_authorizations: string[];
+  planned: { species: string; number: number | null; cell: NtsDatasetCell | null }[];
+  reported: { number: number | null; species: string; scope: string; derived: boolean; cohort: string }[];
+  comparability: string;
+  flags: string[];
+  match_status: string;
+}
+
+export interface NtsReviewItem {
+  finding_id: string;
+  article_id: string;
+  prediction_id: string;
+  revision: number;
+  kind: "nts-identifier" | "national-authorization" | "animal-counts" | null;
+  statement: string | null;
+  quote: string | null;
+  quote_match: string | null;
+  answer_ref: string;
+  evidence_ref: string;
+  proposed_at: string | null;
+}
+
+const ntsBase = (projectId: string) => `/projects/${projectId}/nts`;
+
+export const getNtsStatus = (projectId: string): Promise<NtsStatus> => request(ntsBase(projectId));
+export const ntsSetup = (projectId: string): Promise<{ model_name: string }> =>
+  request(`${ntsBase(projectId)}/setup`, { method: "POST" });
+export const ntsPropose = (
+  projectId: string
+): Promise<{ predictions: number; created: number; skipped: number }> =>
+  request(`${ntsBase(projectId)}/propose`, { method: "POST" });
+export const ntsAluresSync = (projectId: string, offline = false): Promise<{ job_id: string; status: string }> =>
+  request(`${ntsBase(projectId)}/alures/sync`, { method: "POST", body: JSON.stringify({ offline }) });
+export const ntsJoin = (projectId: string): Promise<{ job_id: string; status: string }> =>
+  request(`${ntsBase(projectId)}/join`, { method: "POST" });
+export const listNtsLinks = async (projectId: string): Promise<NtsLink[]> =>
+  (await request<{ items: NtsLink[] }>(`${ntsBase(projectId)}/links`)).items;
+export const listNtsObservations = async (projectId: string): Promise<NtsObservation[]> =>
+  (await request<{ items: NtsObservation[] }>(`${ntsBase(projectId)}/observations`)).items;
+export const getNtsSummary = async (projectId: string): Promise<NtsSummaryRow[]> =>
+  (await request<{ items: NtsSummaryRow[] }>(`${ntsBase(projectId)}/summary`)).items;
+export const getNtsReviewQueue = async (projectId: string): Promise<NtsReviewItem[]> =>
+  (await request<{ items: NtsReviewItem[] }>(`${ntsBase(projectId)}/review-queue`)).items;
+export const ntsAdjudicate = (
+  projectId: string,
+  linkId: string,
+  input: { decision: NtsAdjudication["decision"]; rationale: string }
+): Promise<NtsLink> =>
+  request(`${ntsBase(projectId)}/links/${linkId}/adjudications`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+// --- Finding curation (reviews on proposed findings) --------------------------
+
+export interface FindingReviewInput {
+  decision: "approve" | "reject";
+  rationale: string;
+  judgments: { evidence_ref: string; status: SupportStatus; rationale: string }[];
+}
+
+export interface FindingRevisionView {
+  revision: number;
+  is_latest: boolean;
+  state: "proposed" | "approved" | "rejected" | "superseded";
+  content: { statement: string } & Record<string, unknown>;
+  proposer_ref: string;
+  created_at: string | null;
+  evidence: {
+    prediction_id: string;
+    answer_ref: string;
+    evidence_ref: string;
+    quote: string | null;
+    match: { status: string } | null;
+  }[];
+  reviews: { id: string; reviewer_ref: string; decision: "approve" | "reject"; created_at: string | null }[];
+}
+
+export interface FindingView {
+  finding_id: string;
+  article_id: string;
+  revisions: FindingRevisionView[];
+}
+
+export const listFindings = async (projectId: string, articleId: string): Promise<FindingView[]> =>
+  (await request<{ findings: FindingView[] }>(`/projects/${projectId}/articles/${articleId}/findings`)).findings;
+
+export const reviewFinding = (
+  projectId: string,
+  articleId: string,
+  findingId: string,
+  revision: number,
+  input: FindingReviewInput
+): Promise<unknown> =>
+  request(`/projects/${projectId}/articles/${articleId}/findings/${findingId}/revisions/${revision}/reviews`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+/** URL of the rights-aware packet export (zip); the browser downloads it with the session cookie. */
+export const findingsExportUrl = (projectId: string, accessLevel: "restricted" | "public" = "restricted"): string =>
+  `${API_BASE}/projects/${projectId}/findings/export${qs({ access_level: accessLevel })}`;
