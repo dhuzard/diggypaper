@@ -1,2 +1,6 @@
 * text=auto
 *.sh text eol=lf
+
+# Byte-exact fixtures and run outputs: packet digests are sha256 of exact bytes
+docs/contracts/** text eol=lf
+runs/** text eol=lf

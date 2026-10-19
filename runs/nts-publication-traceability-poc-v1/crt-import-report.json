@@ -4,15 +4,15 @@
     "reason": "no finding has an independent human review; CRT and Diggypaper both require one",
     "state": "BLOCKED_HUMAN_REVIEW_PENDING"
   },
-  "diggypaper_commit": "61a4829e66fc45ccfc46951a03ffd74af8c546ef",
+  "diggypaper_commit": "0cfe1ad7b1070fc4d7a951a8fbc9fa4e2a9265cc",
   "results": {
     "exploratory": {
-      "crt_commit": "ce8f29cf251aadfc4c44d109db65d15dd0f629c0",
+      "crt_commit": null,
       "import": {
-        "command": "node scripts/import-source-evidence-packet.mjs --packet /home/user/diggypaper/runs/nts-publication-traceability-poc-v1/source-evidence-packet-exploratory --out /tmp/crt-import-i_puxbtk/out --check-gates",
+        "command": "node scripts/import-source-evidence-packet.mjs --packet C:\\Users\\damie\\Documents\\GitHub\\diggypaper\\runs\\nts-publication-traceability-poc-v1\\source-evidence-packet-exploratory --out C:\\Users\\damie\\AppData\\Local\\Temp\\crt-import-zkqghn7c\\out --check-gates",
         "exit_code": 0,
         "stderr": "",
-        "stdout": "{\n  \"out\": \"/tmp/crt-import-i_puxbtk/out\",\n  \"packet_id\": \"packet:08436a9b02560c72d4e5e7c58a567b76\",\n  \"findings\": {\n    \"accepted\": 0,\n    \"rejected\": 0,\n    \"withheld\": 13,\n    \"incomplete\": 0\n  },\n  \"by_reason\": {\n    \"rejected:no-supporting-judgment\": 13,\n    \"rejected:not-approved-for-export\": 13,\n    \"rejected:unreviewed\": 13,\n    \"rejected:verification-below-threshold\": 13,\n    \"withheld:packet-scope-restricted\": 13,\n    \"withheld:paper-rights-not-redistributable\": 3\n  },\n  \"gates\": {\n    \"phase2_import\": {\n      \"phase\": 2,\n      \"mode\": \"fixed_corpus_import\",\n      \"gate\": \"pass\",\n      \"total_findings\": 0,\n      \"checks\": {\n        \"IMPORT_PROVENANCE_VERIFIED\": \"pass\",\n        \"EVERY_PAPER_HAS_DOI\": \"pass\",\n        \"NULLS_NOT_STRINGS\": \"pass\",\n        \"CONFLICT_FIELDS_EXACT\": \"pass\",\n        \"FIGURE_DATA_DOIS_UNIQUE\": \"pass\",\n        \"CONFLICTS_DECLARED\": \"pass\",\n        \"FINDINGS_ARE_OBJECTS\": \"pass\",\n        \"NO_REPLICATION_INVENTED\": \"pass\"\n      },\n      \"exempt_checks\": [\n        \"PAPER_COUNT_FLOOR\",\n        \"CROSS_CLUSTER_UNIQUE_DOIS\",\n        \"BIBLIOGRAPHY_FLOOR_HARD\",\n        \"PAPER_COUNT\",\n        \"SHAPE_NOT_UNIFORM\",\n        \"FIGURE_DATA_PRESENT\",\n        \"FIGURE_DATA\",\n        \"EFFECT_SIZE_RATE\",\n        \"SAMPLE_SIZE_RATE\",\n        \"REPLICATION_UNKNOWN_CEILING\",\n        \"WEAKEST_EVIDENCE_SUBSTANTIVE\",\n        \"SEARCH_FAILURES_PRESENT\",\n        \"CONTRADICTION_QUERIES_EXECUTED\",\n        \"FALSE_CONSENSUS_RISKS_IDENTIFIED\",\n        \"SATURATION_LOGGED\",\n        \"DOI_RESOLVES\",\n        \"DOI_TITLE_CROSSCHECK\",\n        \"SOURCE_PROVENANCE\",\n        \"FULLTEXT_HONEST\",\n        \"FULLTEXT_HONEST_v2\",\n        \"FULLTEXT_RATE_PER_CLUSTER\",\n        \"FULLTEXT_RATE_OVERALL\",\n        \"SOURCE_LENGTH\",\n        \"CLAIM_DIFFERS_FROM_SOURCE\"\n      ]\n    },\n    \"phase5\": {\n      \"phase\": 5,\n      \"gate\": \"pass\",\n      \"sections_checked\": 1,\n      \"per_section_results\": {\n        \"section_02\": {\n          \"TRACEABLE\": \"pass\",\n          \"NO_INTRA_SECTION_DUPLICATES\": \"pass\",\n          \"CITE_KEY_ASSIGNED\": \"pass\",\n          \"HAS_DOI\": \"pass\",\n          \"TEXT_ACCESS_VALID\": \"pass\",\n          \"FINDINGS_ARE_OBJECTS\": \"pass\",\n          \"CROSS_SECTION_DIFFERENTIATION\": \"pass\"\n        }\n      },\n      \"aggregate_results\": {\n        \"ANTI_COMPRESSION\": \"pass\",\n        \"ZERO_LOSS\": \"pass\",\n        \"ALL_CONFLICTS_ASSIGNED\": \"pass\"\n      }\n    }\n  }\n}\n"
+        "stdout": "{\n  \"out\": \"C:\\\\Users\\\\damie\\\\AppData\\\\Local\\\\Temp\\\\crt-import-zkqghn7c\\\\out\",\n  \"packet_id\": \"packet:d9521e63f0f6386656a31ace1928f8d1\",\n  \"findings\": {\n    \"accepted\": 0,\n    \"rejected\": 0,\n    \"withheld\": 13,\n    \"incomplete\": 0\n  },\n  \"by_reason\": {\n    \"rejected:no-supporting-judgment\": 13,\n    \"rejected:not-approved-for-export\": 13,\n    \"rejected:unreviewed\": 13,\n    \"rejected:verification-below-threshold\": 13,\n    \"withheld:packet-scope-restricted\": 13,\n    \"withheld:paper-rights-not-redistributable\": 3\n  },\n  \"gates\": {\n    \"phase2_import\": {\n      \"phase\": 2,\n      \"mode\": \"fixed_corpus_import\",\n      \"gate\": \"pass\",\n      \"total_findings\": 0,\n      \"checks\": {\n        \"IMPORT_PROVENANCE_VERIFIED\": \"pass\",\n        \"EVERY_PAPER_HAS_DOI\": \"pass\",\n        \"NULLS_NOT_STRINGS\": \"pass\",\n        \"CONFLICT_FIELDS_EXACT\": \"pass\",\n        \"FIGURE_DATA_DOIS_UNIQUE\": \"pass\",\n        \"CONFLICTS_DECLARED\": \"pass\",\n        \"FINDINGS_ARE_OBJECTS\": \"pass\",\n        \"NO_REPLICATION_INVENTED\": \"pass\"\n      },\n      \"exempt_checks\": [\n        \"PAPER_COUNT_FLOOR\",\n        \"CROSS_CLUSTER_UNIQUE_DOIS\",\n        \"BIBLIOGRAPHY_FLOOR_HARD\",\n        \"PAPER_COUNT\",\n        \"SHAPE_NOT_UNIFORM\",\n        \"FIGURE_DATA_PRESENT\",\n        \"FIGURE_DATA\",\n        \"EFFECT_SIZE_RATE\",\n        \"SAMPLE_SIZE_RATE\",\n        \"REPLICATION_UNKNOWN_CEILING\",\n        \"WEAKEST_EVIDENCE_SUBSTANTIVE\",\n        \"SEARCH_FAILURES_PRESENT\",\n        \"CONTRADICTION_QUERIES_EXECUTED\",\n        \"FALSE_CONSENSUS_RISKS_IDENTIFIED\",\n        \"SATURATION_LOGGED\",\n        \"DOI_RESOLVES\",\n        \"DOI_TITLE_CROSSCHECK\",\n        \"SOURCE_PROVENANCE\",\n        \"FULLTEXT_HONEST\",\n        \"FULLTEXT_HONEST_v2\",\n        \"FULLTEXT_RATE_PER_CLUSTER\",\n        \"FULLTEXT_RATE_OVERALL\",\n        \"SOURCE_LENGTH\",\n        \"CLAIM_DIFFERS_FROM_SOURCE\"\n      ]\n    },\n    \"phase5\": {\n      \"phase\": 5,\n      \"gate\": \"pass\",\n      \"sections_checked\": 1,\n      \"per_section_results\": {\n        \"section_02\": {\n          \"TRACEABLE\": \"pass\",\n          \"NO_INTRA_SECTION_DUPLICATES\": \"pass\",\n          \"CITE_KEY_ASSIGNED\": \"pass\",\n          \"HAS_DOI\": \"pass\",\n          \"TEXT_ACCESS_VALID\": \"pass\",\n          \"FINDINGS_ARE_OBJECTS\": \"pass\",\n          \"CROSS_SECTION_DIFFERENTIATION\": \"pass\"\n        }\n      },\n      \"aggregate_results\": {\n        \"ANTI_COMPRESSION\": \"pass\",\n        \"ZERO_LOSS\": \"pass\",\n        \"ALL_CONFLICTS_ASSIGNED\": \"pass\"\n      }\n    }\n  }\n}\n"
       },
       "import_report": {
         "counts": {
@@ -146,6 +146,84 @@
             "status": "withheld"
           },
           {
+            "finding_id": "finding:232d05c6-aa36-59ad-b0fb-a0a4e962f678",
+            "flags": [],
+            "paper_id": "paper:45027d4c-9b72-581c-8f6c-4558e4760268",
+            "reasons": [
+              {
+                "class": "rejected",
+                "code": "no-supporting-judgment",
+                "message": "no native assessment records that a matched passage supports this finding"
+              },
+              {
+                "class": "rejected",
+                "code": "not-approved-for-export",
+                "message": "export_state is proposed"
+              },
+              {
+                "class": "withheld",
+                "code": "packet-scope-restricted",
+                "message": "packet access_scope.level is restricted"
+              },
+              {
+                "class": "withheld",
+                "code": "paper-rights-not-redistributable",
+                "message": "paper redistribution is metadata-only"
+              },
+              {
+                "class": "rejected",
+                "code": "unreviewed",
+                "message": "review_state is unreviewed"
+              },
+              {
+                "class": "rejected",
+                "code": "verification-below-threshold",
+                "message": "verification_level unverified is below human-reviewed"
+              }
+            ],
+            "revision": 1,
+            "status": "withheld"
+          },
+          {
+            "finding_id": "finding:3706c577-ee87-5523-80fe-5358a2413d2e",
+            "flags": [],
+            "paper_id": "paper:45027d4c-9b72-581c-8f6c-4558e4760268",
+            "reasons": [
+              {
+                "class": "rejected",
+                "code": "no-supporting-judgment",
+                "message": "no native assessment records that a matched passage supports this finding"
+              },
+              {
+                "class": "rejected",
+                "code": "not-approved-for-export",
+                "message": "export_state is proposed"
+              },
+              {
+                "class": "withheld",
+                "code": "packet-scope-restricted",
+                "message": "packet access_scope.level is restricted"
+              },
+              {
+                "class": "withheld",
+                "code": "paper-rights-not-redistributable",
+                "message": "paper redistribution is metadata-only"
+              },
+              {
+                "class": "rejected",
+                "code": "unreviewed",
+                "message": "review_state is unreviewed"
+              },
+              {
+                "class": "rejected",
+                "code": "verification-below-threshold",
+                "message": "verification_level unverified is below human-reviewed"
+              }
+            ],
+            "revision": 1,
+            "status": "withheld"
+          },
+          {
             "finding_id": "finding:4f07c051-d5a3-5d0a-a490-85613c44cd73",
             "flags": [],
             "paper_id": "paper:e6e1440d-c1ea-5353-a633-81bfc9648770",
@@ -248,7 +326,7 @@
             "status": "withheld"
           },
           {
-            "finding_id": "finding:72406249-b574-5305-89fc-cec724ffd049",
+            "finding_id": "finding:72d62d11-d224-59a6-8dc7-aad714341ca1",
             "flags": [],
             "paper_id": "paper:45027d4c-9b72-581c-8f6c-4558e4760268",
             "reasons": [
@@ -355,45 +433,6 @@
             "status": "withheld"
           },
           {
-            "finding_id": "finding:92527a16-6b09-5af0-abf7-7770303d3786",
-            "flags": [],
-            "paper_id": "paper:45027d4c-9b72-581c-8f6c-4558e4760268",
-            "reasons": [
-              {
-                "class": "rejected",
-                "code": "no-supporting-judgment",
-                "message": "no native assessment records that a matched passage supports this finding"
-              },
-              {
-                "class": "rejected",
-                "code": "not-approved-for-export",
-                "message": "export_state is proposed"
-              },
-              {
-                "class": "withheld",
-                "code": "packet-scope-restricted",
-                "message": "packet access_scope.level is restricted"
-              },
-              {
-                "class": "withheld",
-                "code": "paper-rights-not-redistributable",
-                "message": "paper redistribution is metadata-only"
-              },
-              {
-                "class": "rejected",
-                "code": "unreviewed",
-                "message": "review_state is unreviewed"
-              },
-              {
-                "class": "rejected",
-                "code": "verification-below-threshold",
-                "message": "verification_level unverified is below human-reviewed"
-              }
-            ],
-            "revision": 1,
-            "status": "withheld"
-          },
-          {
             "finding_id": "finding:b05e62cb-8864-50b5-a79b-311d2e7a3000",
             "flags": [],
             "paper_id": "paper:a956ab5c-d99b-5373-801b-5de0aaceb360",
@@ -412,45 +451,6 @@
                 "class": "withheld",
                 "code": "packet-scope-restricted",
                 "message": "packet access_scope.level is restricted"
-              },
-              {
-                "class": "rejected",
-                "code": "unreviewed",
-                "message": "review_state is unreviewed"
-              },
-              {
-                "class": "rejected",
-                "code": "verification-below-threshold",
-                "message": "verification_level unverified is below human-reviewed"
-              }
-            ],
-            "revision": 1,
-            "status": "withheld"
-          },
-          {
-            "finding_id": "finding:b96a935f-c976-540b-9758-a248695a76a8",
-            "flags": [],
-            "paper_id": "paper:45027d4c-9b72-581c-8f6c-4558e4760268",
-            "reasons": [
-              {
-                "class": "rejected",
-                "code": "no-supporting-judgment",
-                "message": "no native assessment records that a matched passage supports this finding"
-              },
-              {
-                "class": "rejected",
-                "code": "not-approved-for-export",
-                "message": "export_state is proposed"
-              },
-              {
-                "class": "withheld",
-                "code": "packet-scope-restricted",
-                "message": "packet access_scope.level is restricted"
-              },
-              {
-                "class": "withheld",
-                "code": "paper-rights-not-redistributable",
-                "message": "paper redistribution is metadata-only"
               },
               {
                 "class": "rejected",
@@ -509,12 +509,12 @@
         },
         "outputs": {
           "lineage": "source-evidence-lineage.json",
-          "lineage_sha256": "sha256:4e5e48ff7d41b80f1ad7ffe3aed4f2443ff23199ee92f0f4e225d8391fcfb708",
+          "lineage_sha256": "sha256:d6b7b2378b7162c618f7cbe67e3efa27320b03d857a5517ec2cc4d8e5e3fb657",
           "phase2": "cluster_evidence.json"
         },
         "packet": {
-          "manifest_sha256": "sha256:c51f114f67c60b28a7c72fd48d0fb34c313c03d57ad9790e00f5d6e4dfd68009",
-          "packet_id": "packet:08436a9b02560c72d4e5e7c58a567b76"
+          "manifest_sha256": "sha256:63f79f15e3c434df21474b41c9d0496996c4eed8abc5440f53b688326393e933",
+          "packet_id": "packet:d9521e63f0f6386656a31ace1928f8d1"
         },
         "pilot_exceptions": [
           {
@@ -669,23 +669,23 @@
       },
       "label": "exploratory",
       "lineage_written": true,
-      "packet": "/home/user/diggypaper/runs/nts-publication-traceability-poc-v1/source-evidence-packet-exploratory",
+      "packet": "C:\\Users\\damie\\Documents\\GitHub\\diggypaper\\runs\\nts-publication-traceability-poc-v1\\source-evidence-packet-exploratory",
       "phase2_findings_written": 0,
       "state": "NO_FINDING_ACCEPTED",
       "validate_only": {
-        "command": "node scripts/import-source-evidence-packet.mjs --packet /home/user/diggypaper/runs/nts-publication-traceability-poc-v1/source-evidence-packet-exploratory --validate-only",
+        "command": "node scripts/import-source-evidence-packet.mjs --packet C:\\Users\\damie\\Documents\\GitHub\\diggypaper\\runs\\nts-publication-traceability-poc-v1\\source-evidence-packet-exploratory --validate-only",
         "exit_code": 0,
         "stderr": "",
         "stdout": "{\n  \"valid\": true,\n  \"errors\": [],\n  \"warnings\": [],\n  \"counts\": {\n    \"papers\": 3,\n    \"findings\": 13,\n    \"passages\": 13,\n    \"assessments\": 0,\n    \"findings_by_export_state\": {\n      \"proposed\": 13\n    },\n    \"findings_by_verification\": {\n      \"unverified\": 13\n    },\n    \"omitted\": {\n      \"papers\": 0,\n      \"findings\": 0,\n      \"passages\": 0,\n      \"assessments\": 0\n    },\n    \"rejected\": {\n      \"papers\": 0,\n      \"findings\": 0,\n      \"passages\": 0,\n      \"assessments\": 0\n    }\n  }\n}\n"
       }
     },
     "production": {
-      "crt_commit": "ce8f29cf251aadfc4c44d109db65d15dd0f629c0",
+      "crt_commit": null,
       "import": {
-        "command": "node scripts/import-source-evidence-packet.mjs --packet /home/user/diggypaper/runs/nts-publication-traceability-poc-v1/source-evidence-packet --out /tmp/crt-import-b_r_349s/out --check-gates",
+        "command": "node scripts/import-source-evidence-packet.mjs --packet C:\\Users\\damie\\Documents\\GitHub\\diggypaper\\runs\\nts-publication-traceability-poc-v1\\source-evidence-packet --out C:\\Users\\damie\\AppData\\Local\\Temp\\crt-import-rqztojb_\\out --check-gates",
         "exit_code": 0,
         "stderr": "",
-        "stdout": "{\n  \"out\": \"/tmp/crt-import-b_r_349s/out\",\n  \"packet_id\": \"packet:c9b1ed49f767fd098dab3280ac5828a5\",\n  \"findings\": {\n    \"accepted\": 0,\n    \"rejected\": 0,\n    \"withheld\": 0,\n    \"incomplete\": 0\n  },\n  \"by_reason\": {},\n  \"gates\": {\n    \"phase2_import\": {\n      \"phase\": 2,\n      \"mode\": \"fixed_corpus_import\",\n      \"gate\": \"pass\",\n      \"total_findings\": 0,\n      \"checks\": {\n        \"IMPORT_PROVENANCE_VERIFIED\": \"pass\",\n        \"EVERY_PAPER_HAS_DOI\": \"pass\",\n        \"NULLS_NOT_STRINGS\": \"pass\",\n        \"CONFLICT_FIELDS_EXACT\": \"pass\",\n        \"FIGURE_DATA_DOIS_UNIQUE\": \"pass\",\n        \"CONFLICTS_DECLARED\": \"pass\",\n        \"FINDINGS_ARE_OBJECTS\": \"pass\",\n        \"NO_REPLICATION_INVENTED\": \"pass\"\n      },\n      \"exempt_checks\": [\n        \"PAPER_COUNT_FLOOR\",\n        \"CROSS_CLUSTER_UNIQUE_DOIS\",\n        \"BIBLIOGRAPHY_FLOOR_HARD\",\n        \"PAPER_COUNT\",\n        \"SHAPE_NOT_UNIFORM\",\n        \"FIGURE_DATA_PRESENT\",\n        \"FIGURE_DATA\",\n        \"EFFECT_SIZE_RATE\",\n        \"SAMPLE_SIZE_RATE\",\n        \"REPLICATION_UNKNOWN_CEILING\",\n        \"WEAKEST_EVIDENCE_SUBSTANTIVE\",\n        \"SEARCH_FAILURES_PRESENT\",\n        \"CONTRADICTION_QUERIES_EXECUTED\",\n        \"FALSE_CONSENSUS_RISKS_IDENTIFIED\",\n        \"SATURATION_LOGGED\",\n        \"DOI_RESOLVES\",\n        \"DOI_TITLE_CROSSCHECK\",\n        \"SOURCE_PROVENANCE\",\n        \"FULLTEXT_HONEST\",\n        \"FULLTEXT_HONEST_v2\",\n        \"FULLTEXT_RATE_PER_CLUSTER\",\n        \"FULLTEXT_RATE_OVERALL\",\n        \"SOURCE_LENGTH\",\n        \"CLAIM_DIFFERS_FROM_SOURCE\"\n      ]\n    },\n    \"phase5\": {\n      \"phase\": 5,\n      \"gate\": \"pass\",\n      \"sections_checked\": 1,\n      \"per_section_results\": {\n        \"section_02\": {\n          \"TRACEABLE\": \"pass\",\n          \"NO_INTRA_SECTION_DUPLICATES\": \"pass\",\n          \"CITE_KEY_ASSIGNED\": \"pass\",\n          \"HAS_DOI\": \"pass\",\n          \"TEXT_ACCESS_VALID\": \"pass\",\n          \"FINDINGS_ARE_OBJECTS\": \"pass\",\n          \"CROSS_SECTION_DIFFERENTIATION\": \"pass\"\n        }\n      },\n      \"aggregate_results\": {\n        \"ANTI_COMPRESSION\": \"pass\",\n        \"ZERO_LOSS\": \"pass\",\n        \"ALL_CONFLICTS_ASSIGNED\": \"pass\"\n      }\n    }\n  }\n}\n"
+        "stdout": "{\n  \"out\": \"C:\\\\Users\\\\damie\\\\AppData\\\\Local\\\\Temp\\\\crt-import-rqztojb_\\\\out\",\n  \"packet_id\": \"packet:c9b1ed49f767fd098dab3280ac5828a5\",\n  \"findings\": {\n    \"accepted\": 0,\n    \"rejected\": 0,\n    \"withheld\": 0,\n    \"incomplete\": 0\n  },\n  \"by_reason\": {},\n  \"gates\": {\n    \"phase2_import\": {\n      \"phase\": 2,\n      \"mode\": \"fixed_corpus_import\",\n      \"gate\": \"pass\",\n      \"total_findings\": 0,\n      \"checks\": {\n        \"IMPORT_PROVENANCE_VERIFIED\": \"pass\",\n        \"EVERY_PAPER_HAS_DOI\": \"pass\",\n        \"NULLS_NOT_STRINGS\": \"pass\",\n        \"CONFLICT_FIELDS_EXACT\": \"pass\",\n        \"FIGURE_DATA_DOIS_UNIQUE\": \"pass\",\n        \"CONFLICTS_DECLARED\": \"pass\",\n        \"FINDINGS_ARE_OBJECTS\": \"pass\",\n        \"NO_REPLICATION_INVENTED\": \"pass\"\n      },\n      \"exempt_checks\": [\n        \"PAPER_COUNT_FLOOR\",\n        \"CROSS_CLUSTER_UNIQUE_DOIS\",\n        \"BIBLIOGRAPHY_FLOOR_HARD\",\n        \"PAPER_COUNT\",\n        \"SHAPE_NOT_UNIFORM\",\n        \"FIGURE_DATA_PRESENT\",\n        \"FIGURE_DATA\",\n        \"EFFECT_SIZE_RATE\",\n        \"SAMPLE_SIZE_RATE\",\n        \"REPLICATION_UNKNOWN_CEILING\",\n        \"WEAKEST_EVIDENCE_SUBSTANTIVE\",\n        \"SEARCH_FAILURES_PRESENT\",\n        \"CONTRADICTION_QUERIES_EXECUTED\",\n        \"FALSE_CONSENSUS_RISKS_IDENTIFIED\",\n        \"SATURATION_LOGGED\",\n        \"DOI_RESOLVES\",\n        \"DOI_TITLE_CROSSCHECK\",\n        \"SOURCE_PROVENANCE\",\n        \"FULLTEXT_HONEST\",\n        \"FULLTEXT_HONEST_v2\",\n        \"FULLTEXT_RATE_PER_CLUSTER\",\n        \"FULLTEXT_RATE_OVERALL\",\n        \"SOURCE_LENGTH\",\n        \"CLAIM_DIFFERS_FROM_SOURCE\"\n      ]\n    },\n    \"phase5\": {\n      \"phase\": 5,\n      \"gate\": \"pass\",\n      \"sections_checked\": 1,\n      \"per_section_results\": {\n        \"section_02\": {\n          \"TRACEABLE\": \"pass\",\n          \"NO_INTRA_SECTION_DUPLICATES\": \"pass\",\n          \"CITE_KEY_ASSIGNED\": \"pass\",\n          \"HAS_DOI\": \"pass\",\n          \"TEXT_ACCESS_VALID\": \"pass\",\n          \"FINDINGS_ARE_OBJECTS\": \"pass\",\n          \"CROSS_SECTION_DIFFERENTIATION\": \"pass\"\n        }\n      },\n      \"aggregate_results\": {\n        \"ANTI_COMPRESSION\": \"pass\",\n        \"ZERO_LOSS\": \"pass\",\n        \"ALL_CONFLICTS_ASSIGNED\": \"pass\"\n      }\n    }\n  }\n}\n"
       },
       "import_report": {
         "counts": {
@@ -717,11 +717,11 @@
         },
         "outputs": {
           "lineage": "source-evidence-lineage.json",
-          "lineage_sha256": "sha256:acf71c65120c694f7ec33b78869981ebc143f381a553e4b01c58831231dbc94b",
+          "lineage_sha256": "sha256:57ef58aff5521fcfbde68582f7e4e9703f42098d402c761ba26e435e0d0dfea8",
           "phase2": "cluster_evidence.json"
         },
         "packet": {
-          "manifest_sha256": "sha256:9e97100feae5a44fc58ae1923d095a8289b864a6b2a122bb4d98f7851c0021ab",
+          "manifest_sha256": "sha256:4950f1c12fbe5484ed09ba7c8703d9f407ece91a79d7fd8fa89984523a95691c",
           "packet_id": "packet:c9b1ed49f767fd098dab3280ac5828a5"
         },
         "pilot_exceptions": [
@@ -873,11 +873,11 @@
       },
       "label": "production",
       "lineage_written": true,
-      "packet": "/home/user/diggypaper/runs/nts-publication-traceability-poc-v1/source-evidence-packet",
+      "packet": "C:\\Users\\damie\\Documents\\GitHub\\diggypaper\\runs\\nts-publication-traceability-poc-v1\\source-evidence-packet",
       "phase2_findings_written": 0,
       "state": "NO_FINDING_ACCEPTED",
       "validate_only": {
-        "command": "node scripts/import-source-evidence-packet.mjs --packet /home/user/diggypaper/runs/nts-publication-traceability-poc-v1/source-evidence-packet --validate-only",
+        "command": "node scripts/import-source-evidence-packet.mjs --packet C:\\Users\\damie\\Documents\\GitHub\\diggypaper\\runs\\nts-publication-traceability-poc-v1\\source-evidence-packet --validate-only",
         "exit_code": 0,
         "stderr": "",
         "stdout": "{\n  \"valid\": true,\n  \"errors\": [],\n  \"warnings\": [],\n  \"counts\": {\n    \"papers\": 0,\n    \"findings\": 0,\n    \"passages\": 0,\n    \"assessments\": 0,\n    \"findings_by_export_state\": {},\n    \"findings_by_verification\": {},\n    \"omitted\": {\n      \"papers\": 0,\n      \"findings\": 13,\n      \"passages\": 0,\n      \"assessments\": 0\n    },\n    \"rejected\": {\n      \"papers\": 0,\n      \"findings\": 0,\n      \"passages\": 0,\n      \"assessments\": 0\n    }\n  }\n}\n"

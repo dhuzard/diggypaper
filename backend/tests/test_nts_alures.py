@@ -118,3 +118,22 @@ def test_csv_links_extracts_only_csv_and_zip():
         "https://example.org/alures/b.zip",
         "https://example.org/d/alures_nts_projects.csv",
     ]
+
+
+def test_version_one_point_zero_equals_cited_one(tmp_path):
+    p = write_csv(
+        tmp_path / "alures_nts_projects.csv",
+        ["identifier", "version", "country_code", "title"],
+        [["NTS-RO-406074", "1.0", "ro", "T"]],
+    )
+    index = alures.load_table(p, "identifier", "version", "country_code", "title")
+    r = alures.join_exact("NTS-RO-406074", "1", "RO", index)
+    assert r["state"] == "confirmed-exact" and r["versions"] == ["1"]
+    assert alures.normalize_version("2.0") == "2" and alures.normalize_version("1.1") == "1.1"
+
+
+def test_planned_total_accepts_float_formatted_integer():
+    cells = alures.planned_animals(
+        [{"total_number_of_animals": "145.0"}], None, "total_number_of_animals"
+    )
+    assert cells[0]["authorized_number"] == 145 and cells[0]["species"] == "not reported"

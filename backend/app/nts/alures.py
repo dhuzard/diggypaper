@@ -74,14 +74,26 @@ def csv_links(html: str, base_url: str) -> list[str]:
     return sorted({urljoin(base_url, m) for m in _HREF_CSV.findall(html)})
 
 
+def _dialect(header_line: str) -> type[csv.Dialect]:
+    """Pick the delimiter from the header only and keep RFC 4180 quoting.
+
+    ``csv.Sniffer`` on a short sample of the real ALURES export (long multi-line quoted text
+    with doubled quotes) infers ``doublequote=False`` and misaligns a third of the rows, which
+    silently drops the NTS identifier column below the detection threshold.
+    """
+    delimiter = max(",;\t|", key=header_line.count)
+
+    class _Dialect(csv.excel):
+        pass
+
+    _Dialect.delimiter = delimiter
+    return _Dialect
+
+
 def _read(path: Path) -> tuple[list[str], list[dict[str, str]]]:
+    csv.field_size_limit(max(csv.field_size_limit(), 1 << 28))
     text = Path(path).read_bytes().decode("utf-8-sig", errors="replace")
-    sample = text[:4096]
-    try:
-        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
-    except csv.Error:
-        dialect = csv.excel
-    reader = csv.DictReader(io.StringIO(text), dialect=dialect)
+    reader = csv.DictReader(io.StringIO(text), dialect=_dialect(text.split("\n", 1)[0]))
     return list(reader.fieldnames or []), [dict(r) for r in reader]
 
 
@@ -149,7 +161,7 @@ def load_table(
         if not m:
             continue
         nts = normalize_nts(m.group(1), m.group(2))
-        version = (row.get(version_column) or "").strip() or None if version_column else None
+        version = normalize_version(row.get(version_column)) if version_column else None
         country = (row.get(country_column) or "").strip() or None if country_column else None
         title = (row.get(title_column) or "").strip() or None if title_column else None
         key = (nts, version, country, title)
@@ -169,6 +181,14 @@ def _vkey(v: str | None) -> tuple:
     return (0, 0) if v is None else (1, int(v)) if v.isdigit() else (1, -1)
 
 
+def normalize_version(v: str | None) -> str | None:
+    """``"1.0"`` (ALURES export) and ``"1"`` (article citation) are the same version."""
+    v = (v or "").strip()
+    if not v:
+        return None
+    return str(int(float(v))) if re.fullmatch(r"\d+(?:\.0+)?", v) else v
+
+
 def join_exact(
     mention_norm: str,
     version_cited: str | None,
@@ -182,6 +202,7 @@ def join_exact(
             "records": [],
             "reasons": ["no ALURES dataset in this run"],
         }
+    version_cited = normalize_version(version_cited)
     records = index.get(mention_norm, [])
     if not records:
         cc, digits = mention_norm.split("-")[1], mention_norm.split("-")[2]
@@ -265,7 +286,9 @@ def planned_animals(
         out.append(
             {
                 "species": (row.get(species_col) or "").strip() or "not reported",
-                "authorized_number": int(raw) if re.fullmatch(r"\d+", raw) else "not reported",
+                "authorized_number": (
+                    int(float(raw)) if re.fullmatch(r"\d+(?:\.0+)?", raw) else "not reported"
+                ),
                 "raw_value": raw or None,
                 "count_category": "NTS_planned_or_authorized",
                 "meaning": "maximum authorized for the whole project, not animals used",

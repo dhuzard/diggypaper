@@ -12,28 +12,98 @@
   ],
   "license": {
     "license_id": "CC-BY-4.0",
-    "url": "https://creativecommons.org/licenses/by/4.0/",
-    "statement": "© 2019 Amraoui et al",
-    "basis": "PMC license metadata returned by the PubMed connector get_copyright_status (source=pmc, is_open_access=true) on 2026-10-18",
+    "url": "http://creativecommons.org/licenses/by/4.0/",
+    "statement": null,
+    "basis": "licence URL read from the PMC JATS <license> element",
     "evidence_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6392334/"
   },
   "retrieval": {
-    "method": "pubmed-connector get_full_text_article",
-    "retrieved_at": "2026-10-18T08:59:00Z",
-    "completeness": "excerpt",
-    "fidelity": "Paragraphs transcribed verbatim by the executing agent from the connector's plain-text rendering (italic taxon names dropped). Not a byte-identical PMC copy. Each section is one contiguous span.",
+    "method": "pmc-efetch-jats",
+    "retrieved_at": "2026-10-19T13:07:20Z",
+    "completeness": "methods+results paragraphs",
+    "fidelity": "text of <p> elements of methods/results sections; tags removed, whitespace collapsed",
     "public_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6392334/"
   },
   "sections": [
     {
-      "title": "Ethic statements",
+      "title": "Ethic statements (paragraph 1)",
       "kind": "methods",
       "text": "Animals were housed in the Institut Pasteur animal facilities accredited by the French Ministry of Agriculture for performing experiments on live rodents. Work on animals was performed in compliance with French and European regulations on care and protection of laboratory animals (EC Directive 2010/63, French Law 2013–118, February 6th, 2013). All experiments were approved by the Ethics Committee #89 and registered under the reference APAFIS#6573-201606l412077987 v2."
     },
     {
-      "title": "Mosquito collections (sentence)",
+      "title": "Mosquito collections (paragraph 1)",
       "kind": "methods",
-      "text": "Females were fed twice a week on anaesthetized mice (OF1 mice, Charles River laboratories, France)."
+      "text": "During the national surveillance plan implemented in 2016 to establish the geographical distribution of Ae. albopictus in Morocco, five ovitraps less than 500 m apart were placed on a street of the Agdal neighborhood in Rabat (33°59'20.9′′ N, 6°51′07.9′′W). Ovitraps were checked for eggs once a week from May to November 2016 and were brought back to the laboratory to be stored in humid chambers (relative humidity of 80%) before being sent to Institut Pasteur in Paris to perform the vector competence studies."
+    },
+    {
+      "title": "Mosquito collections (paragraph 2)",
+      "kind": "methods",
+      "text": "After hatching, larvae were split into pans of 200 individuals and supplied every 2 days with a yeast tablet dissolved in 1L of dechlorinated tap water. All immature stages were reared at 26±1°C. Emerging adults were maintained at 28±1°C with a 16L:8D cycle, 80% relative humidity and supplied with a 10% sucrose solution. Females were fed twice a week on anaesthetized mice (OF1 mice, Charles River laboratories, France). Resulting F2 adults were used for vector competence assays. It should be noted that variations of oral susceptibility to an arbovirus can be considered negligible in fewer than five laboratory generations [30]."
+    },
+    {
+      "title": "Viral strains (paragraph 1)",
+      "kind": "methods",
+      "text": "CHIKV strain (06.21) was isolated from a patient on La Reunion Island in 2005 [31]. After isolation on Ae. albopictus C6/36 cells, this strain was passaged twice on C6/36 cells and the viral stocks produced were stored at -80°C prior to their use for mosquito oral infections. DENV-2 strain provided by Prof. Leon Rosen, was isolated from a human serum collected in Bangkok (Thailand) in 1974 [32] and had been passed only in different mosquito species (2 times in Ae. albopictus, 2 times in Toxorhynchites amboinensis, and one time in Ae. aegypti) by intrathoracic inoculation. Viral stocks were obtained by inoculating C6/36 cells. ZIKV strain (NC-2014-5132) originally isolated from a patient in April 2014 in New Caledonia was passaged five times on Vero cells; this strain belongs to the same genotype than the ZIKV strains circulating in Brazil in 2015 [33]. Lastly, a YFV strain (S79) belonging to the West African lineage, was isolated from a human case in Senegal in 1979 [34]. YFV-S79 was passaged twice on newborn mice and two times on C6/36 cells."
+    },
+    {
+      "title": "Mosquito experimental infections (paragraph 1)",
+      "kind": "methods",
+      "text": "Six to eight batches of 60 7–10 day old females were exposed to an infectious blood meal containing 1.4 mL of washed rabbit erythrocytes and 700 μL of viral suspension. The blood meal was supplemented with ATP as a phagostimulant at a final concentration of 1 mM and provided to mosquitoes at a titer of 107.2 plaque-forming unit (pfu)/mL for ZIKV, 106.5 focus-forming unit (ffu)/mL for YFV and 107 ffu/mL for CHIKV and DENV, using a Hemotek membrane feeding system. Mosquitoes were allowed to feed for 15 min through a piece of pork intestine covering the base of a Hemotek feeder maintained at 37°C. Fully engorged females were transferred in cardboard containers and maintained with 10% sucrose under controlled conditions (28±1°C, relative humidity of 80%, light:dark cycle of 16 h:8 h) for up to 21 days with mosquito analysis at 3, 7, 14 and 21 days post-infection (dpi). For each virus, 21–30 mosquitoes were examined at each dpi."
+    },
+    {
+      "title": "Infection and dissemination assays (paragraph 1)",
+      "kind": "methods",
+      "text": "For each mosquito examined, body (abdomen and thorax) and head were tested respectively for infection and dissemination rates at 3, 7, 14 and 21 dpi. For this, each part was ground in 250 μL of Leibovitz L15 medium (Invitrogen, CA, USA) supplemented with 3% FBS, and centrifuged at 10,000×g for 5 min at +4°C. The supernatant was processed for viral titration."
+    },
+    {
+      "title": "Transmission assays (paragraph 1)",
+      "kind": "methods",
+      "text": "Mosquitoes examined previously were also tested for viral transmission by collecting saliva using the forced salivation technique [35]. Mosquitoes were anesthetized on ice and legs and wings were removed. The proboscis was then inserted into a pipette tip containing 5 μL of fetal bovine serum (FBS). After 30 min, the tip content was transferred in 45 μL of L15 medium. Saliva was then titrated to estimate the transmission rate."
+    },
+    {
+      "title": "Viral titration (paragraph 1)",
+      "kind": "methods",
+      "text": "CHIKV, DENV and YFV were titrated by focus fluorescent assay and ZIKV by plaque forming assay as ZIKV cannot produce distinct viral foci on mosquito cells."
+    },
+    {
+      "title": "Focus forming assay on C6/36 cells (paragraph 1)",
+      "kind": "methods",
+      "text": "For mosquitoes challenged with CHIKV, DENV or YFV, saliva, head and body homogenates were titrated by focus fluorescent assay on Ae. albopictus C6/36 cells [36]. Samples were serially diluted and inoculated onto C6/36 cells in 96-well plates. After an incubation of 3 days for CHIKV, and 5 days for YFV and DENV-2 at 28°C, cells were stained using hyper-immune ascetic fluid specific to each virus as the primary antibody (CHIKV: provided by the French National Reference Center for Arbovirus at the Institut Pasteur, YFV: OG5 NB100-64510; Novusbio, CO, USA, and DENV: Ms X Dengue complex MAB 8705, Millipore, MA, USA) and Alexa Fluor 488 goat anti-mouse IgG (Life Technologies, CA, USA) as the secondary antibody. Saliva titers were expressed as ffu/saliva."
+    },
+    {
+      "title": "Plaque forming assay on Vero cells (paragraph 1)",
+      "kind": "methods",
+      "text": "For ZIKV, body and head suspensions were serially diluted and inoculated onto monolayers of Vero cells in 96-well plates. Cells were incubated for 7 days at 37°C then stained with a solution of crystal violet (0.2% in 10% formaldehyde and 20% ethanol). Presence of viral particles was assessed by CPE detection. Saliva was titrated on monolayers of Vero cells in 6-well plates incubated 7 days under an agarose overlay. Saliva titers were expressed as pfu/saliva."
+    },
+    {
+      "title": "Statistical analysis (paragraph 1)",
+      "kind": "methods",
+      "text": "Means, standard deviations, 95% confidence interval were calculated and statistical analyses were performed using the Stata software (StataCorp LP, Texas, and USA). The effect of virus and dpi on infection, dissemination and transmission rates was evaluated using Fisher’s exact test. The titer of viral particles in mosquito saliva was compared across groups using a Kruskall-Wallis non parametric test. P-values<0.05 were considered statistically significant. Heatmaps were built under R (v 3.3.1) (https://www.R-project.org)."
+    },
+    {
+      "title": "Viral infection (paragraph 1)",
+      "kind": "results",
+      "text": "Mosquito females were exposed to four separate infectious blood meals containing CHIKV, DENV, ZIKV or YFV. The first step after the ingestion of the infectious blood meal is the infection of the midgut which is appraised by calculating the infection rate (IR) corresponding to the proportion of mosquitoes with an infected midgut. At 3 dpi, Ae. albopictus Morocco were more infected with CHIKV (Fig 1; Fisher’s exact test: p<10−4, df = 3) with an IR reaching 93% (N = 30) whereas with the 3 other viruses, IRs were lower than 20% (N = 30). At 7 dpi, the IR with CHIKV reached 100% (N = 30) and remained significantly lower with DENV (60%; N = 30), ZIKV (60%; N = 30) and YFV (26.7; N = 30) (Fisher’s exact test: p<10−4, df = 3). At 14 dpi, mosquitoes become more infected with DENV reaching 90% (N = 30) close to CHIKV (86.7%, N = 30) (Fisher’s exact test: p = 0.69, df = 3) but significantly higher than with ZIKV (66.7%, N = 30), and YFV (20%, N = 30) (Fisher’s exact test: p<10−4, df = 30). At 21 dpi, the same pattern was observed: IRs were higher with CHIKV (90%, N = 30) and DENV (100%, N = 21) than with ZIKV (69.6%, N = 23) and YFV (53.3%, N = 30) (Fisher’s exact test: p<10−4, df = 3). IRs with all viruses increased along with dpi except with CHIKV which remained high (>86%) very early from 3 dpi. The lowest IRs were obtained with YFV fluctuating from 6.7% at 3 dpi to 53.3% at 21 dpi."
+    },
+    {
+      "title": "Viral dissemination (paragraph 1)",
+      "kind": "results",
+      "text": "Once the midgut is infected, viral particles can disseminate from the midgut to internal organs and tissues. The dissemination rate (DR) gives the number of mosquitoes with infected heads among mosquitoes with infected midgut. At 3 dpi, only CHIKV was detected in mosquito heads (Fig 2; 28.6%, N = 28). At 7 dpi, DR with CHIKV reached 53.3% (N = 30) and only 5.5% (N = 18) with DENV (Fisher’s exact test: p<10−4, df = 3). At 14 dpi, DRs with CHIKV (65.4%, N = 26) and DENV (59.2%, N = 27) were higher and similar (Fisher’s exact test: p = 0.65, df = 1) compared to YFV (33.3%, N = 6) and ZIKV (25%, N = 20) which were both lower and comparable (Fisher’s exact test: p = 0.69, df = 1). At 21 dpi, DRs for each virus were significantly different (Fisher’s exact test: p<10−4, df = 3) and slightly higher than the DRs at 14 dpi. Viral dissemination started earlier with CHIKV at 3 dpi while it was only at 7 dpi with DENV and 14 dpi with YFV and ZIKV. The lowest DRs were obtained with ZIKV maintained at 25% at 14 and 21 dpi."
+    },
+    {
+      "title": "Viral transmission (paragraph 1)",
+      "kind": "results",
+      "text": "After the virus has spread into the general cavity of the mosquito and infected the salivary glands, the virus must be excreted in saliva for subsequent transmission. The transmission rate (TR) is defined as the proportion of mosquitoes delivering infectious saliva among mosquitoes having disseminated the virus (Fig 3A). At 3 and 7 dpi, viral particles could be detected in saliva of mosquitoes infected with CHIKV, with TRs of 37.5% (N = 8) and 68.7% (N = 16) respectively. At 14 dpi, TR with YFV (50%, N = 2) predominated over TRs with CHIKV (35.3%, N = 17) and DENV (11.1%, N = 18), TR with ZIKV remaining at 0%; no significant difference was observed among all TRs (Fisher’s exact test: p = 0.14, df = 3). At 21 dpi, transmission with ZIKV became detectable with a TR of 50% (N = 4), not significantly different from TRs with DENV (26.3%, N = 19), CHIKV (17.4%, N = 23), and YFV (10%, N = 10) (Fisher’s exact test: p = 0.36, df = 3). Transmission started early at 3 dpi with CHIKV, at 14 dpi with DENV and YFV, and at 21 dpi with ZIKV with respectively, a mean of 2.06±0.60 Log10 ffu/saliva (N = 3), 0.87±0.38 Log10 ffu/saliva (N = 2), 1.53 Log10 ffu/saliva (N = 1), and 2.71±0.01 Log10 pfu/saliva (N = 2) (Fig 3B). No significant difference was detected between all viruses at 14 dpi (Kruskal-Wallis test: p = 0.47, df = 2) and 21 dpi (Kruskal-Wallis test: p = 0.10, df = 3). The highest number of viral particles was detected in saliva of mosquitoes infected with YFV and examined at 21 dpi: TR of 50% (2 among 4 mosquitoes with viral dissemination), 2 females delivering 2.70 Log10 pfu (500) and 2.72 Log10 pfu (530) infectious particles."
+    },
+    {
+      "title": "Transmission efficiency (paragraph 1)",
+      "kind": "results",
+      "text": "Whereas IR, DR and TR measure the efficiency of the midgut and salivary glands barriers to modulate, respectively, viral dissemination and transmission, the transmission efficiency (TE) gives an overview of transmission potential of mosquitoes tested; it corresponds to the proportion of mosquitoes with infectious saliva among all mosquitoes examined (presenting or not a viral dissemination with infected heads). Fig 4 shows that, the highest TE was detected at 7 dpi with CHIKV, at 21 dpi with DENV, at 14/21 dpi with YFV, and at 21 dpi with ZIKV. Collectively, Ae. albopictus Morocco were more susceptible to CHIKV and secondarily, to DENV, ZIKV and YFV."
+    },
+    {
+      "title": "Vector competence (paragraph 1)",
+      "kind": "results",
+      "text": "To summarize the vector competence corresponding to the overall ability of a mosquito population to be infected, to ensure the viral dissemination and to transmit the virus, heatmaps were built (Fig 5). Ae. albopictus Morocco were better infected with CHIKV from 3 dpi than with DENV and ZIKV (Fig 5A). Mosquitoes ensured an early dissemination (Fig 5B) and transmission (Fig 5C) with CHIKV (from 3 dpi) than with DENV and ZIKV. The species was less susceptible to YFV. Altogether, vector competence of Ae. albopictus Morocco depends on the virus and the dpi: it is more susceptible to CHIKV and susceptibility increases along with the dpi."
     }
   ]
 }

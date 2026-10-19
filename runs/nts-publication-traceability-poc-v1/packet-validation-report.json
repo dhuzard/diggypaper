@@ -32,7 +32,7 @@
         },
         "withheld_quote_passages": []
       },
-      "packet_digest": "sha256:9e97100feae5a44fc58ae1923d095a8289b864a6b2a122bb4d98f7851c0021ab",
+      "packet_digest": "sha256:4950f1c12fbe5484ed09ba7c8703d9f407ece91a79d7fd8fa89984523a95691c",
       "valid": true,
       "warnings": []
     },
@@ -68,7 +68,7 @@
         },
         "withheld_quote_passages": []
       },
-      "packet_digest": "sha256:9e97100feae5a44fc58ae1923d095a8289b864a6b2a122bb4d98f7851c0021ab",
+      "packet_digest": "sha256:4950f1c12fbe5484ed09ba7c8703d9f407ece91a79d7fd8fa89984523a95691c",
       "valid": true,
       "warnings": []
     }
@@ -136,6 +136,34 @@
             "revision": 1
           },
           {
+            "finding_id": "finding:232d05c6-aa36-59ad-b0fb-a0a4e962f678",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [
+              "private-rights",
+              "withheld-quote"
+            ],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:3706c577-ee87-5523-80fe-5358a2413d2e",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [
+              "private-rights",
+              "withheld-quote"
+            ],
+            "revision": 1
+          },
+          {
             "finding_id": "finding:4f07c051-d5a3-5d0a-a490-85613c44cd73",
             "incompatible_reasons": [
               "proposed",
@@ -169,7 +197,7 @@
             "revision": 1
           },
           {
-            "finding_id": "finding:72406249-b574-5305-89fc-cec724ffd049",
+            "finding_id": "finding:72d62d11-d224-59a6-8dc7-aad714341ca1",
             "incompatible_reasons": [
               "proposed",
               "unreviewed",
@@ -205,20 +233,6 @@
             "revision": 1
           },
           {
-            "finding_id": "finding:92527a16-6b09-5af0-abf7-7770303d3786",
-            "incompatible_reasons": [
-              "proposed",
-              "unreviewed",
-              "verification-below-threshold"
-            ],
-            "outcome": "incompatible",
-            "restricted_reasons": [
-              "private-rights",
-              "withheld-quote"
-            ],
-            "revision": 1
-          },
-          {
             "finding_id": "finding:b05e62cb-8864-50b5-a79b-311d2e7a3000",
             "incompatible_reasons": [
               "proposed",
@@ -227,20 +241,6 @@
             ],
             "outcome": "incompatible",
             "restricted_reasons": [],
-            "revision": 1
-          },
-          {
-            "finding_id": "finding:b96a935f-c976-540b-9758-a248695a76a8",
-            "incompatible_reasons": [
-              "proposed",
-              "unreviewed",
-              "verification-below-threshold"
-            ],
-            "outcome": "incompatible",
-            "restricted_reasons": [
-              "private-rights",
-              "withheld-quote"
-            ],
             "revision": 1
           },
           {
@@ -262,12 +262,12 @@
           "restricted": 0
         },
         "withheld_quote_passages": [
-          "passage:583d3c74-0f58-5d07-ab47-8d46ffb69dd5",
-          "passage:8eef2abe-17e9-534e-a089-d15ce24b6bbb",
-          "passage:e05245f2-3acd-58c3-855a-38d5c39b2a43"
+          "passage:5c79b5cd-1c36-508c-b318-3be7785dac6d",
+          "passage:636f5c02-bfb4-5e26-bbf5-63faaa88c942",
+          "passage:9dae9d5e-5ddf-5d27-b5f6-e111fbcfdbbd"
         ]
       },
-      "packet_digest": "sha256:c51f114f67c60b28a7c72fd48d0fb34c313c03d57ad9790e00f5d6e4dfd68009",
+      "packet_digest": "sha256:63f79f15e3c434df21474b41c9d0496996c4eed8abc5440f53b688326393e933",
       "valid": true,
       "warnings": []
     },
@@ -333,6 +333,34 @@
             "revision": 1
           },
           {
+            "finding_id": "finding:232d05c6-aa36-59ad-b0fb-a0a4e962f678",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [
+              "private-rights",
+              "withheld-quote"
+            ],
+            "revision": 1
+          },
+          {
+            "finding_id": "finding:3706c577-ee87-5523-80fe-5358a2413d2e",
+            "incompatible_reasons": [
+              "proposed",
+              "unreviewed",
+              "verification-below-threshold"
+            ],
+            "outcome": "incompatible",
+            "restricted_reasons": [
+              "private-rights",
+              "withheld-quote"
+            ],
+            "revision": 1
+          },
+          {
             "finding_id": "finding:4f07c051-d5a3-5d0a-a490-85613c44cd73",
             "incompatible_reasons": [
               "proposed",
@@ -366,7 +394,7 @@
             "revision": 1
           },
           {
-            "finding_id": "finding:72406249-b574-5305-89fc-cec724ffd049",
+            "finding_id": "finding:72d62d11-d224-59a6-8dc7-aad714341ca1",
             "incompatible_reasons": [
               "proposed",
               "unreviewed",
@@ -402,20 +430,6 @@
             "revision": 1
           },
           {
-            "finding_id": "finding:92527a16-6b09-5af0-abf7-7770303d3786",
-            "incompatible_reasons": [
-              "proposed",
-              "unreviewed",
-              "verification-below-threshold"
-            ],
-            "outcome": "incompatible",
-            "restricted_reasons": [
-              "private-rights",
-              "withheld-quote"
-            ],
-            "revision": 1
-          },
-          {
             "finding_id": "finding:b05e62cb-8864-50b5-a79b-311d2e7a3000",
             "incompatible_reasons": [
               "proposed",
@@ -424,20 +438,6 @@
             ],
             "outcome": "incompatible",
             "restricted_reasons": [],
-            "revision": 1
-          },
-          {
-            "finding_id": "finding:b96a935f-c976-540b-9758-a248695a76a8",
-            "incompatible_reasons": [
-              "proposed",
-              "unreviewed",
-              "verification-below-threshold"
-            ],
-            "outcome": "incompatible",
-            "restricted_reasons": [
-              "private-rights",
-              "withheld-quote"
-            ],
             "revision": 1
           },
           {
@@ -459,12 +459,12 @@
           "restricted": 0
         },
         "withheld_quote_passages": [
-          "passage:583d3c74-0f58-5d07-ab47-8d46ffb69dd5",
-          "passage:8eef2abe-17e9-534e-a089-d15ce24b6bbb",
-          "passage:e05245f2-3acd-58c3-855a-38d5c39b2a43"
+          "passage:5c79b5cd-1c36-508c-b318-3be7785dac6d",
+          "passage:636f5c02-bfb4-5e26-bbf5-63faaa88c942",
+          "passage:9dae9d5e-5ddf-5d27-b5f6-e111fbcfdbbd"
         ]
       },
-      "packet_digest": "sha256:c51f114f67c60b28a7c72fd48d0fb34c313c03d57ad9790e00f5d6e4dfd68009",
+      "packet_digest": "sha256:63f79f15e3c434df21474b41c9d0496996c4eed8abc5440f53b688326393e933",
       "valid": true,
       "warnings": []
     }

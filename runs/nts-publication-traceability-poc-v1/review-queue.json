@@ -2,7 +2,7 @@
   {
     "case_id": "A-ES-mouse",
     "doi": "10.1016/j.isci.2024.111518",
-    "finding_id": "92527a16-6b09-5af0-abf7-7770303d3786",
+    "finding_id": "232d05c6-aa36-59ad-b0fb-a0a4e962f678",
     "kind": "national-authorization",
     "pmcid": "PMC11731260",
     "proposed_judgment": {
@@ -14,7 +14,7 @@
     "quote_sha256": "4390c7b95d08bc3502139a714af114dad42bd1622df25c6e16edc80a03515dd1",
     "receipt_status": "exact",
     "review_state": "HUMAN_REVIEW_PENDING",
-    "snapshot_sha256": "e1e53f2fbc43bd30c545170901720a8160990a618c0b3549b3cb1a279814f3dc",
+    "snapshot_sha256": "57e9bfd24346490fe1ba75df9275a961c8c31d1ec877c5306a13bb10c9614c94",
     "suggested_extraction": {
       "context": {
         "comparator": "unknown",
@@ -44,13 +44,13 @@
       "source text is a contiguous excerpt transcribed from a connector rendering, not a byte-identical publisher copy",
       "national/institutional numbers are not NTS identifiers; no crosswalk is assumed"
     ],
-    "view_end": 411,
-    "view_start": 116
+    "view_end": 4371,
+    "view_start": 4076
   },
   {
     "case_id": "A-ES-mouse",
     "doi": "10.1016/j.isci.2024.111518",
-    "finding_id": "b96a935f-c976-540b-9758-a248695a76a8",
+    "finding_id": "72d62d11-d224-59a6-8dc7-aad714341ca1",
     "kind": "nts-identifier",
     "pmcid": "PMC11731260",
     "proposed_judgment": {
@@ -62,7 +62,7 @@
     "quote_sha256": "00bea6a2d5be9f0cf5bb29cd19b52bce9bc24ba4f026edd548dc409724054318",
     "receipt_status": "exact",
     "review_state": "HUMAN_REVIEW_PENDING",
-    "snapshot_sha256": "e1e53f2fbc43bd30c545170901720a8160990a618c0b3549b3cb1a279814f3dc",
+    "snapshot_sha256": "57e9bfd24346490fe1ba75df9275a961c8c31d1ec877c5306a13bb10c9614c94",
     "suggested_extraction": {
       "context": {
         "comparator": "unknown",
@@ -100,16 +100,16 @@
     "uncertainties": [
       "quotation redistribution is not established for this article: the quote is withheld from public outputs (hash only)",
       "source text is a contiguous excerpt transcribed from a connector rendering, not a byte-identical publisher copy",
-      "identifier is as reported by the article; ALURES join state: alures-unavailable",
+      "identifier is as reported by the article; ALURES join state: unmatched",
       "the NTS covers only part of the article's animal work: Pax6os1 null mice"
     ],
-    "view_end": 653,
-    "view_start": 412
+    "view_end": 4613,
+    "view_start": 4372
   },
   {
     "case_id": "A-ES-mouse",
     "doi": "10.1016/j.isci.2024.111518",
-    "finding_id": "72406249-b574-5305-89fc-cec724ffd049",
+    "finding_id": "3706c577-ee87-5523-80fe-5358a2413d2e",
     "kind": "national-authorization",
     "pmcid": "PMC11731260",
     "proposed_judgment": {
@@ -121,7 +121,7 @@
     "quote_sha256": "00bea6a2d5be9f0cf5bb29cd19b52bce9bc24ba4f026edd548dc409724054318",
     "receipt_status": "exact",
     "review_state": "HUMAN_REVIEW_PENDING",
-    "snapshot_sha256": "e1e53f2fbc43bd30c545170901720a8160990a618c0b3549b3cb1a279814f3dc",
+    "snapshot_sha256": "57e9bfd24346490fe1ba75df9275a961c8c31d1ec877c5306a13bb10c9614c94",
     "suggested_extraction": {
       "context": {
         "comparator": "unknown",
@@ -151,8 +151,8 @@
       "source text is a contiguous excerpt transcribed from a connector rendering, not a byte-identical publisher copy",
       "national/institutional numbers are not NTS identifiers; no crosswalk is assumed"
     ],
-    "view_end": 653,
-    "view_start": 412
+    "view_end": 4613,
+    "view_start": 4372
   },
   {
     "case_id": "B-RO-rat",
@@ -299,7 +299,7 @@
     },
     "uncertainties": [
       "source text is a contiguous excerpt transcribed from a connector rendering, not a byte-identical publisher copy",
-      "identifier is as reported by the article; ALURES join state: alures-unavailable"
+      "identifier is as reported by the article; ALURES join state: confirmed-exact"
     ],
     "view_end": 1258,
     "view_start": 1187
@@ -755,7 +755,7 @@
     "quote_sha256": "cf9f2a7b68cd679a034f31acfdf3552e4e3ae5e6f275732cbf5c1574092012db",
     "receipt_status": "exact",
     "review_state": "HUMAN_REVIEW_PENDING",
-    "snapshot_sha256": "859a387800e369c9d720cfbd779f9e4e92d9178200fd0df9bdea6261d7100906",
+    "snapshot_sha256": "61d05b68dadaa8e31b5aa20ba4638e1b7496a4e42d3b01ec2ab169bb7dc1d80d",
     "suggested_extraction": {
       "context": {
         "comparator": "unknown",
@@ -784,7 +784,7 @@
       "source text is a contiguous excerpt transcribed from a connector rendering, not a byte-identical publisher copy",
       "national/institutional numbers are not NTS identifiers; no crosswalk is assumed"
     ],
-    "view_end": 488,
-    "view_start": 363
+    "view_end": 502,
+    "view_start": 377
   }
 ]

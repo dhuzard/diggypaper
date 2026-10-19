@@ -170,7 +170,9 @@ def test_same_manifest_content_with_different_bytes_is_a_different_packet(tmp_pa
     manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
     # Indent 4 is also canonical, so this is a valid packet with identical JSON content.
     (out / "manifest.json").write_text(
-        json.dumps(manifest, indent=4, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8"
+        json.dumps(manifest, indent=4, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
     )
     original = sep.validate_packet(CANONICAL, "for-import")
     rewritten = sep.validate_packet(out, "for-import")
@@ -185,7 +187,7 @@ def test_artifact_tampering_removes_the_digest(tmp_path):
     first = json.loads(lines[0])
     first["producer_ids"]["evidence_ref"] += "-tampered"  # canonical, but not the recorded bytes
     lines[0] = _canonical_line(first)
-    passages.write_text("\n".join(lines), encoding="utf-8")
+    passages.write_text("\n".join(lines), encoding="utf-8", newline="\n")
     result = sep.validate_packet(out, "for-import")
     assert result["valid"] is False
     assert "artifact-hash-mismatch" in {e["code"] for e in result["errors"]}

@@ -58,12 +58,16 @@ def run_crt(checkout: Path | None, packet_dir: Path, label: str) -> dict[str, An
             checkout,
         )
         report = Path(tmp) / "out" / "import-report.json"
-        out["import_report"] = json.loads(report.read_text()) if report.exists() else None
+        out["import_report"] = (
+            json.loads(report.read_text(encoding="utf-8")) if report.exists() else None
+        )
         lineage = Path(tmp) / "out" / "source-evidence-lineage.json"
         out["lineage_written"] = lineage.exists()
         cluster = Path(tmp) / "out" / "cluster_evidence.json"
         out["phase2_findings_written"] = (
-            len(json.loads(cluster.read_text()).get("findings", [])) if cluster.exists() else 0
+            len(json.loads(cluster.read_text(encoding="utf-8")).get("findings", []))
+            if cluster.exists()
+            else 0
         )
     imp = out["import"]["exit_code"]
     out["state"] = (

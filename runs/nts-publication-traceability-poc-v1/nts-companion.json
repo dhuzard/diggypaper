@@ -1,5 +1,13 @@
 {
-  "alures_dataset": null,
+  "alures_dataset": {
+    "bytes": 438133100,
+    "file_name": "alures_nts_projects.csv",
+    "http_status": 200,
+    "retrieved_at": "2026-10-19T12:59:29Z",
+    "rows": 60519,
+    "sha256": "ce6f9c25d6bf3c127f7261870b7200417e3ec98b6ba8cb1f37b50f0a3ddbf2ae",
+    "source_url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_projects.csv"
+  },
   "comparisons": [
     {
       "article_reported_total": "not reported",
@@ -14,12 +22,12 @@
       "comparability": "not-comparable",
       "doi": "10.1016/j.isci.2024.111518",
       "flags": [],
-      "link_state": "not-verified:ARTICLE_CONFIRMED_ALURES_UNAVAILABLE",
+      "link_state": "not-verified:ARTICLE_CONFIRMED_ID_ABSENT_IN_ALURES",
       "nts_id": "NTS-ES-414463",
       "planned": "not reported (ALURES record not confirmed in this run)",
       "ratio_computed": false,
       "reasons": [
-        "no confirmed ALURES record for this article (link state: not-verified:ARTICLE_CONFIRMED_ALURES_UNAVAILABLE)"
+        "no confirmed ALURES record for this article (link state: not-verified:ARTICLE_CONFIRMED_ID_ABSENT_IN_ALURES)"
       ],
       "reported_experimental_animals": "not reported",
       "unique_animal_matching_established": false
@@ -39,13 +47,32 @@
       },
       "comparability": "not-comparable",
       "doi": "10.3390/ph19060846",
-      "flags": [],
-      "link_state": "not-verified:ARTICLE_CONFIRMED_ALURES_UNAVAILABLE",
+      "flags": [
+        "article species 'rat' has no matching species row in the NTS"
+      ],
+      "link_state": "confirmed-exact",
       "nts_id": "NTS-RO-406074",
-      "planned": "not reported (ALURES record not confirmed in this run)",
+      "planned": [
+        {
+          "authorized_number": 145,
+          "count_category": "NTS_planned_or_authorized",
+          "dataset_cell": {
+            "columns": [
+              "total_number_of_animals"
+            ],
+            "file": "alures_nts_projects.csv",
+            "row": 51586
+          },
+          "meaning": "maximum authorized for the whole project, not animals used",
+          "raw_value": "145.0",
+          "species": "not reported"
+        }
+      ],
       "ratio_computed": false,
       "reasons": [
-        "no confirmed ALURES record for this article (link state: not-verified:ARTICLE_CONFIRMED_ALURES_UNAVAILABLE)"
+        "planned figure is a project-wide authorization ceiling, not animals used",
+        "no unique-animal cohort matching is established between article and NTS",
+        "article cohorts carry overlap flags"
       ],
       "reported_experimental_animals": {
         "cohorts": [
@@ -74,7 +101,7 @@
       "observation_id": "37153d0b-8aeb-5b78-8886-788e3a858373",
       "rule_id": "none-found",
       "sex": "not reported",
-      "snapshot_sha256": "e1e53f2fbc43bd30c545170901720a8160990a618c0b3549b3cb1a279814f3dc",
+      "snapshot_sha256": "57e9bfd24346490fe1ba75df9275a961c8c31d1ec877c5306a13bb10c9614c94",
       "source_kind": "article",
       "species": "not reported",
       "strain": "not reported",
@@ -88,12 +115,12 @@
       "derived": false,
       "doi": "10.1016/j.isci.2024.111518",
       "method_section": "ALURES",
-      "notes": "ALURES record not confirmed in this run: ARTICLE_CONFIRMED_ALURES_UNAVAILABLE",
+      "notes": "ALURES record not confirmed in this run: ARTICLE_CONFIRMED_ID_ABSENT_IN_ALURES",
       "number": "not reported",
       "observation_id": "271ceda3-58dd-5576-9ca4-c657b0618355",
       "rule_id": "alures-not-available",
       "sex": "not reported",
-      "snapshot_sha256": "e1e53f2fbc43bd30c545170901720a8160990a618c0b3549b3cb1a279814f3dc",
+      "snapshot_sha256": "57e9bfd24346490fe1ba75df9275a961c8c31d1ec877c5306a13bb10c9614c94",
       "source_kind": "alures",
       "species": "not reported",
       "strain": "not reported",
@@ -112,7 +139,7 @@
       "observation_id": "eb047d44-3b9e-5943-b75c-f28bcb864db3",
       "rule_id": "rar-not-available",
       "sex": "not reported",
-      "snapshot_sha256": "e1e53f2fbc43bd30c545170901720a8160990a618c0b3549b3cb1a279814f3dc",
+      "snapshot_sha256": "57e9bfd24346490fe1ba75df9275a961c8c31d1ec877c5306a13bb10c9614c94",
       "source_kind": "rar",
       "species": "not reported",
       "strain": "not reported",
@@ -827,19 +854,26 @@
       "cohort_label": "NTS-RO-406074",
       "count_category": "NTS_planned_or_authorized",
       "count_scope": "project-authorization-ceiling",
+      "dataset_cell": {
+        "columns": [
+          "total_number_of_animals"
+        ],
+        "file": "alures_nts_projects.csv",
+        "row": 51586
+      },
       "derived": false,
       "doi": "10.3390/ph19060846",
       "method_section": "ALURES",
-      "notes": "ALURES record not confirmed in this run: ARTICLE_CONFIRMED_ALURES_UNAVAILABLE",
-      "number": "not reported",
-      "observation_id": "c1d4c107-ab54-5bfe-805b-f6d66937747b",
-      "rule_id": "alures-not-available",
+      "notes": "maximum authorized for the whole project, not animals used",
+      "number": 145,
+      "observation_id": "03d9b293-8ba9-537e-8bc4-354f8500a77c",
+      "rule_id": "alures-planned-table",
       "sex": "not reported",
       "snapshot_sha256": "26de5eaf7daea5dd0504e385d6b743ef771481f01d693838e54302913262e7e1",
       "source_kind": "alures",
       "species": "not reported",
       "strain": "not reported",
-      "unit_counted": "not reported"
+      "unit_counted": "animals (as written in the table)"
     },
     {
       "case_id": "B-RO-rat",
@@ -873,7 +907,7 @@
       "observation_id": "91157564-08ad-56c5-a397-d63b72d69039",
       "rule_id": "none-found",
       "sex": "not reported",
-      "snapshot_sha256": "859a387800e369c9d720cfbd779f9e4e92d9178200fd0df9bdea6261d7100906",
+      "snapshot_sha256": "61d05b68dadaa8e31b5aa20ba4638e1b7496a4e42d3b01ec2ab169bb7dc1d80d",
       "source_kind": "article",
       "species": "not reported",
       "strain": "not reported",
@@ -900,7 +934,7 @@
       "status": "counted"
     }
   ],
-  "gate0_verdict": "BLOCKED_NO_VERIFIED_PAIR",
+  "gate0_verdict": "PASS_AT_LEAST_ONE_VERIFIED_PAIR",
   "links": [
     {
       "adjudication_state": "not a join; human adjudication not applicable",
@@ -921,35 +955,43 @@
       "doi": "10.1016/j.isci.2024.111518",
       "excluded_from_this_nts": [],
       "expected_id": null,
-      "finding_id": "92527a16-6b09-5af0-abf7-7770303d3786",
+      "finding_id": "232d05c6-aa36-59ad-b0fb-a0a4e962f678",
       "identifier_normalized": "PA03F7F07",
       "identifier_system": "national-authorization:uk-ppl",
       "identifier_verbatim": "Project License PPL PA03F7F07",
       "link_id": "e2491dae-b8ce-5047-b6b0-62321b47f3b3",
       "link_state": "NO_NTS_CROSSWALK",
-      "passage_id": "passage:e05245f2-3acd-58c3-855a-38d5c39b2a43",
+      "passage_id": "passage:9dae9d5e-5ddf-5d27-b5f6-e111fbcfdbbd",
       "pmcid": "PMC11731260",
       "quote_sha256": "4390c7b95d08bc3502139a714af114dad42bd1622df25c6e16edc80a03515dd1",
-      "receipt_ref": "2665f3fb-1a89-5273-8dc7-32e6ddde50cc",
+      "receipt_ref": "430b02a4-066e-581f-982f-5f41e8224a42",
       "receipt_status": "exact",
       "role": "positive-seed (article-confirmed identifier, not yet ALURES-confirmed)",
       "scope_note": "The Spanish NTS is attached by the article to the db/db mouse procedures (antisense oligonucleotide treatment). Pax6os1 null mouse experiments were authorized in the UK under a Project Licence and must not be attributed to this NTS. The sentence 'All experiments were performed in male and female adult mice' spans both and is not split.",
       "shared_with_other_articles_in_run": [],
-      "snapshot_sha256": "e1e53f2fbc43bd30c545170901720a8160990a618c0b3549b3cb1a279814f3dc",
+      "snapshot_sha256": "57e9bfd24346490fe1ba75df9275a961c8c31d1ec877c5306a13bb10c9614c94",
       "version_cited": null,
-      "view_end": 411,
-      "view_start": 116
+      "view_end": 4371,
+      "view_start": 4076
     },
     {
       "adjudication_state": "automated exact-ID join only; human adjudication pending",
       "alures_candidates": null,
       "alures_current_version": null,
-      "alures_dataset": null,
+      "alures_dataset": {
+        "bytes": 438133100,
+        "file_name": "alures_nts_projects.csv",
+        "http_status": 200,
+        "retrieved_at": "2026-10-19T12:59:29Z",
+        "rows": 60519,
+        "sha256": "ce6f9c25d6bf3c127f7261870b7200417e3ec98b6ba8cb1f37b50f0a3ddbf2ae",
+        "source_url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_projects.csv"
+      },
       "alures_reasons": [
-        "no ALURES dataset in this run"
+        "ID absent from the supplied ALURES tables"
       ],
       "alures_row_numbers": [],
-      "alures_state": "alures-unavailable",
+      "alures_state": "unmatched",
       "alures_versions": null,
       "applies_to": "Db/db mice",
       "article_id_matches_expected": true,
@@ -961,24 +1003,24 @@
         "Pax6os1 null mice"
       ],
       "expected_id": "NTS-ES-414463",
-      "finding_id": "b96a935f-c976-540b-9758-a248695a76a8",
+      "finding_id": "72d62d11-d224-59a6-8dc7-aad714341ca1",
       "identifier_normalized": "NTS-ES-414463",
       "identifier_system": "ALURES-NTS",
       "identifier_verbatim": "nts-es-414463",
       "link_id": "c13fd216-b865-5111-be5e-07a9cfc17589",
-      "link_state": "ARTICLE_CONFIRMED_ALURES_UNAVAILABLE",
-      "passage_id": "passage:583d3c74-0f58-5d07-ab47-8d46ffb69dd5",
+      "link_state": "ARTICLE_CONFIRMED_ID_ABSENT_IN_ALURES",
+      "passage_id": "passage:636f5c02-bfb4-5e26-bbf5-63faaa88c942",
       "pmcid": "PMC11731260",
       "quote_sha256": "00bea6a2d5be9f0cf5bb29cd19b52bce9bc24ba4f026edd548dc409724054318",
-      "receipt_ref": "1d75db20-4080-5f6f-9019-3f1d29fec401",
+      "receipt_ref": "65fbc33f-7a3e-5aa2-a56f-870f01dd6d2e",
       "receipt_status": "exact",
       "role": "positive-seed (article-confirmed identifier, not yet ALURES-confirmed)",
       "scope_note": "The Spanish NTS is attached by the article to the db/db mouse procedures (antisense oligonucleotide treatment). Pax6os1 null mouse experiments were authorized in the UK under a Project Licence and must not be attributed to this NTS. The sentence 'All experiments were performed in male and female adult mice' spans both and is not split.",
       "shared_with_other_articles_in_run": [],
-      "snapshot_sha256": "e1e53f2fbc43bd30c545170901720a8160990a618c0b3549b3cb1a279814f3dc",
+      "snapshot_sha256": "57e9bfd24346490fe1ba75df9275a961c8c31d1ec877c5306a13bb10c9614c94",
       "version_cited": null,
-      "view_end": 653,
-      "view_start": 412
+      "view_end": 4613,
+      "view_start": 4372
     },
     {
       "adjudication_state": "not a join; human adjudication not applicable",
@@ -999,24 +1041,24 @@
       "doi": "10.1016/j.isci.2024.111518",
       "excluded_from_this_nts": [],
       "expected_id": null,
-      "finding_id": "72406249-b574-5305-89fc-cec724ffd049",
+      "finding_id": "3706c577-ee87-5523-80fe-5358a2413d2e",
       "identifier_normalized": "3/11/2021/171/A",
       "identifier_system": "national-authorization:es-regional",
       "identifier_verbatim": "3/11/2021/171/A",
       "link_id": "c938e74e-9562-59ff-b364-cd9f82eb435c",
       "link_state": "NO_NTS_CROSSWALK",
-      "passage_id": "passage:8eef2abe-17e9-534e-a089-d15ce24b6bbb",
+      "passage_id": "passage:5c79b5cd-1c36-508c-b318-3be7785dac6d",
       "pmcid": "PMC11731260",
       "quote_sha256": "00bea6a2d5be9f0cf5bb29cd19b52bce9bc24ba4f026edd548dc409724054318",
-      "receipt_ref": "1d75db20-4080-5f6f-9019-3f1d29fec401",
+      "receipt_ref": "65fbc33f-7a3e-5aa2-a56f-870f01dd6d2e",
       "receipt_status": "exact",
       "role": "positive-seed (article-confirmed identifier, not yet ALURES-confirmed)",
       "scope_note": "The Spanish NTS is attached by the article to the db/db mouse procedures (antisense oligonucleotide treatment). Pax6os1 null mouse experiments were authorized in the UK under a Project Licence and must not be attributed to this NTS. The sentence 'All experiments were performed in male and female adult mice' spans both and is not split.",
       "shared_with_other_articles_in_run": [],
-      "snapshot_sha256": "e1e53f2fbc43bd30c545170901720a8160990a618c0b3549b3cb1a279814f3dc",
+      "snapshot_sha256": "57e9bfd24346490fe1ba75df9275a961c8c31d1ec877c5306a13bb10c9614c94",
       "version_cited": null,
-      "view_end": 653,
-      "view_start": 412
+      "view_end": 4613,
+      "view_start": 4372
     },
     {
       "adjudication_state": "not a join; human adjudication not applicable",
@@ -1135,14 +1177,26 @@
     {
       "adjudication_state": "automated exact-ID join only; human adjudication pending",
       "alures_candidates": null,
-      "alures_current_version": null,
-      "alures_dataset": null,
-      "alures_reasons": [
-        "no ALURES dataset in this run"
+      "alures_current_version": "1",
+      "alures_dataset": {
+        "bytes": 438133100,
+        "file_name": "alures_nts_projects.csv",
+        "http_status": 200,
+        "retrieved_at": "2026-10-19T12:59:29Z",
+        "rows": 60519,
+        "sha256": "ce6f9c25d6bf3c127f7261870b7200417e3ec98b6ba8cb1f37b50f0a3ddbf2ae",
+        "source_url": "https://publicstorage.data.env.service.ec.europa.eu/alures/export/nts/alures_nts_projects.csv"
+      },
+      "alures_reasons": [],
+      "alures_row_numbers": [
+        [
+          51586
+        ]
       ],
-      "alures_row_numbers": [],
-      "alures_state": "alures-unavailable",
-      "alures_versions": null,
+      "alures_state": "confirmed-exact",
+      "alures_versions": [
+        "1"
+      ],
       "applies_to": "unknown",
       "article_id_matches_expected": true,
       "case_id": "B-RO-rat",
@@ -1156,7 +1210,7 @@
       "identifier_system": "ALURES-NTS",
       "identifier_verbatim": "NTS-RO-406074",
       "link_id": "2962d423-25db-5ced-9f6e-1fd306d490f8",
-      "link_state": "ARTICLE_CONFIRMED_ALURES_UNAVAILABLE",
+      "link_state": "VERIFIED_PAIR",
       "passage_id": "passage:9fbe1d26-3f61-5ebe-8891-fbde7eeff753",
       "pmcid": "PMC13304911",
       "quote_sha256": "842a5bad407acb49042e1ea8bfc611f30e6f29ea4388d7c7eff2adcfb78646eb",
@@ -1198,15 +1252,15 @@
       "passage_id": "passage:391522e0-a64e-567f-82fb-2ffaa80e0e41",
       "pmcid": "PMC6392334",
       "quote_sha256": "cf9f2a7b68cd679a034f31acfdf3552e4e3ae5e6f275732cbf5c1574092012db",
-      "receipt_ref": "6577eae3-9f4c-58c2-90f3-1e4531ce3777",
+      "receipt_ref": "b92dcaa6-43f5-5311-b8d6-5bd165ef058c",
       "receipt_status": "exact",
       "role": "negative-control (national authorization number, no NTS identifier)",
       "scope_note": "French APAFIS reference only. Mice are blood-meal hosts for mosquitoes (the experimental unit of the paper is the mosquito). No NTS crosswalk is assumed.",
       "shared_with_other_articles_in_run": [],
-      "snapshot_sha256": "859a387800e369c9d720cfbd779f9e4e92d9178200fd0df9bdea6261d7100906",
+      "snapshot_sha256": "61d05b68dadaa8e31b5aa20ba4638e1b7496a4e42d3b01ec2ab169bb7dc1d80d",
       "version_cited": null,
-      "view_end": 488,
-      "view_start": 363
+      "view_end": 502,
+      "view_start": 377
     },
     {
       "adjudication_state": "unmatched; nothing to adjudicate",
@@ -1241,7 +1295,7 @@
       "role": "negative-control (national authorization number, no NTS identifier)",
       "scope_note": "French APAFIS reference only. Mice are blood-meal hosts for mosquitoes (the experimental unit of the paper is the mosquito). No NTS crosswalk is assumed.",
       "shared_with_other_articles_in_run": [],
-      "snapshot_sha256": "859a387800e369c9d720cfbd779f9e4e92d9178200fd0df9bdea6261d7100906",
+      "snapshot_sha256": "61d05b68dadaa8e31b5aa20ba4638e1b7496a4e42d3b01ec2ab169bb7dc1d80d",
       "version_cited": null,
       "view_end": null,
       "view_start": null
@@ -1253,11 +1307,11 @@
   ],
   "packets": {
     "exploratory": {
-      "packet_digest": "sha256:c51f114f67c60b28a7c72fd48d0fb34c313c03d57ad9790e00f5d6e4dfd68009",
+      "packet_digest": "sha256:63f79f15e3c434df21474b41c9d0496996c4eed8abc5440f53b688326393e933",
       "path": "source-evidence-packet-exploratory"
     },
     "production": {
-      "packet_digest": "sha256:9e97100feae5a44fc58ae1923d095a8289b864a6b2a122bb4d98f7851c0021ab",
+      "packet_digest": "sha256:4950f1c12fbe5484ed09ba7c8703d9f407ece91a79d7fd8fa89984523a95691c",
       "path": "source-evidence-packet"
     }
   },
@@ -1270,24 +1324,24 @@
         "pmid": "39811653"
       },
       "license": {
-        "basis": "PubMed connector get_copyright_status returned license.type=null and is_open_access=false (checked_sources=[pubmed]); the licence was NOT independently verified, so quotation redistribution is not established",
+        "basis": "licence URL read from the PMC JATS <license> element",
         "evidence_url": null,
         "license_id": "unknown",
-        "statement": "© 2024 The Authors.",
+        "statement": null,
         "url": null
       },
       "relations": [],
       "role": "positive-seed (article-confirmed identifier, not yet ALURES-confirmed)",
       "snapshot": {
-        "id": "bf891a33-c6ea-58db-8d00-ba2839e7160f",
-        "sha256": "e1e53f2fbc43bd30c545170901720a8160990a618c0b3549b3cb1a279814f3dc"
+        "id": "22a7dabc-17d8-59a3-bd31-a1125709ccb6",
+        "sha256": "57e9bfd24346490fe1ba75df9275a961c8c31d1ec877c5306a13bb10c9614c94"
       },
       "source_fidelity": {
-        "completeness": "excerpt",
-        "fidelity": "Paragraph transcribed verbatim by the executing agent from the connector's plain-text rendering (italic gene symbols and figure panel callouts are dropped by the connector). Not a byte-identical publisher or PMC copy. Each section is one contiguous span.",
-        "method": "pubmed-connector get_full_text_article",
+        "completeness": "methods+results paragraphs",
+        "fidelity": "text of <p> elements of methods/results sections; tags removed, whitespace collapsed",
+        "method": "pmc-efetch-jats",
         "public_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11731260/",
-        "retrieved_at": "2026-10-18T08:58:00Z"
+        "retrieved_at": "2026-10-19T13:26:08Z"
       }
     },
     {
@@ -1332,24 +1386,24 @@
         "pmid": "30763312"
       },
       "license": {
-        "basis": "PMC license metadata returned by the PubMed connector get_copyright_status (source=pmc, is_open_access=true) on 2026-10-18",
+        "basis": "licence URL read from the PMC JATS <license> element",
         "evidence_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6392334/",
         "license_id": "CC-BY-4.0",
-        "statement": "© 2019 Amraoui et al",
-        "url": "https://creativecommons.org/licenses/by/4.0/"
+        "statement": null,
+        "url": "http://creativecommons.org/licenses/by/4.0/"
       },
       "relations": [],
       "role": "negative-control (national authorization number, no NTS identifier)",
       "snapshot": {
-        "id": "f466c8c0-abbe-55ef-a963-e332c4d12452",
-        "sha256": "859a387800e369c9d720cfbd779f9e4e92d9178200fd0df9bdea6261d7100906"
+        "id": "aae5b906-da93-5101-9f21-fe6ef0741e4f",
+        "sha256": "61d05b68dadaa8e31b5aa20ba4638e1b7496a4e42d3b01ec2ab169bb7dc1d80d"
       },
       "source_fidelity": {
-        "completeness": "excerpt",
-        "fidelity": "Paragraphs transcribed verbatim by the executing agent from the connector's plain-text rendering (italic taxon names dropped). Not a byte-identical PMC copy. Each section is one contiguous span.",
-        "method": "pubmed-connector get_full_text_article",
+        "completeness": "methods+results paragraphs",
+        "fidelity": "text of <p> elements of methods/results sections; tags removed, whitespace collapsed",
+        "method": "pmc-efetch-jats",
         "public_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6392334/",
-        "retrieved_at": "2026-10-18T08:59:00Z"
+        "retrieved_at": "2026-10-19T13:07:20Z"
       }
     }
   ],
@@ -1362,14 +1416,14 @@
       "count_observation_ids": [
         "37153d0b-8aeb-5b78-8886-788e3a858373"
       ],
-      "finding_id": "b96a935f-c976-540b-9758-a248695a76a8",
+      "finding_id": "72d62d11-d224-59a6-8dc7-aad714341ca1",
       "nts_record": {
-        "dataset_sha256": null,
+        "dataset_sha256": "ce6f9c25d6bf3c127f7261870b7200417e3ec98b6ba8cb1f37b50f0a3ddbf2ae",
         "id": "NTS-ES-414463",
         "rows": [],
-        "state": "alures-unavailable"
+        "state": "unmatched"
       },
-      "passage_id": "passage:583d3c74-0f58-5d07-ab47-8d46ffb69dd5",
+      "passage_id": "passage:636f5c02-bfb4-5e26-bbf5-63faaa88c942",
       "quote_sha256": "00bea6a2d5be9f0cf5bb29cd19b52bce9bc24ba4f026edd548dc409724054318"
     },
     {
@@ -1400,10 +1454,14 @@
       ],
       "finding_id": "0be9a8af-d854-5acb-97f0-d4e7a694ced1",
       "nts_record": {
-        "dataset_sha256": null,
+        "dataset_sha256": "ce6f9c25d6bf3c127f7261870b7200417e3ec98b6ba8cb1f37b50f0a3ddbf2ae",
         "id": "NTS-RO-406074",
-        "rows": [],
-        "state": "alures-unavailable"
+        "rows": [
+          [
+            51586
+          ]
+        ],
+        "state": "confirmed-exact"
       },
       "passage_id": "passage:9fbe1d26-3f61-5ebe-8891-fbde7eeff753",
       "quote_sha256": "842a5bad407acb49042e1ea8bfc611f30e6f29ea4388d7c7eff2adcfb78646eb"
