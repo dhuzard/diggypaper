@@ -272,8 +272,8 @@
       "crt_validate_only_exit": 0,
       "digest_rule_agrees": true,
       "diggypaper_validator_valid": true,
-      "packet_digest_crt_manifest_sha256": "sha256:b4e3f04a37ac0f68331cd4e34e1576499c348059020a573c131b2736af35ed12",
-      "packet_digest_diggypaper": "sha256:b4e3f04a37ac0f68331cd4e34e1576499c348059020a573c131b2736af35ed12"
+      "packet_digest_crt_manifest_sha256": "sha256:63f79f15e3c434df21474b41c9d0496996c4eed8abc5440f53b688326393e933",
+      "packet_digest_diggypaper": "sha256:63f79f15e3c434df21474b41c9d0496996c4eed8abc5440f53b688326393e933"
     },
     "production": {
       "crt_counts": {
@@ -301,15 +301,15 @@
       "crt_validate_only_exit": 0,
       "digest_rule_agrees": true,
       "diggypaper_validator_valid": true,
-      "packet_digest_crt_manifest_sha256": "sha256:3f11417d7cffb135a0e22660a68bb02e7b602363b895df7c2d61fff33f3e7377",
-      "packet_digest_diggypaper": "sha256:3f11417d7cffb135a0e22660a68bb02e7b602363b895df7c2d61fff33f3e7377"
+      "packet_digest_crt_manifest_sha256": "sha256:4950f1c12fbe5484ed09ba7c8703d9f407ece91a79d7fd8fa89984523a95691c",
+      "packet_digest_diggypaper": "sha256:4950f1c12fbe5484ed09ba7c8703d9f407ece91a79d7fd8fa89984523a95691c"
     }
   },
   "verdict": {
     "acceptance": "BLOCKED_HUMAN_REVIEW_PENDING",
     "companion_binding": {
-      "exploratory": "sha256:b4e3f04a37ac0f68331cd4e34e1576499c348059020a573c131b2736af35ed12",
-      "production": "sha256:3f11417d7cffb135a0e22660a68bb02e7b602363b895df7c2d61fff33f3e7377"
+      "exploratory": "sha256:63f79f15e3c434df21474b41c9d0496996c4eed8abc5440f53b688326393e933",
+      "production": "sha256:4950f1c12fbe5484ed09ba7c8703d9f407ece91a79d7fd8fa89984523a95691c"
     },
     "digest_rule_consistent_across_repositories": true,
     "schema_or_validator_incompatibility_found": false,

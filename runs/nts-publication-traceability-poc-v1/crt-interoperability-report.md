@@ -22,15 +22,15 @@ All values below were observed by running the real validators/importer; nothing 
 ### production packet
 
 - Diggypaper validator valid: **True**; CRT validate-only exit: **0**; CRT import exit: **0**
-- Packet digest (Diggypaper): `sha256:3f11417d7cffb135a0e22660a68bb02e7b602363b895df7c2d61fff33f3e7377`
-- Manifest digest (CRT): `sha256:3f11417d7cffb135a0e22660a68bb02e7b602363b895df7c2d61fff33f3e7377` - agree: **True**
+- Packet digest (Diggypaper): `sha256:4950f1c12fbe5484ed09ba7c8703d9f407ece91a79d7fd8fa89984523a95691c`
+- Manifest digest (CRT): `sha256:4950f1c12fbe5484ed09ba7c8703d9f407ece91a79d7fd8fa89984523a95691c` - agree: **True**
 - CRT counts: `{'by_reason': {}, 'consumer_classes': {'incompatible': 0, 'restricted': 0}, 'findings': {'accepted': 0, 'incomplete': 0, 'rejected': 0, 'withheld': 0}, 'omitted_by_producer': {'assessments': 0, 'findings': 13, 'papers': 0, 'passages': 0}, 'producer_export_state': 'withheld'}`
 
 ### exploratory packet
 
 - Diggypaper validator valid: **True**; CRT validate-only exit: **0**; CRT import exit: **0**
-- Packet digest (Diggypaper): `sha256:b4e3f04a37ac0f68331cd4e34e1576499c348059020a573c131b2736af35ed12`
-- Manifest digest (CRT): `sha256:b4e3f04a37ac0f68331cd4e34e1576499c348059020a573c131b2736af35ed12` - agree: **True**
+- Packet digest (Diggypaper): `sha256:63f79f15e3c434df21474b41c9d0496996c4eed8abc5440f53b688326393e933`
+- Manifest digest (CRT): `sha256:63f79f15e3c434df21474b41c9d0496996c4eed8abc5440f53b688326393e933` - agree: **True**
 - CRT counts: `{'by_reason': {'rejected:no-supporting-judgment': 13, 'rejected:not-approved-for-export': 13, 'rejected:unreviewed': 13, 'rejected:verification-below-threshold': 13, 'withheld:packet-scope-restricted': 13, 'withheld:paper-rights-not-redistributable': 3}, 'consumer_classes': {'incompatible': 0, 'restricted': 13}, 'findings': {'accepted': 0, 'incomplete': 0, 'rejected': 0, 'withheld': 13}, 'omitted_by_producer': {'assessments': 0, 'findings': 0, 'papers': 0, 'passages': 0}, 'producer_export_state': 'complete'}`
 
 ## Verdict

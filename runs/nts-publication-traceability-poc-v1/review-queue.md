@@ -4,7 +4,7 @@ Status: **HUMAN_REVIEW_PENDING**. Nothing below is a human decision. Proposed ju
 
 ## A-ES-mouse - national-authorization - `232d05c6-aa36-59ad-b0fb-a0a4e962f678`
 
-- Article: 10.1016/j.isci.2024.111518 (PMC11731260); snapshot `61bbedbf46f84fbb`
+- Article: 10.1016/j.isci.2024.111518 (PMC11731260); snapshot `57e9bfd24346490f`
 - Passage: view offsets 4076-4371, match **exact**, quote sha256 `4390c7b95d08bc35`
 - Quote: _withheld (rights not established); open the private source copy_
 - Suggested extraction: `{'context': {'population': 'Pax6os1 null mice', 'exposure': 'unknown', 'comparator': 'unknown', 'outcome': 'unknown', 'time': 'unknown', 'experimental_unit': 'unknown'}, 'numeric_results': [], 'typed': {'authorizations': [{'kind': 'uk-ppl', 'jurisdiction': 'GB', 'verbatim': 'Project License PPL PA03F7F07', 'value': 'PA03F7F07', 'start': 272, 'end': 281}], 'note': 'national/institutional numbers; not NTS identifiers and not equal to one'}}`
@@ -17,7 +17,7 @@ Status: **HUMAN_REVIEW_PENDING**. Nothing below is a human decision. Proposed ju
 
 ## A-ES-mouse - nts-identifier - `72d62d11-d224-59a6-8dc7-aad714341ca1`
 
-- Article: 10.1016/j.isci.2024.111518 (PMC11731260); snapshot `61bbedbf46f84fbb`
+- Article: 10.1016/j.isci.2024.111518 (PMC11731260); snapshot `57e9bfd24346490f`
 - Passage: view offsets 4372-4613, match **exact**, quote sha256 `00bea6a2d5be9f0c`
 - Quote: _withheld (rights not established); open the private source copy_
 - Suggested extraction: `{'context': {'population': 'Db/db mice', 'exposure': 'unknown', 'comparator': 'unknown', 'outcome': 'unknown', 'time': 'unknown', 'experimental_unit': 'unknown'}, 'numeric_results': [], 'typed': {'nts_mentions': [{'verbatim': 'nts-es-414463', 'normalized': 'NTS-ES-414463', 'country': 'ES', 'version_cited': None, 'date_cited': None, 'start': 556, 'end': 569}], 'same_passage_authorizations': [{'kind': 'es-regional', 'jurisdiction': 'ES', 'verbatim': '3/11/2021/171/A', 'value': '3/11/2021/171/A', 'start': 528, 'end': 543}]}}`
@@ -31,7 +31,7 @@ Status: **HUMAN_REVIEW_PENDING**. Nothing below is a human decision. Proposed ju
 
 ## A-ES-mouse - national-authorization - `3706c577-ee87-5523-80fe-5358a2413d2e`
 
-- Article: 10.1016/j.isci.2024.111518 (PMC11731260); snapshot `61bbedbf46f84fbb`
+- Article: 10.1016/j.isci.2024.111518 (PMC11731260); snapshot `57e9bfd24346490f`
 - Passage: view offsets 4372-4613, match **exact**, quote sha256 `00bea6a2d5be9f0c`
 - Quote: _withheld (rights not established); open the private source copy_
 - Suggested extraction: `{'context': {'population': 'Db/db mice', 'exposure': 'unknown', 'comparator': 'unknown', 'outcome': 'unknown', 'time': 'unknown', 'experimental_unit': 'unknown'}, 'numeric_results': [], 'typed': {'authorizations': [{'kind': 'es-regional', 'jurisdiction': 'ES', 'verbatim': '3/11/2021/171/A', 'value': '3/11/2021/171/A', 'start': 528, 'end': 543}], 'note': 'same sentence as an NTS identifier; kept as a separate finding because the two identifier systems are not interchangeable'}}`

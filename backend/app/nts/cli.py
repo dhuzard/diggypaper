@@ -91,7 +91,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     g0: dict[str, Any] | None = None
     if not args.offline:
         g0 = gate0.acquire(alures_dir, config["alures"]["landing_url"])
-        (run_dir / "gate0-acquisition.json").write_text(_dump(g0), encoding="utf-8")
+        (run_dir / "gate0-acquisition.json").write_text(_dump(g0), encoding="utf-8", newline="\n")
     else:
         existing = run_dir / "gate0-acquisition.json"
         g0 = json.loads(existing.read_text(encoding="utf-8")) if existing.exists() else None
@@ -107,11 +107,14 @@ def cmd_run(args: argparse.Namespace) -> int:
     ]
     verdict = gate0_verdict(links)
     (out / "publication-nts-links.json").write_text(
-        _dump(sorted(links, key=lambda lk: (lk["case_id"], lk["link_id"]))), encoding="utf-8"
+        _dump(sorted(links, key=lambda lk: (lk["case_id"], lk["link_id"]))),
+        encoding="utf-8",
+        newline="\n",
     )
     (out / "publication-nts-links.csv").write_text(
         _csv(sorted(links, key=lambda lk: (lk["case_id"], lk["link_id"])), link_fields()),
         encoding="utf-8",
+        newline="\n",
     )
     (out / "animal-count-observations.csv").write_text(
         _csv(
@@ -127,6 +130,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             observation_fields(),
         ),
         encoding="utf-8",
+        newline="\n",
     )
 
     _write_packet(out / "source-evidence-packet", dict(res["production"].files))
@@ -135,7 +139,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         "source-evidence-packet": _validate(out / "source-evidence-packet"),
         "source-evidence-packet-exploratory": _validate(out / "source-evidence-packet-exploratory"),
     }
-    (out / "packet-validation-report.json").write_text(_dump(validation), encoding="utf-8")
+    (out / "packet-validation-report.json").write_text(
+        _dump(validation), encoding="utf-8", newline="\n"
+    )
 
     # --- extraction report -----------------------------------------------------------------
     per_case = {}
@@ -175,11 +181,17 @@ def cmd_run(args: argparse.Namespace) -> int:
             "human_review_state": review.PENDING,
         },
     }
-    (out / "finding-extraction-report.json").write_text(_dump(extraction_report), encoding="utf-8")
-    (out / "review-queue.json").write_text(_dump(res["queue"]), encoding="utf-8")
-    (out / "review-queue.md").write_text(review.render_markdown(res["queue"]), encoding="utf-8")
-    (out / "comparisons.json").write_text(_dump(res["comparisons"]), encoding="utf-8")
-    (out / "case-summary.md").write_text(summary.markdown(summary.rows(res)), encoding="utf-8")
+    (out / "finding-extraction-report.json").write_text(
+        _dump(extraction_report), encoding="utf-8", newline="\n"
+    )
+    (out / "review-queue.json").write_text(_dump(res["queue"]), encoding="utf-8", newline="\n")
+    (out / "review-queue.md").write_text(
+        review.render_markdown(res["queue"]), encoding="utf-8", newline="\n"
+    )
+    (out / "comparisons.json").write_text(_dump(res["comparisons"]), encoding="utf-8", newline="\n")
+    (out / "case-summary.md").write_text(
+        summary.markdown(summary.rows(res)), encoding="utf-8", newline="\n"
+    )
 
     # --- CRT -------------------------------------------------------------------------------
     crt_checkout = Path(args.crt_checkout).resolve() if args.crt_checkout else None
@@ -199,7 +211,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         },
         "validators_weakened": False,
     }
-    (out / "crt-import-report.json").write_text(_dump(crt_report), encoding="utf-8")
+    (out / "crt-import-report.json").write_text(_dump(crt_report), encoding="utf-8", newline="\n")
 
     interop_report = interop.build(
         crt_results,
@@ -209,9 +221,11 @@ def cmd_run(args: argparse.Namespace) -> int:
             "exploratory": _digest(out / "source-evidence-packet-exploratory"),
         },
     )
-    (out / "crt-interoperability-report.json").write_text(_dump(interop_report), encoding="utf-8")
+    (out / "crt-interoperability-report.json").write_text(
+        _dump(interop_report), encoding="utf-8", newline="\n"
+    )
     (out / "crt-interoperability-report.md").write_text(
-        interop.markdown(interop_report), encoding="utf-8"
+        interop.markdown(interop_report), encoding="utf-8", newline="\n"
     )
 
     # --- companion -------------------------------------------------------------------------
@@ -275,7 +289,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             "No ratio of animals published to animals authorized is computed: unique-animal matching is not established.",
         ],
     }
-    (out / "nts-companion.json").write_text(_dump(companion), encoding="utf-8")
+    (out / "nts-companion.json").write_text(_dump(companion), encoding="utf-8", newline="\n")
 
     manifest = {
         "study_id": config["study_id"],
@@ -321,7 +335,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             manifest["outputs_sha256"][str(p.relative_to(out))] = hashlib.sha256(
                 p.read_bytes()
             ).hexdigest()
-    (out / "run-manifest.json").write_text(_dump(manifest), encoding="utf-8")
+    (out / "run-manifest.json").write_text(_dump(manifest), encoding="utf-8", newline="\n")
     print(
         json.dumps(
             {
@@ -358,7 +372,9 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     open_ok = src["license"]["license_id"] in REDISTRIBUTABLE_LICENSES
     dest = run_dir / ("sources" if open_ok else "cache") / f"{pmcid.lower()}.json"
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(json.dumps(src, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    dest.write_text(
+        json.dumps(src, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n"
+    )
     print(
         json.dumps(
             {

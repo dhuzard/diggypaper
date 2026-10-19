@@ -2,8 +2,8 @@
   "command": "C:\\Users\\damie\\Documents\\GitHub\\diggypaper\\backend\\app\\nts\\__main__.py run --run-dir C:/Users/damie/Documents/GitHub/diggypaper/runs/nts-publication-traceability-poc-v1 --crt-checkout C:/Users/damie/AppData/Local/Temp/claude/c--Users-damie-Documents-GitHub-diggypaper/a506bd6b-9b0e-4e8c-9a36-478316f99694/scratchpad/crt --offline",
   "contract": "source-evidence-packet/0.1.0",
   "crt_commit": null,
-  "diggypaper_commit": "a34d18f752377b2a6df01555d1963b2a43c0dca9",
-  "executed_at": "2026-10-19T13:10:05Z",
+  "diggypaper_commit": "0cfe1ad7b1070fc4d7a951a8fbc9fa4e2a9265cc",
+  "executed_at": "2026-10-19T13:26:08Z",
   "gate0": {
     "acquisition": {
       "attempts": [
@@ -202,42 +202,42 @@
     "alures\\alures_nts_retrospective_assessment_reasons.csv": "cd56cfe21b61e1dda2527e1780c54bca204dfadf0857242d19a5e488e12a115a",
     "alures\\alures_ra_retrospective_assessment_reasons.csv": "6c3725279aaffc6dccd6daf2c80f33c434ef39ee019c5e90c0724032e39d3bc5",
     "alures\\alures_ra_retrospective_assessments.csv": "9682ca8d99287e278fb12b60a70216987c45bbe2e620e3a23cbe6082eedcd384",
-    "animal-count-observations.csv": "cb1ad02d1cd207ece6162a9c7393525a2d94cbfe026e9dea0992ed405acc4d42",
-    "cache\\pmc11731260.json": "985c313e4e2956030809a7a23cdf716fb7215033ef694b460f747da5125ad1f4",
-    "case-summary.md": "2a3cabcba59257c455b79d23585231d365c47dc42dbff1923685a03fd46e4f49",
-    "comparisons.json": "d79dbfb9928cad45352a8c7f033cee2a7bae0ad24baeb78b1a63bdd7e80455e2",
-    "crt-import-report.json": "5cef46cd901e105a781238a81415b6a25bb0d11cf1b5fea9279c2c10b845c143",
-    "crt-interoperability-report.json": "814dcefe955c5404683ca1e115a7b6319f7a37476f38c6ccd41873448e80d100",
-    "crt-interoperability-report.md": "5a8361ccb1f6c8fd817c79f1b1c04dfbcdc49cbbc8e4b6958ab0f53160cc2c9a",
-    "discovery-log.md": "3157261655c4e4b36edb49c4a95f2b6319284a9b291c7f23a402914e55bfd239",
-    "finding-extraction-report.json": "6791a17cd3a2e47bb8abbf822d5770ad0e28e1c4c8cf1c8962d549a1e03be407",
-    "gate0-acquisition.json": "7e20280eb4077961ad62bf91fb467de84496204757ea854de3c8758b84dc7da4",
-    "logs\\backend-baseline-before-nts.log": "cff8b7c16d1e8c03484ffdc0d7488c4d88817cbfa3f068108d6090911262db04",
-    "logs\\backend-full-after-nts.log": "47738c101f77b57b489649cc9bdf091cba2af841da7fb1f65d68c2058fe6f3f2",
-    "logs\\crt-baseline-source-evidence-import-test.log": "42bd0826df02698715af171045ced340942d6fb6ec52b04b476e467188aa2f3f",
-    "logs\\postgres-0029-0030.log": "3fe221494a11ee9f42630788093e4cd5caf23205aa90f397c0dcd46d96766af0",
-    "logs\\reproduce-run.log": "e7a50e5a8d7398f2065911a470f77a656d5c68b9fd6d28dd789a1f8417d0aba5",
-    "nts-companion.json": "575b65472a9c11dcd074ca65446929fe19214d045fd085988577278887922a7b",
-    "packet-validation-report.json": "d931f13f605c6ffbdf9e5460033ddb402a1db055b41eb02673dbaa94ba645abd",
-    "publication-nts-links.csv": "c2350e02e633ed783b308dcb5388f238335bd4a341e388a68a88845b235ef118",
-    "publication-nts-links.json": "3b783344d0a3e4071fd68dcaf3b0275a6e900beb8ddc60020d4837c54b4f7524",
+    "animal-count-observations.csv": "af1b640fa9840abc360b1b4d4e781d47aa453a65ab90a331d7bdaa946aed1f41",
+    "cache\\pmc11731260.json": "08e451f2fceda6a65455d0ec201838defd1d573625da226b648cf82ca5cb1b01",
+    "case-summary.md": "888d8cbce6ef2556f1addd77845091df4180fc70292e1405fd7e007e89ff1adf",
+    "comparisons.json": "d6f63e0c514de5fdead8b2097c7a65924cfd75a318af2b547f56c58556e0fe27",
+    "crt-import-report.json": "e175496075560128b609ea572a4dc5b3717149c0b6f70fac14804296d5d6bb07",
+    "crt-interoperability-report.json": "92cbd8d57cdffffdb16ad5c29f57ba43ca54335e10c1884cc72e95150589fdc9",
+    "crt-interoperability-report.md": "9478c12d74115273320cedaffcfce1db183a029997770b084b810a2f02bef903",
+    "discovery-log.md": "81dcd535a1f695aef6ce7c7ee8ce0fa6b90d55e2a70b52f055478ec6a9dde873",
+    "finding-extraction-report.json": "f53e12e88133e076af5b08dc974c026253fd964f175808f004d58bf69b6c4f89",
+    "gate0-acquisition.json": "04a5731d9404ecdaa16d80ec68d8d772aef23ab0c6ef9a2a8d5f6791d77651c1",
+    "logs\\backend-baseline-before-nts.log": "6981622390bf042334b7b1eb11dc272ffe7e2d182e8cacc32494e2f69149e2de",
+    "logs\\backend-full-after-nts.log": "db0c208ec224c3bbd61eefdf1d4d3059aff5abd6e0edf03c63c81c09410d40a3",
+    "logs\\crt-baseline-source-evidence-import-test.log": "3859ef01a9d841dcbea339b9bd9db93af084761b7745cde9a60c6d7a7322fde1",
+    "logs\\postgres-0029-0030.log": "c5784ccffb8c17eb9988d6475c5e315f05a7246be022b932b568749a10373ce5",
+    "logs\\reproduce-run.log": "e91c47d0a9d71d782ff32e34c7e7d239a0c0c563a8a9de4612fe3ffedee75e1b",
+    "nts-companion.json": "ad5ec3838d5226f53766431b55e55e2111572a5203123a35a10afcea7bd8286b",
+    "packet-validation-report.json": "afa0f0193fe6ba2cb6a4e0d70423d37f504e928a613509cab1470d480f101657",
+    "publication-nts-links.csv": "f67faef39395239305c7154444044149d5f89c94bf265483798dee0254376ad0",
+    "publication-nts-links.json": "abef5160df42e747b7ff671677bb10307deac8e63f2f56fb19c87eaa3ab5996b",
     "reproduce.sh": "7579d7e128ec613be8120b06d2fa16538c4128615f2345d01c48d62672ab5e11",
-    "research-report.md": "2aacbf8b7a2b27aa6b64056af43350db98ddf5195905f2cdbae44db6269cbab6",
-    "review-queue.json": "0533db4ebdd1c016c9e6f53f96e327da005bb33ebbd224562aa1b710efd860da",
-    "review-queue.md": "5b9e9b523bc6b6683145535c267df80e94bcd5c80f6e43a9b9ed1f522e31fa13",
+    "research-report.md": "4cfc2f52d636f3aa809ac746aa3abdaa42ce5654752c0061ae060200ed1551e7",
+    "review-queue.json": "5003ab27b014dd62d415d47157e994b44ef789506c10b91daf8a1faa3c296ca1",
+    "review-queue.md": "b0d583e556c3d85babb3ad9e1824f37aa546d8aed24974253a32aec751c2bfa7",
     "source-evidence-packet-exploratory\\assessments.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "source-evidence-packet-exploratory\\findings.jsonl": "f8307c8b3bf541f823cc22a18c75dca3ff6277023e547a3a9984a64f6585fa64",
-    "source-evidence-packet-exploratory\\manifest.json": "b4e3f04a37ac0f68331cd4e34e1576499c348059020a573c131b2736af35ed12",
-    "source-evidence-packet-exploratory\\papers.jsonl": "ec1e7148db8306121ec488a6f55a5eb8c612bf76112d44a8b4927e6eaa6abedb",
+    "source-evidence-packet-exploratory\\findings.jsonl": "e504a59f29063c8495e98eea0af864a1ec16f3d67b4a7de96f6cb1583c395a56",
+    "source-evidence-packet-exploratory\\manifest.json": "63f79f15e3c434df21474b41c9d0496996c4eed8abc5440f53b688326393e933",
+    "source-evidence-packet-exploratory\\papers.jsonl": "724c4709fe022a127649d90bada7e5557e6bfeb3d52158285b923f9df7862650",
     "source-evidence-packet-exploratory\\passages.jsonl": "eeaa87295a1daca32142a6259d4e559d380ab3f3744c2463da6039dfd3478ec9",
     "source-evidence-packet\\assessments.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "source-evidence-packet\\findings.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "source-evidence-packet\\manifest.json": "3f11417d7cffb135a0e22660a68bb02e7b602363b895df7c2d61fff33f3e7377",
+    "source-evidence-packet\\manifest.json": "4950f1c12fbe5484ed09ba7c8703d9f407ece91a79d7fd8fa89984523a95691c",
     "source-evidence-packet\\papers.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "source-evidence-packet\\passages.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "sources\\pmc13304911.json": "cc7e53496afa6ff3f3bd62ada357c1c80dd8025ed035b5a76616d31960b5874c",
-    "sources\\pmc6392334.json": "001a9cadb0e21f4e0ff61fc9adf523824eca730b55c9bbaa5fc0ad4f54fbc2f2",
-    "study-config.json": "60c8db712b5e8c6203e03b588f6d1f174ec79f36f901fa23644e89a7690641fe"
+    "sources\\pmc13304911.json": "417fe47536f8dea05578f02e88b974e5bf0a64298819afee47e91f0a3ff4a4d9",
+    "sources\\pmc6392334.json": "a4a16c437f412a926ce2c710d920b0977d132ab0cd6b80033ff0bf8b3ce3255d",
+    "study-config.json": "53d65c51c95f3cf7164580db57ab2848b15d401c8660d7926b32a0039413d817"
   },
   "parameters": {
     "crt_checkout": "C:\\Users\\damie\\AppData\\Local\\Temp\\claude\\c--Users-damie-Documents-GitHub-diggypaper\\a506bd6b-9b0e-4e8c-9a36-478316f99694\\scratchpad\\crt",
@@ -266,10 +266,10 @@
         "fidelity": "text of <p> elements of methods/results sections; tags removed, whitespace collapsed",
         "method": "pmc-efetch-jats",
         "public_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11731260/",
-        "retrieved_at": "2026-10-19T13:08:41Z"
+        "retrieved_at": "2026-10-19T13:26:08Z"
       },
-      "snapshot_sha256": "61bbedbf46f84fbb5b25250d9bdbbfccd6416d790f28048576bf492d5464fcbb",
-      "source_sha256": "985c313e4e2956030809a7a23cdf716fb7215033ef694b460f747da5125ad1f4"
+      "snapshot_sha256": "57e9bfd24346490fe1ba75df9275a961c8c31d1ec877c5306a13bb10c9614c94",
+      "source_sha256": "08e451f2fceda6a65455d0ec201838defd1d573625da226b648cf82ca5cb1b01"
     },
     {
       "case_id": "B-RO-rat",
@@ -289,7 +289,7 @@
         "retrieved_at": "2026-10-18T08:58:00Z"
       },
       "snapshot_sha256": "26de5eaf7daea5dd0504e385d6b743ef771481f01d693838e54302913262e7e1",
-      "source_sha256": "cc7e53496afa6ff3f3bd62ada357c1c80dd8025ed035b5a76616d31960b5874c"
+      "source_sha256": "417fe47536f8dea05578f02e88b974e5bf0a64298819afee47e91f0a3ff4a4d9"
     },
     {
       "case_id": "C-FR-negative-control",
@@ -309,7 +309,7 @@
         "retrieved_at": "2026-10-19T13:07:20Z"
       },
       "snapshot_sha256": "61d05b68dadaa8e31b5aa20ba4638e1b7496a4e42d3b01ec2ab169bb7dc1d80d",
-      "source_sha256": "001a9cadb0e21f4e0ff61fc9adf523824eca730b55c9bbaa5fc0ad4f54fbc2f2"
+      "source_sha256": "a4a16c437f412a926ce2c710d920b0977d132ab0cd6b80033ff0bf8b3ce3255d"
     }
   ],
   "study_id": "nts-publication-traceability-poc-v1"
