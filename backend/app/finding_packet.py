@@ -30,6 +30,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from pydantic import ValidationError
+
+from app.finding_schema import FindingContent
 from app.rights import ACCESS_LEVELS, PACKET_METADATA_LICENSES, quotes_redistributable
 
 SCHEMA_VERSION = "source-evidence-packet/0.1.0"
@@ -52,6 +55,7 @@ NA = "not-available"
 ARTIFACTS = ("papers", "findings", "passages", "assessments")
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
+_MATCH_KEYS = {"ref", "status", "view_ref", "start", "end"}
 
 
 @dataclass(frozen=True)
@@ -88,6 +92,11 @@ def _text(value: Any) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 
+def _exact_text(value: Any) -> bool:
+    """A non-blank string that needs no trimming to be written as supplied."""
+    return isinstance(value, str) and bool(value) and value == value.strip()
+
+
 def _source_type(pub_types: list[str]) -> str:
     lowered = [t.lower() for t in pub_types]
     if any("preprint" in t for t in lowered):
@@ -113,9 +122,8 @@ def _passage_state(ev: dict[str, Any], snapshot_id: str | None) -> dict[str, Any
         return None
     if ev.get("snapshot_id") != snapshot_id:
         return None
-    match = ev.get("match") or None
-    status = match.get("status") if match else None
-    if match is None or status not in MATCH_STATUSES:
+    match = ev.get("match")
+    if match is None:  # genuinely absent: nothing was supplied, nothing is erased
         return {
             "status": "not_checked",
             "receipt_ref": NA,
@@ -124,24 +132,28 @@ def _passage_state(ev: dict[str, Any], snapshot_id: str | None) -> dict[str, Any
             "end": None,
             "matcher": "unknown",
         }
-    start, end = match.get("start"), match.get("end")
-    view = _text(match.get("view_ref"))
-    if status in GOOD_MATCH:
-        ok = (
-            view is not None
-            and isinstance(start, int)
-            and isinstance(end, int)
-            and not isinstance(start, bool)
-            and 0 <= start < end
-        )
-        if not ok:
+    # Anything supplied must be expressed as supplied, or the chain is withheld.
+    if not isinstance(match, dict) or not set(match) <= _MATCH_KEYS:
+        return None
+    status = match.get("status")
+    if not isinstance(status, str) or status not in MATCH_STATUSES:
+        return None
+    receipt, view = match.get("ref"), match.get("view_ref")
+    for value in (receipt, view):
+        if value is not None and not _exact_text(value):
             return None
-    else:
-        start = end = None
+    start, end = match.get("start"), match.get("end")
+    if start is not None or end is not None or status in GOOD_MATCH:
+        if not all(isinstance(v, int) and not isinstance(v, bool) for v in (start, end)):
+            return None
+        if not 0 <= start < end:
+            return None
+    if status in GOOD_MATCH and view is None:
+        return None
     return {
         "status": status,
-        "receipt_ref": _text(match.get("ref")) or NA,
-        "view_id": view or NA,
+        "receipt_ref": NA if receipt is None else receipt,
+        "view_id": NA if view is None else view,
         "start": start,
         "end": end,
         "matcher": "quote-matcher-v1",
@@ -253,18 +265,38 @@ def _review_problem(review: dict[str, Any], f: dict[str, Any], refs: set[str]) -
 
 
 def _content_problem(f: dict[str, Any]) -> bool:
+    """True unless the whole content is valid as supplied and is written back unchanged."""
     content = f.get("content")
-    if not isinstance(content, dict) or not _text(content.get("statement")):
+    if not isinstance(content, dict):
         return True
-    if content.get("origin") not in ORIGINS or not isinstance(content.get("context"), dict):
+    try:
+        model = FindingContent.model_validate_json(
+            json.dumps(content, allow_nan=False), strict=True
+        )
+    except (ValidationError, TypeError, ValueError):
         return True
-    if not isinstance(content.get("numeric_results", []), list):
+    if model.model_dump(mode="json") != content:  # defaulted, trimmed or coerced: not as supplied
         return True
     try:
         _ts(f["created_at"])
     except (KeyError, TypeError, ValueError, AttributeError):
         return True
     return False
+
+
+def _bindings(evidence: list[dict[str, Any]]) -> dict[str, str] | None:
+    """The one answer/prediction a revision's evidence came from, as the frozen scalar fields
+    can carry it; ``None`` when the revision binds several or malformed originals."""
+    out: dict[str, str] = {}
+    for key, field_name in (("answer_ref", "answer_ref"), ("prediction_ref", "prediction_id")):
+        values = {e.get(field_name) for e in evidence}
+        if values == {None}:
+            continue
+        only = next(iter(values))
+        if len(values) != 1 or not _exact_text(only):
+            return None
+        out[key] = only
+    return out
 
 
 def _passage_record(
@@ -358,10 +390,13 @@ def _evaluate_chain(
             )
         if any(_review_problem(v, r, set(passages)) for v in r.get("reviews", [])):
             return "unrepresentable-history", {}
+        bindings = _bindings(evidence_list)
+        if bindings is None:
+            return "unrepresentable-history", {}
         states = _own_state(r, passages)
         if r is latest and states[0] != "approved-for-export":
             return "not-approved", {}
-        out_revs.append({"f": r, "passages": passages, "states": states})
+        out_revs.append({"f": r, "passages": passages, "states": states, "bindings": bindings})
     return None, {
         "revs": out_revs,
         "snap_id": snap_id,
@@ -485,15 +520,11 @@ def build_packet(data: dict[str, Any]) -> PacketResult:
         for item in chain["revs"]:
             f, passages = item["f"], item["passages"]
             export_state, review_state, level = item["states"]
-            evidence = {e["evidence_ref"]: e for e in f["evidence"]}
             content = f["content"]
-            producer_ids: dict[str, Any] = {"evidence_refs": sorted(passages)}
-            answers = {evidence[r]["answer_ref"] for r in passages}
-            predictions = {evidence[r]["prediction_id"] for r in passages}
-            if len(answers) == 1:
-                producer_ids["answer_ref"] = next(iter(answers))
-            if len(predictions) == 1:
-                producer_ids["prediction_ref"] = str(next(iter(predictions)))
+            producer_ids: dict[str, Any] = {
+                "evidence_refs": sorted(passages),
+                **item["bindings"],
+            }
             created = _ts(f["created_at"])
             stamps.append(created)
             finding_id = "finding:" + f["finding_id"]
@@ -508,7 +539,7 @@ def build_packet(data: dict[str, Any]) -> PacketResult:
                     "review_state": review_state,
                     "verification_level": level,
                     "context": content["context"],
-                    "numeric_results": content.get("numeric_results", []),
+                    "numeric_results": content["numeric_results"],
                     "passage_ids": ["passage:" + r for r in sorted(passages)],
                     "producer_ids": producer_ids,
                     "created_at": created,

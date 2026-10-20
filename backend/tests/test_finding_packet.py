@@ -711,3 +711,181 @@ def test_history_export_leaks_no_free_text_notes_or_raw_actor_ids(tmp_path):
     blob = b"".join(result.files.values()).decode()
     assert "PRIVATE-NOTE" not in blob and "alice@example.org" not in blob
     assert RV1 not in blob and PROPOSER not in blob
+
+
+# --- repair: bindings, strict content, supplied match state ---------------------------------
+
+
+def _withheld(findings, tmp_path, reason="unrepresentable-history", n=2):
+    result = _build(findings, tmp_path)
+    assert result.report["omitted_by_reason"] == {reason: n}
+    assert result.report["exported"] == 0
+    return result
+
+
+def _two_evidence(fid, n, **second):
+    refs = (f"ev-{fid}-{n}", f"ev-{fid}-{n}b")
+    ev = [
+        _ev(refs[0], quote=f"quote {n}", start=10 * n, end=10 * n + 5),
+        {**_ev(refs[1], quote=f"quote {n}b", start=100 + n, end=105 + n), **second},
+    ]
+    return ev
+
+
+def test_revision_with_several_answers_withholds_whole_chain(tmp_path):
+    chain = _chain("f-m", "approve", "approve")
+    chain[0]["evidence"] = _two_evidence("f-m", 1, answer_ref="ans-2")
+    chain[0]["reviews"] = [_review("rv-m", RV1, ref="ev-f-m-1")]
+    _withheld(chain, tmp_path)
+
+
+def test_revision_with_several_predictions_withholds_whole_chain(tmp_path):
+    chain = _chain("f-m", "approve", "approve")
+    chain[1]["evidence"] = _two_evidence("f-m", 2, prediction_id="pred-2")
+    chain[1]["reviews"] = [_review("rv-m2", RV1, ref="ev-f-m-2")]
+    _withheld(chain, tmp_path)
+
+
+def test_partially_bound_revision_withholds_whole_chain(tmp_path):
+    chain = _chain("f-m", "approve", "approve")
+    chain[0]["evidence"] = _two_evidence("f-m", 1, answer_ref=None)
+    chain[0]["reviews"] = [_review("rv-m", RV1, ref="ev-f-m-1")]
+    _withheld(chain, tmp_path)
+
+
+def test_distinct_bindings_across_revisions_are_representable(tmp_path):
+    chain = _chain("f-d", "approve", "approve")
+    chain[1]["evidence"][0].update(answer_ref="ans-2", prediction_id="pred-2")
+    result = _build(chain, tmp_path)
+    ids = [f["producer_ids"] for f in _recs(result, "findings.jsonl")]
+    assert [(i["answer_ref"], i["prediction_ref"]) for i in ids] == [
+        ("ans-1", "pred-1"),
+        ("ans-2", "pred-2"),
+    ]
+
+
+def test_several_evidence_one_binding_exports_that_binding(tmp_path):
+    chain = _chain("f-s", "approve")
+    chain[0]["evidence"] = _two_evidence("f-s", 1)
+    result = _build(chain, tmp_path)
+    ids = _recs(result, "findings.jsonl")[0]["producer_ids"]
+    assert (ids["answer_ref"], ids["prediction_ref"]) == ("ans-1", "pred-1")
+
+
+def _mutated(mutate):
+    chain = _chain("f-c", "approve", "approve")
+    mutate(chain[0]["content"])
+    return chain
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda c: c["context"].pop("population"),
+        lambda c: c["context"].update(extra="x"),
+        lambda c: c.update(extra="x"),
+        lambda c: c["numeric_results"][0].update(effect_size=1),
+        lambda c: c["numeric_results"][0]["n"].update(extra=1),
+        lambda c: c["numeric_results"][0].update(value="1.5"),
+        lambda c: c["numeric_results"][0].update(value=True),
+        lambda c: c["numeric_results"][0]["n"].update(value=3.0),
+        lambda c: c["numeric_results"][0]["n"].update(value=True),
+        lambda c: c["numeric_results"][0]["n"].update(value="3"),
+        lambda c: c["numeric_results"][0]["n"].update(definition="other"),
+        lambda c: c["numeric_results"][0].update(value=float("nan")),
+        lambda c: c["numeric_results"].append(dict(c["numeric_results"][0])),
+        lambda c: c["context"].update(time=5),
+        lambda c: c["context"].update(time="  padded "),
+        lambda c: c.update(statement=" padded "),
+        lambda c: c.pop("numeric_results"),
+        lambda c: c.update(numeric_results=tuple(c["numeric_results"])),
+    ],
+)
+def test_content_must_be_exactly_valid_to_be_exported(tmp_path, mutate):
+    _withheld(_mutated(mutate), tmp_path)
+
+
+def test_valid_content_with_integer_value_is_written_as_supplied(tmp_path):
+    chain = _chain("f-i", "approve")
+    chain[0]["content"]["numeric_results"][0]["value"] = 3
+    result = _build(chain, tmp_path)
+    assert _recs(result, "findings.jsonl")[0]["numeric_results"][0]["value"] == 3
+
+
+@pytest.mark.parametrize(
+    "start,end",
+    [(10, True), (True, 20), (False, 5), (10, 10), (-1, 5), (10.0, 20), (10, "20")],
+)
+def test_matched_offsets_must_be_plain_ordered_integers(tmp_path, start, end):
+    chain = _chain("f-o", "approve", "approve")
+    chain[0]["evidence"][0]["match"].update(start=start, end=end)
+    _withheld(chain, tmp_path)
+
+
+@pytest.mark.parametrize(
+    "match",
+    [
+        {"ref": "qm-x", "status": "weird", "view_ref": "view:text-v1", "start": None, "end": None},
+        {"ref": "qm-x", "status": None, "view_ref": None, "start": None, "end": None},
+        {"ref": "qm-x", "status": ["exact"], "view_ref": None, "start": None, "end": None},
+        {"ref": 7, "status": "not_found", "view_ref": None, "start": None, "end": None},
+        {"ref": "qm-x", "status": "not_found", "view_ref": "", "start": None, "end": None},
+        {"ref": " qm-x ", "status": "not_found", "view_ref": None, "start": None, "end": None},
+        {"ref": "qm-x", "status": "not_found", "view_ref": None, "start": 3, "end": None},
+        {
+            "ref": "qm-x",
+            "status": "not_found",
+            "view_ref": None,
+            "start": None,
+            "end": None,
+            "x": 1,
+        },
+        {},
+        "not_found",
+    ],
+)
+def test_supplied_but_unsupported_match_state_withholds_instead_of_erasing(tmp_path, match):
+    chain = _chain("f-u", "approve", "approve")
+    chain[0]["evidence"].append({**_ev("ev-extra"), "match": match})
+    _withheld(chain, tmp_path)
+
+
+def test_absent_match_is_not_checked_and_supplied_states_keep_their_receipt(tmp_path):
+    chain = _chain("f-n", "approve", "approve")
+    chain[0]["evidence"] += [
+        {**_ev("ev-absent"), "match": None},
+        {
+            **_ev("ev-inc"),
+            "match": {
+                "ref": "qm-inc",
+                "status": "incomplete",
+                "view_ref": None,
+                "start": None,
+                "end": None,
+            },
+        },
+        {
+            **_ev("ev-nf"),
+            "match": {
+                "ref": "qm-nf",
+                "status": "not_found",
+                "view_ref": "view:v",
+                "start": None,
+                "end": None,
+            },
+        },
+    ]
+    result = _build(chain, tmp_path)
+    by = {p["producer_ids"]["evidence_ref"]: p for p in _recs(result, "passages.jsonl")}
+    assert by["ev-absent"]["match"] == {
+        "receipt_ref": "not-available",
+        "status": "not_checked",
+        "matcher": "unknown",
+    }
+    assert by["ev-inc"]["match"] == {
+        "receipt_ref": "qm-inc",
+        "status": "incomplete",
+        "matcher": "quote-matcher-v1",
+    }
+    assert by["ev-nf"]["match"]["receipt_ref"] == "qm-nf"
+    assert by["ev-nf"]["source"]["view_id"] == "view:v"

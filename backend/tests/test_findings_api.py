@@ -882,3 +882,41 @@ async def test_findings_of_one_article_on_different_snapshots_are_withheld(
         in json.loads(files["manifest.json"])["export_status"]["reasons"]
     )
     _validate_files(files, tmp_path / "p")
+
+
+async def test_revision_binding_several_answers_is_withheld_not_truncated(
+    client, session, researcher_user, do_login, tmp_path
+):
+    project, article, _ = await _world(session, researcher_user)
+    _, links = await _prediction(session, project, article, snapshot=True)
+    assert links[0]["answer_ref"] != links[1]["answer_ref"]
+    await _login(do_login, LEAD)
+    fid = (await _propose(client, project, article, links))["finding_id"]
+    await _approve(client, do_login, REV1, project, article, fid, 1, links)
+    await _revise(client, project, article, fid, links[:1], "Second.")
+    await _approve(client, do_login, REV2, project, article, fid, 2, links[:1])
+    files = _unzip((await client.get(_export_url(project))).content)
+    assert fid not in b"".join(files.values()).decode()
+    manifest = json.loads(files["manifest.json"])
+    assert manifest["export_status"]["state"] == "withheld"
+    assert "unrepresentable-history=2" in manifest["export_status"]["reasons"]
+    _validate_files(files, tmp_path / "p")
+
+
+async def test_revisions_with_different_answers_each_keep_their_own_binding(
+    client, session, researcher_user, do_login, tmp_path
+):
+    project, article, _ = await _world(session, researcher_user)
+    _, links = await _prediction(session, project, article, snapshot=True)
+    await _login(do_login, LEAD)
+    fid = (await _propose(client, project, article, links[:1]))["finding_id"]
+    await _approve(client, do_login, REV1, project, article, fid, 1, links[:1])
+    await _revise(client, project, article, fid, links[1:], "Second.")
+    await _approve(client, do_login, REV2, project, article, fid, 2, links[1:])
+    files = _unzip((await client.get(_export_url(project))).content)
+    findings = _jsonl(files, "findings.jsonl")
+    assert [f["producer_ids"]["answer_ref"] for f in findings] == [
+        links[0]["answer_ref"],
+        links[1]["answer_ref"],
+    ]
+    _validate_files(files, tmp_path / "p")
