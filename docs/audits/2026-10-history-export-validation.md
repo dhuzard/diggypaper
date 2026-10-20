@@ -96,3 +96,30 @@ persisted-API tests (several answers withheld; differing answers per revision ex
 
 The frozen SEP validator runs inside the builder/API tests (`validate_packet(..., "for-import")`);
 frozen schemas are untouched.
+
+## Review finding closure: offsets on nonmatched statuses
+
+Independent review (NOT APPROVED): `_passage_state` accepted ordered integer offsets for
+nonmatched statuses, e.g. `status="not_found", start=3, end=8`. The builder reported the chain
+complete, but the frozen validator rejects it (`match-offset-inconsistent`,
+`schema-invalid:passages.jsonl`); SEP README line 164 requires both offsets null unless the
+status is `exact`/`normalized`. Reproduced for ambiguous, incomplete, invalid, not_checked,
+not_found and source_unavailable.
+
+Fix (`backend/app/finding_packet.py`): any supplied non-null `start` or `end` on a nonmatched
+status makes the passage unrepresentable, so the whole chain is withheld
+(`unrepresentable-history`); nothing is erased and the contract is unchanged. Exact/normalized
+keep the strict ordered-integer rule; positives and absent/null-offset supplied states keep
+their receipt and view. This corrects the earlier, previously reported untested offset choice;
+the frozen spec settles it, so no owner decision is needed.
+
+Test: `test_nonmatched_status_with_offsets_withholds_whole_chain` (6 statuses x
+`(3,8)`/`(3,None)`/`(None,8)` = 18 cases) asserts exact omitted count (2 revisions),
+`exported == 0`, no finding id leaked, and the withheld packet passes the frozen validator.
+
+| Command (cwd `backend`, same venv; `app.__file__` under this worktree) | Exit | Result |
+| --- | --- | --- |
+| four-module focused run (as above) | 0 | 179 passed, 1 skipped (`CRT_CHECKOUT`) |
+| `python -m pytest -q -rs` | 0 | 1253 passed, 18 skipped |
+| `ruff check app tests` | 0 | all checks passed |
+| `ruff format --check app tests` | 0 | 169 files formatted |

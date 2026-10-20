@@ -850,7 +850,21 @@ def test_supplied_but_unsupported_match_state_withholds_instead_of_erasing(tmp_p
     _withheld(chain, tmp_path)
 
 
+@pytest.mark.parametrize(
+    "status",
+    ["ambiguous", "incomplete", "invalid", "not_checked", "not_found", "source_unavailable"],
+)
+@pytest.mark.parametrize("start,end", [(3, 8), (3, None), (None, 8)])
+def test_nonmatched_status_with_offsets_withholds_whole_chain(tmp_path, status, start, end):
+    chain = _chain("f-offset", "none", "approve")
+    chain[0]["evidence"][0]["match"].update(status=status, start=start, end=end)
+    result = _withheld(chain, tmp_path)
+    assert result.report["omitted"] == 2 and result.report["exported"] == 0
+    assert "f-offset" not in b"".join(result.files.values()).decode()
+
+
 def test_absent_match_is_not_checked_and_supplied_states_keep_their_receipt(tmp_path):
+
     chain = _chain("f-n", "approve", "approve")
     chain[0]["evidence"] += [
         {**_ev("ev-absent"), "match": None},

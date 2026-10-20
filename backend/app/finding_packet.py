@@ -143,7 +143,9 @@ def _passage_state(ev: dict[str, Any], snapshot_id: str | None) -> dict[str, Any
         if value is not None and not _exact_text(value):
             return None
     start, end = match.get("start"), match.get("end")
-    if start is not None or end is not None or status in GOOD_MATCH:
+    if status not in GOOD_MATCH and (start is not None or end is not None):
+        return None  # frozen contract: offsets are null unless the match is exact/normalized
+    if status in GOOD_MATCH:
         if not all(isinstance(v, int) and not isinstance(v, bool) for v in (start, end)):
             return None
         if not 0 <= start < end:
