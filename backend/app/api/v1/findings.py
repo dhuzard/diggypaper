@@ -654,7 +654,7 @@ async def export_findings(
     access_level: Literal["restricted", "public"] = "restricted",
     metadata_license: str | None = None,
 ) -> Response:
-    """LEAD-only deterministic source-evidence packet of reviewed latest revisions.
+    """LEAD-only deterministic source-evidence packet of complete reviewed revision chains.
 
     Restricted by default. ``public`` is an explicit choice and needs a packet-metadata
     licence. Quotations are included only for articles whose latest rights declaration
@@ -705,16 +705,16 @@ async def export_findings(
     for article_id in article_ids:
         article = articles[article_id]
         declaration = rights.get(article_id)
-        used = [
-            snapshots[uuid.UUID(e["source_snapshot_id"])]
+        # Every snapshot any revision of this article's findings cites; the builder decides
+        # (fail closed) whether a chain or paper mixes snapshots. Nothing is repointed here.
+        used = {
+            e["source_snapshot_id"]: snapshots[uuid.UUID(e["source_snapshot_id"])]
             for f in findings
             if f["article_id"] == str(article_id)
             for r in f["revisions"]
-            if r["is_latest"]
             for e in r["evidence"]
             if e["source_snapshot_id"] and uuid.UUID(e["source_snapshot_id"]) in snapshots
-        ]
-        snap = max(used, key=lambda s: (s.captured_at, str(s.id))) if used else None
+        }
         papers.append(
             {
                 "article_id": str(article.id),
@@ -733,15 +733,14 @@ async def export_findings(
                     if declaration
                     else None
                 ),
-                "snapshot": (
+                "snapshots": [
                     {
                         "id": str(snap.id),
                         "sha256": snap.snapshot_sha256,
                         "raw_availability": snap.raw_availability,
                     }
-                    if snap
-                    else None
-                ),
+                    for snap in sorted(used.values(), key=lambda s: str(s.id))
+                ],
             }
         )
     for f in findings:

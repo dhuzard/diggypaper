@@ -404,3 +404,502 @@ def test_packet_requires_producer_commit(access, commit):
     data = {**_data([_paper("art-a")], [_finding("f1")]), **access, "producer_commit": commit}
     with pytest.raises(ValueError, match="producer commit"):
         build_packet(data)
+
+
+# --- immutable revision history ---------------------------------------------------------
+
+
+def _rev(fid, n, last, *, reviews="approve", ev=None, **kw):
+    """Revision ``n`` of finding ``fid`` with its own evidence ``ev-<fid>-<n>`` and review."""
+    ref = f"ev-{fid}-{n}"
+    if reviews == "approve":
+        reviews = [_review(f"rv-{fid}-{n}", RV1, ref=ref, rationale=f"why {n}")]
+    elif reviews == "reject":
+        reviews = [_review(f"rv-{fid}-{n}", RV1, "reject", "unclear", ref=ref, rationale="no")]
+    elif reviews == "none":
+        reviews = []
+    return _finding(
+        fid,
+        revision=n,
+        latest=(n == last),
+        outcome=f"o{n}",
+        time=f"day {n}",
+        ev=ev if ev is not None else [_ev(ref, quote=f"quote {n}", start=10 * n, end=10 * n + 5)],
+        reviews=reviews,
+        **kw,
+    )
+
+
+def _chain(fid="f-h", *kinds):
+    return [_rev(fid, n, len(kinds), reviews=k) for n, k in enumerate(kinds, start=1)]
+
+
+def _states(result):
+    return [
+        (f["revision"], f["export_state"], f["review_state"], f["verification_level"])
+        for f in _recs(result, "findings.jsonl")
+    ]
+
+
+def _build(findings, tmp_path, paper=None, name="p"):
+    result = build_packet(_data([paper or _paper("art-a")], findings))
+    _validate(result, tmp_path, name)
+    return result
+
+
+def test_approved_revision_one_alone_exports_one_approved_revision(tmp_path):
+    result = _build(_chain("f-h", "approve"), tmp_path)
+    assert _states(result) == [(1, "approved-for-export", "human-reviewed", "source-verified")]
+    assert result.report["omitted"] == 0 and result.report["exported"] == 1
+
+
+def test_revision_two_after_approved_revision_one_exports_whole_chain(tmp_path):
+    result = _build(_chain("f-h", "approve", "approve"), tmp_path)
+    findings = _recs(result, "findings.jsonl")
+    assert [(f["finding_id"], f["revision"]) for f in findings] == [("finding:f-h", 1)] + [
+        ("finding:f-h", 2)
+    ]
+    # exact historical content, context and numbers are preserved per revision
+    assert [f["context"]["outcome"] for f in findings] == ["o1", "o2"]
+    assert [f["statement"] for f in findings] == [
+        "X changed o1 at day 1.",
+        "X changed o2 at day 2.",
+    ]
+    assert all(f["numeric_results"] == _content("o", "t")["numeric_results"] for f in findings)
+    assert [f["passage_ids"] for f in findings] == [["passage:ev-f-h-1"], ["passage:ev-f-h-2"]]
+    assert [f["producer_ids"]["evidence_refs"] for f in findings] == [
+        ["ev-f-h-1"],
+        ["ev-f-h-2"],
+    ]
+    (paper,) = _recs(result, "papers.jsonl")
+    assert paper["source_snapshot"]["snapshot_ref"] == "snap-A"
+    assert json.loads(result.files["manifest.json"])["export_status"]["state"] == "complete"
+
+
+def test_unreviewed_history_is_proposed_not_approved_and_has_no_assessments(tmp_path):
+    result = _build(_chain("f-h", "none", "approve"), tmp_path)
+    assert _states(result) == [
+        (1, "proposed", "unreviewed", "unverified"),
+        (2, "approved-for-export", "human-reviewed", "source-verified"),
+    ]
+    assert {a["finding_revision"] for a in _recs(result, "assessments.jsonl")} == {2}
+
+
+def test_three_revisions_with_distinct_evidence(tmp_path):
+    result = _build(_chain("f-h", "approve", "approve", "approve"), tmp_path)
+    assert [f["revision"] for f in _recs(result, "findings.jsonl")] == [1, 2, 3]
+    assert [p["passage_id"] for p in _passages(result)] == [
+        "passage:ev-f-h-1",
+        "passage:ev-f-h-2",
+        "passage:ev-f-h-3",
+    ]
+    assert [
+        (a["finding_revision"], a["passage_id"]) for a in _recs(result, "assessments.jsonl")
+    ] == [
+        (1, "passage:ev-f-h-1"),
+        (2, "passage:ev-f-h-2"),
+        (3, "passage:ev-f-h-3"),
+    ]
+    assert len({a["assessed_snapshot_sha256"] for a in _recs(result, "assessments.jsonl")}) == 1
+
+
+def test_assessments_stay_revision_local_and_approval_never_propagates(tmp_path):
+    # rev1 was REJECTED by RV1; rev2 approved by RV2. The later approval must not reach rev1.
+    chain = [
+        _rev("f-h", 1, 2, reviews="reject"),
+        _rev(
+            "f-h",
+            2,
+            2,
+            reviews=[_review("rv-f-h-2", RV2, ref="ev-f-h-2", rationale="rev2 ok")],
+        ),
+    ]
+    result = _build(chain, tmp_path)
+    assert _states(result) == [
+        (1, "proposed", "human-reviewed", "human-reviewed"),
+        (2, "approved-for-export", "human-reviewed", "source-verified"),
+    ]
+    by_rev = {}
+    for a in _recs(result, "assessments.jsonl"):
+        by_rev.setdefault(a["finding_revision"], []).append(a)
+    assert [a["producer_ids"]["support_assessment_ref"] for a in by_rev[1]] == ["rv-f-h-1"]
+    assert [a["status"] for a in by_rev[1]] == ["unclear"]
+    assert [a["reviewer_ref"] for a in by_rev[2]] == ["rv-" + "2" * 64]
+    assert [a["passage_id"] for a in by_rev[1]] == ["passage:ev-f-h-1"]
+    # the rev1 rejection leaves no approved/supports trace anywhere in the packet
+    assert "supports" not in {a["status"] for a in by_rev[1]}
+
+
+def test_two_approvals_on_different_revisions_are_not_independent_verification(tmp_path):
+    chain = [
+        _rev("f-h", 1, 2),
+        _rev("f-h", 2, 2, reviews=[_review("rv-f-h-2", RV2, ref="ev-f-h-2")]),
+    ]
+    result = _build(chain, tmp_path)
+    assert [s[3] for s in _states(result)] == ["source-verified", "source-verified"]
+
+
+@pytest.mark.parametrize(
+    ("latest_kind", "reason"),
+    [("reject", "rejected"), ("none", "not-approved")],
+)
+def test_latest_rejected_or_unreviewed_withholds_whole_chain(tmp_path, latest_kind, reason):
+    result = _build(_chain("f-h", "approve", latest_kind), tmp_path)
+    assert result.report["omitted_by_reason"] == {reason: 2}
+    assert _recs(result, "findings.jsonl") == [] and _passages(result) == []
+    assert {(e["revision"], e["exported"]) for e in result.report["findings"]} == {
+        (1, False),
+        (2, False),
+    }
+    manifest = json.loads(result.files["manifest.json"])
+    assert manifest["export_status"]["state"] == "withheld"
+    assert f"{reason}=2" in manifest["export_status"]["reasons"]
+    assert b"f-h" not in b"".join(result.files.values())
+
+
+def test_superseded_latest_flag_withholds_chain(tmp_path):
+    chain = _chain("f-h", "approve", "approve")
+    chain[1]["is_latest"] = False
+    assert _build(chain, tmp_path).report["omitted_by_reason"] == {"not-latest": 2}
+
+
+def test_gap_and_duplicate_histories_never_produce_an_invalid_packet(tmp_path):
+    gap = [_rev("f-g", 1, 3), _rev("f-g", 3, 3)]
+    dup = [_rev("f-d", 1, 2), _rev("f-d", 2, 2), _rev("f-d", 2, 2)]
+    ok = _chain("f-ok", "approve")
+    result = _build([*gap, *dup, *ok], tmp_path)
+    assert result.report["omitted_by_reason"] == {"duplicate-revision": 3, "revision-gap": 2}
+    assert [f["finding_id"] for f in _recs(result, "findings.jsonl")] == ["finding:f-ok"]
+
+
+def test_missing_or_unrepresentable_history_withholds_whole_chain(tmp_path):
+    no_evidence = _chain("f-1", "approve", "approve")
+    no_evidence[0]["evidence"] = []
+    bad_match = _chain("f-2", "approve", "approve")
+    bad_match[0]["evidence"][0]["match"]["start"] = None  # exact match without offsets
+    no_quote = _chain("f-3", "approve", "approve")
+    no_quote[0]["evidence"][0]["quote"] = None
+    blank_reason = _chain("f-4", "approve", "approve")
+    blank_reason[0]["reviews"][0]["judgments"][0]["rationale"] = " "
+    stray = _chain("f-5", "approve", "approve")
+    stray[0]["reviews"][0]["judgments"][0]["evidence_ref"] = "ev-elsewhere"
+    selfrev = _chain("f-6", "approve", "approve")
+    selfrev[0]["reviews"].append(_review("rv-self", PROPOSER, ref="ev-f-6-1"))
+    result = _build(
+        [*no_evidence, *bad_match, *no_quote, *blank_reason, *stray, *selfrev], tmp_path
+    )
+    assert result.report["omitted_by_reason"] == {"unrepresentable-history": 12}
+    assert result.report["exported"] == 0
+
+
+def test_missing_or_foreign_historical_snapshot_withholds_whole_chain(tmp_path):
+    none_snap = _chain("f-1", "approve", "approve")
+    none_snap[0]["evidence"][0]["snapshot_id"] = None
+    foreign = _chain("f-2", "approve", "approve")
+    foreign[0]["evidence"][0]["snapshot_id"] = "snap-unknown"
+    result = _build([*none_snap, *foreign], tmp_path)
+    assert result.report["omitted_by_reason"] == {"no-source-snapshot": 4}
+
+
+def test_mixed_snapshot_history_fails_closed_without_repointing(tmp_path):
+    chain = _chain("f-h", "approve", "approve")
+    chain[1]["evidence"][0]["snapshot_id"] = "snap-B"
+    paper = {
+        **_paper("art-a"),
+        "snapshots": [
+            {"id": "snap-A", "sha256": SHA_A},
+            {"id": "snap-B", "sha256": SHA_B},
+        ],
+    }
+    result = _build(chain, tmp_path, paper)
+    assert result.report["omitted_by_reason"] == {"mixed-snapshot": 2}
+    assert _recs(result, "papers.jsonl") == []
+
+
+def test_two_findings_of_one_paper_on_different_snapshots_conflict(tmp_path):
+    a = _chain("f-a", "approve")
+    b = _chain("f-b", "approve")
+    b[0]["evidence"][0]["snapshot_id"] = "snap-B"
+    paper = {
+        **_paper("art-a"),
+        "snapshots": [{"id": "snap-A", "sha256": SHA_A}, {"id": "snap-B", "sha256": SHA_B}],
+    }
+    result = _build([*a, *b], tmp_path, paper)
+    assert result.report["omitted_by_reason"] == {"paper-snapshot-conflict": 2}
+    # a clean finding of ANOTHER paper is unaffected
+    c = _finding("f-c", article="art-c")
+    both = build_packet(_data([paper, _paper("art-c")], [*a, *b, c]))
+    _validate(both, tmp_path, "mixed")
+    assert [f["finding_id"] for f in _recs(both, "findings.jsonl")] == ["finding:f-c"]
+
+
+def test_shared_passage_with_conflicting_content_withholds_both_chains(tmp_path):
+    a = _chain("f-a", "approve")
+    b = _chain("f-b", "approve")
+    for f in (a[0], b[0]):
+        f["evidence"][0]["evidence_ref"] = "ev-shared"
+        f["reviews"][0]["judgments"][0]["evidence_ref"] = "ev-shared"
+    b[0]["evidence"][0]["quote"] = "a different quote"
+    result = _build([*a, *b], tmp_path)
+    assert result.report["omitted_by_reason"] == {"passage-conflict": 2}
+    # identical shared passages remain fine
+    b[0]["evidence"][0] = copy.deepcopy(a[0]["evidence"][0])
+    ok = _build([*a, *b], tmp_path, name="ok")
+    assert [p["passage_id"] for p in _passages(ok)] == ["passage:ev-shared"]
+
+
+def _history_rights(rights):
+    return {**_paper("art-a"), "rights": rights}
+
+
+def test_history_without_rights_declaration_withholds_every_quote(tmp_path):
+    result = _build(_chain("f-h", "approve", "approve"), tmp_path)
+    assert {p["quote"] for p in _passages(result)} == {"withheld"}
+    for n, p in enumerate(_passages(result), start=1):
+        assert p["quote_sha256"] == "sha256:" + hashlib.sha256(f"quote {n}".encode()).hexdigest()
+    assert b"quote 1" not in b"".join(result.files.values())
+    (paper,) = _recs(result, "papers.jsonl")
+    assert paper["rights"]["redistribution"] == "metadata-only"
+
+
+def test_history_metadata_only_and_disallowed_licences_never_release_quotes(tmp_path):
+    for i, rights in enumerate(
+        [
+            {"revision": 1, "license_id": "CC-BY-4.0", "redistribution": "metadata-only"},
+            {"revision": 1, "license_id": "CC-BY-NC-4.0", "redistribution": "allowed"},
+            {"revision": 1, "license_id": None, "redistribution": "allowed"},
+            {"revision": 1, "license_id": "CC-BY-4.0", "redistribution": "bogus"},
+        ]
+    ):
+        result = _build(
+            _chain("f-h", "approve", "approve"), tmp_path, _history_rights(rights), f"r{i}"
+        )
+        assert {p["quote_state"] for p in _passages(result)} == {"withheld-rights"}
+        assert b"quote 1" not in b"".join(result.files.values())
+        assert _recs(result, "papers.jsonl")[0]["rights"]["redistribution"] == "metadata-only"
+
+
+def test_history_restricted_rights_omit_the_whole_chain(tmp_path):
+    rights = {"revision": 3, "license_id": "proprietary", "redistribution": "restricted"}
+    result = _build(_chain("f-h", "approve", "approve"), tmp_path, _history_rights(rights))
+    assert result.report["omitted_by_reason"] == {"paper-rights-restricted": 2}
+    assert _recs(result, "findings.jsonl") == []
+
+
+def test_history_allowed_licence_releases_quotes_of_every_revision(tmp_path):
+    result = _build(_chain("f-h", "approve", "approve"), tmp_path, _history_rights(CC_BY))
+    assert [p["quote"] for p in _passages(result)] == ["quote 1", "quote 2"]
+    assert result.report["rights"][0]["quotes_included"] == 2
+
+
+def test_history_export_is_deterministic_and_validates_repeatedly(tmp_path):
+    chain = [*_chain("f-h", "none", "reject", "approve"), *_chain("f-i", "approve", "approve")]
+    first = build_packet(_data([_paper("art-a")], chain))
+    shuffled = copy.deepcopy(chain)
+    shuffled.reverse()
+    second = build_packet(_data([_paper("art-a")], shuffled))
+    assert first.files == second.files and first.report == second.report
+    for i in range(2):
+        _validate(first, tmp_path, f"run{i}")
+
+
+def test_history_export_leaks_no_free_text_notes_or_raw_actor_ids(tmp_path):
+    chain = _chain("f-h", "approve", "approve")
+    for f in chain:
+        f["reviews"][0]["rationale"] = "PRIVATE-NOTE alice@example.org"
+    result = _build(chain, tmp_path)
+    blob = b"".join(result.files.values()).decode()
+    assert "PRIVATE-NOTE" not in blob and "alice@example.org" not in blob
+    assert RV1 not in blob and PROPOSER not in blob
+
+
+# --- repair: bindings, strict content, supplied match state ---------------------------------
+
+
+def _withheld(findings, tmp_path, reason="unrepresentable-history", n=2):
+    result = _build(findings, tmp_path)
+    assert result.report["omitted_by_reason"] == {reason: n}
+    assert result.report["exported"] == 0
+    return result
+
+
+def _two_evidence(fid, n, **second):
+    refs = (f"ev-{fid}-{n}", f"ev-{fid}-{n}b")
+    ev = [
+        _ev(refs[0], quote=f"quote {n}", start=10 * n, end=10 * n + 5),
+        {**_ev(refs[1], quote=f"quote {n}b", start=100 + n, end=105 + n), **second},
+    ]
+    return ev
+
+
+def test_revision_with_several_answers_withholds_whole_chain(tmp_path):
+    chain = _chain("f-m", "approve", "approve")
+    chain[0]["evidence"] = _two_evidence("f-m", 1, answer_ref="ans-2")
+    chain[0]["reviews"] = [_review("rv-m", RV1, ref="ev-f-m-1")]
+    _withheld(chain, tmp_path)
+
+
+def test_revision_with_several_predictions_withholds_whole_chain(tmp_path):
+    chain = _chain("f-m", "approve", "approve")
+    chain[1]["evidence"] = _two_evidence("f-m", 2, prediction_id="pred-2")
+    chain[1]["reviews"] = [_review("rv-m2", RV1, ref="ev-f-m-2")]
+    _withheld(chain, tmp_path)
+
+
+def test_partially_bound_revision_withholds_whole_chain(tmp_path):
+    chain = _chain("f-m", "approve", "approve")
+    chain[0]["evidence"] = _two_evidence("f-m", 1, answer_ref=None)
+    chain[0]["reviews"] = [_review("rv-m", RV1, ref="ev-f-m-1")]
+    _withheld(chain, tmp_path)
+
+
+def test_distinct_bindings_across_revisions_are_representable(tmp_path):
+    chain = _chain("f-d", "approve", "approve")
+    chain[1]["evidence"][0].update(answer_ref="ans-2", prediction_id="pred-2")
+    result = _build(chain, tmp_path)
+    ids = [f["producer_ids"] for f in _recs(result, "findings.jsonl")]
+    assert [(i["answer_ref"], i["prediction_ref"]) for i in ids] == [
+        ("ans-1", "pred-1"),
+        ("ans-2", "pred-2"),
+    ]
+
+
+def test_several_evidence_one_binding_exports_that_binding(tmp_path):
+    chain = _chain("f-s", "approve")
+    chain[0]["evidence"] = _two_evidence("f-s", 1)
+    result = _build(chain, tmp_path)
+    ids = _recs(result, "findings.jsonl")[0]["producer_ids"]
+    assert (ids["answer_ref"], ids["prediction_ref"]) == ("ans-1", "pred-1")
+
+
+def _mutated(mutate):
+    chain = _chain("f-c", "approve", "approve")
+    mutate(chain[0]["content"])
+    return chain
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda c: c["context"].pop("population"),
+        lambda c: c["context"].update(extra="x"),
+        lambda c: c.update(extra="x"),
+        lambda c: c["numeric_results"][0].update(effect_size=1),
+        lambda c: c["numeric_results"][0]["n"].update(extra=1),
+        lambda c: c["numeric_results"][0].update(value="1.5"),
+        lambda c: c["numeric_results"][0].update(value=True),
+        lambda c: c["numeric_results"][0]["n"].update(value=3.0),
+        lambda c: c["numeric_results"][0]["n"].update(value=True),
+        lambda c: c["numeric_results"][0]["n"].update(value="3"),
+        lambda c: c["numeric_results"][0]["n"].update(definition="other"),
+        lambda c: c["numeric_results"][0].update(value=float("nan")),
+        lambda c: c["numeric_results"].append(dict(c["numeric_results"][0])),
+        lambda c: c["context"].update(time=5),
+        lambda c: c["context"].update(time="  padded "),
+        lambda c: c.update(statement=" padded "),
+        lambda c: c.pop("numeric_results"),
+        lambda c: c.update(numeric_results=tuple(c["numeric_results"])),
+    ],
+)
+def test_content_must_be_exactly_valid_to_be_exported(tmp_path, mutate):
+    _withheld(_mutated(mutate), tmp_path)
+
+
+def test_valid_content_with_integer_value_is_written_as_supplied(tmp_path):
+    chain = _chain("f-i", "approve")
+    chain[0]["content"]["numeric_results"][0]["value"] = 3
+    result = _build(chain, tmp_path)
+    assert _recs(result, "findings.jsonl")[0]["numeric_results"][0]["value"] == 3
+
+
+@pytest.mark.parametrize(
+    "start,end",
+    [(10, True), (True, 20), (False, 5), (10, 10), (-1, 5), (10.0, 20), (10, "20")],
+)
+def test_matched_offsets_must_be_plain_ordered_integers(tmp_path, start, end):
+    chain = _chain("f-o", "approve", "approve")
+    chain[0]["evidence"][0]["match"].update(start=start, end=end)
+    _withheld(chain, tmp_path)
+
+
+@pytest.mark.parametrize(
+    "match",
+    [
+        {"ref": "qm-x", "status": "weird", "view_ref": "view:text-v1", "start": None, "end": None},
+        {"ref": "qm-x", "status": None, "view_ref": None, "start": None, "end": None},
+        {"ref": "qm-x", "status": ["exact"], "view_ref": None, "start": None, "end": None},
+        {"ref": 7, "status": "not_found", "view_ref": None, "start": None, "end": None},
+        {"ref": "qm-x", "status": "not_found", "view_ref": "", "start": None, "end": None},
+        {"ref": " qm-x ", "status": "not_found", "view_ref": None, "start": None, "end": None},
+        {"ref": "qm-x", "status": "not_found", "view_ref": None, "start": 3, "end": None},
+        {
+            "ref": "qm-x",
+            "status": "not_found",
+            "view_ref": None,
+            "start": None,
+            "end": None,
+            "x": 1,
+        },
+        {},
+        "not_found",
+    ],
+)
+def test_supplied_but_unsupported_match_state_withholds_instead_of_erasing(tmp_path, match):
+    chain = _chain("f-u", "approve", "approve")
+    chain[0]["evidence"].append({**_ev("ev-extra"), "match": match})
+    _withheld(chain, tmp_path)
+
+
+@pytest.mark.parametrize(
+    "status",
+    ["ambiguous", "incomplete", "invalid", "not_checked", "not_found", "source_unavailable"],
+)
+@pytest.mark.parametrize("start,end", [(3, 8), (3, None), (None, 8)])
+def test_nonmatched_status_with_offsets_withholds_whole_chain(tmp_path, status, start, end):
+    chain = _chain("f-offset", "none", "approve")
+    chain[0]["evidence"][0]["match"].update(status=status, start=start, end=end)
+    result = _withheld(chain, tmp_path)
+    assert result.report["omitted"] == 2 and result.report["exported"] == 0
+    assert "f-offset" not in b"".join(result.files.values()).decode()
+
+
+def test_absent_match_is_not_checked_and_supplied_states_keep_their_receipt(tmp_path):
+
+    chain = _chain("f-n", "approve", "approve")
+    chain[0]["evidence"] += [
+        {**_ev("ev-absent"), "match": None},
+        {
+            **_ev("ev-inc"),
+            "match": {
+                "ref": "qm-inc",
+                "status": "incomplete",
+                "view_ref": None,
+                "start": None,
+                "end": None,
+            },
+        },
+        {
+            **_ev("ev-nf"),
+            "match": {
+                "ref": "qm-nf",
+                "status": "not_found",
+                "view_ref": "view:v",
+                "start": None,
+                "end": None,
+            },
+        },
+    ]
+    result = _build(chain, tmp_path)
+    by = {p["producer_ids"]["evidence_ref"]: p for p in _recs(result, "passages.jsonl")}
+    assert by["ev-absent"]["match"] == {
+        "receipt_ref": "not-available",
+        "status": "not_checked",
+        "matcher": "unknown",
+    }
+    assert by["ev-inc"]["match"] == {
+        "receipt_ref": "qm-inc",
+        "status": "incomplete",
+        "matcher": "quote-matcher-v1",
+    }
+    assert by["ev-nf"]["match"]["receipt_ref"] == "qm-nf"
+    assert by["ev-nf"]["source"]["view_id"] == "view:v"

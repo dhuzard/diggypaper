@@ -17,7 +17,9 @@ from tests.test_findings_api import (
     LEAD,
     OUTSIDER,
     REV1,
+    REV2,
     _article,
+    _content,
     _export_url,
     _load_validator,
     _login,
@@ -385,3 +387,70 @@ async def test_crt_importer_accepts_redistributable_and_withholds_default(
     assert withheld["findings"]["accepted"] == 0, withheld
     assert withheld["findings"]["withheld"] == 1, withheld
     assert "packet-scope-restricted" in json.dumps(withheld["by_reason"]), withheld
+
+
+# --- rights apply to the whole revision chain --------------------------------------------
+
+QUOTE_2 = "Weight fell by 1.5 g."
+
+
+async def _two_revision_chain(client, session, project, article, do_login):
+    _, links = await _prediction(session, project, article, quotes=(QUOTE, QUOTE_2), snapshot=True)
+    await _login(do_login, LEAD)
+    created = await _propose(client, project, article, links[:1])
+    fid = created["finding_id"]
+    await _login(do_login, REV1)
+    ok = await client.post(_rev_url(project, article, fid, 1), json=_review(links[:1]))
+    assert ok.status_code == 201, ok.text
+    await _login(do_login, LEAD)
+    revised = await client.post(
+        f"/api/v1/projects/{project.id}/articles/{article.id}/findings/{fid}/revisions",
+        json={"content": _content(statement="Revised."), "evidence": links[1:]},
+    )
+    assert revised.status_code == 201, revised.text
+    await _login(do_login, REV2)
+    ok = await client.post(_rev_url(project, article, fid, 2), json=_review(links[1:]))
+    assert ok.status_code == 201, ok.text
+    await _login(do_login, LEAD)
+    return fid
+
+
+async def test_latest_rights_declaration_governs_every_revision_of_a_chain(
+    client, session, researcher_user, do_login, tmp_path
+):
+    project, article, _ = await _world(session, researcher_user)
+    fid = await _two_revision_chain(client, session, project, article, do_login)
+    # no declaration: both historical and current quotes withheld, real hashes kept
+    files = await _export(client, project)
+    passages = _records(files, "passages.jsonl")
+    assert [p["quote_state"] for p in passages] == ["withheld-rights"] * 2
+    assert sorted(p["quote_sha256"] for p in passages) == sorted(
+        "sha256:" + hashlib.sha256(q.encode()).hexdigest() for q in (QUOTE, QUOTE_2)
+    )
+    assert QUOTE.encode() not in b"".join(files.values())
+    assert QUOTE_2.encode() not in b"".join(files.values())
+    # allowed: both revisions' quotes are released
+    await _declare(client, project, article, ALLOWED)
+    files = await _export(client, project, access_level="public", metadata_license="CC0-1.0")
+    assert sorted(p["quote"] for p in _records(files, "passages.jsonl")) == sorted([QUOTE, QUOTE_2])
+    assert [f["revision"] for f in _records(files, "findings.jsonl")] == [1, 2]
+    result = _load_validator().validate_packet(_write(files, tmp_path / "ok"), "for-import")
+    assert result["errors"] == [], result["errors"]
+    # a later restricted declaration withdraws the whole chain, historical revision included
+    await _declare(
+        client,
+        project,
+        article,
+        {
+            "license_id": "proprietary",
+            "redistribution": "restricted",
+            "basis": "Publisher withdrew the open licence; takedown request received.",
+        },
+    )
+    files = await _export(client, project, access_level="public", metadata_license="CC0-1.0")
+    assert fid not in files["findings.jsonl"].decode()
+    assert QUOTE.encode() not in b"".join(files.values())
+    assert (
+        "paper-rights-restricted=2"
+        in json.loads(files["manifest.json"])["export_status"]["reasons"]
+    )
