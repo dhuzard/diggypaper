@@ -20,9 +20,28 @@ RO-Crate behaviour. Export follows the frozen contract
   `superseded | rejected | approved | proposed`. Reviewer references are project-scoped
   pseudonyms.
 - **Export** (`GET /projects/{id}/findings/export`, LEAD only): a deterministic zip built by
-  the pure `app.finding_packet.build_packet`. Only latest, approved findings with an
-  exact/normalized passage, a public identifier and a source snapshot are exported; everything
-  else is omitted and counted by reason (`partial`/`withheld`), never exported as approved.
+  the pure `app.finding_packet.build_packet`. A finding is exported as its **complete
+  revision chain** (1..n under the stable finding id, never renumbered) when its *latest*
+  revision is approved by independent reviewers with an exact/normalized passage, a public
+  identifier and a source snapshot. Each historical revision keeps its own content, context,
+  numbers, evidence (with producer ids), original reviewer judgments (`assessments.jsonl`,
+  bound to that exact revision) and the paper's snapshot digest. A historical revision's
+  `export_state`/`review_state`/`verification_level` derive from its **own reviews only**: no
+  reviews = `proposed/unreviewed/unverified`; own approval = `approved-for-export`; any other
+  reviewed revision (e.g. rejected) = `proposed/human-reviewed`. A later approval never
+  propagates backward and support is never synthesized. Representational limit: the frozen
+  0.1.0 schema has no approve/reject field, so a rejected historical revision is
+  indistinguishable from an unapproved one except through the reviewer judgments and
+  `producer_ids.support_assessment_ref` that remain. If the latest revision is rejected or
+  unapproved, the whole chain is withheld and counted. Any chain that cannot be written
+  faithfully is withheld whole, never trimmed: revision gap or duplicate (`revision-gap`,
+  `duplicate-revision`), missing/unknown snapshot (`no-source-snapshot`), a history spanning
+  more than one snapshot (`mixed-snapshot`), several chains of one paper on different snapshots
+  (`paper-snapshot-conflict`; the packet has one snapshot per paper and no historical snapshot
+  is ever fabricated or old reviews repointed), conflicting shared passages
+  (`passage-conflict`), or unrepresentable evidence/judgments/self-reviews
+  (`unrepresentable-history`). Only project pseudonyms and native passage-judgment rationales
+  are exported (no raw actor ids, no review free-text notes).
   Quotations follow the article's redistribution rights (below); by default every quote is
   withheld (hash kept) and the packet is `restricted`. `GIT_COMMIT` (40 hex) is recorded as
   the producer commit; without it the export is refused (409), because the frozen 0.1.0

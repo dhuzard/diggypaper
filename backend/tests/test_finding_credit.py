@@ -270,3 +270,33 @@ def test_missing_proposer_is_withheld_not_guessed(tmp_path, packet_files):
     proposer = json.loads(result.data)["entries"][0]["contributions"][0]
     assert proposer["status"] == "withheld"
     assert proposer["contributor"] == {"kind": "withheld", "ref": "attribution-withheld"}
+
+
+def test_credit_binds_only_the_latest_revision_of_a_history_packet(tmp_path):
+    first = {**_finding("f-1", PROPOSER_1, [("rev-1", RV_A)], "ev-1"), "is_latest": False}
+    second = {**_finding("f-1", PROPOSER_1, [("rev-2", RV_B)], "ev-2"), "revision": 2}
+    paper = {
+        "article_id": "art-a",
+        "doi": "10.5555/credit.history",
+        "pmid": None,
+        "pmcid": None,
+        "title": "Synthetic history paper",
+        "authors": ["Synthetic, Author"],
+        "pub_types": ["Journal Article"],
+        "snapshot": {"id": "snap-A", "sha256": SHA_A, "raw_availability": "available"},
+    }
+    files = build_packet(
+        {"producer_commit": COMMIT, "papers": [paper], "findings": [first, second]}
+    ).files
+    assert [json.loads(x)["revision"] for x in files["findings.jsonl"].decode().splitlines()] == [
+        1,
+        2,
+    ]
+    data = _data()
+    data["findings"] = [{"finding_id": "f-1", "revision": 2, "proposer_ref": PROPOSER_1}]
+    result = build_credit_companion(files, data)
+    check = _validate(tmp_path, files, result)
+    assert check["errors"] == [] and check["valid"] is True
+    entries = json.loads(result.data)["entries"]
+    assert [e["binding"]["finding_revision"] for e in entries] == [2]
+    assert entries[0]["binding"]["assessment_ids"] == ["assessment:rev-2-1"]

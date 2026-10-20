@@ -722,3 +722,163 @@ async def test_export_is_deterministic_valid_and_omits_unreviewed_and_rejected(
     assert response.status_code == 201
     after = _unzip((await client.get(_export_url(project))).content)
     assert approved["finding_id"] not in after["findings.jsonl"].decode()
+
+
+# --- immutable revision history in the export --------------------------------------------
+
+
+async def _revise(client, project, article, finding_id, links, statement):
+    response = await client.post(
+        f"{_base(project, article)}/{finding_id}/revisions",
+        json={"content": _content(statement=statement), "evidence": links},
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+async def _approve(client, do_login, who, project, article, finding_id, revision, links):
+    await _login(do_login, who)
+    response = await client.post(
+        _rev_url(project, article, finding_id, revision), json=_review(links)
+    )
+    assert response.status_code == 201, response.text
+    await _login(do_login, LEAD)
+
+
+def _jsonl(files, name):
+    return [json.loads(x) for x in files[name].decode().splitlines()]
+
+
+def _validate_files(files, directory):
+    directory.mkdir()
+    for name, data in files.items():
+        (directory / name).write_bytes(data)
+    result = _load_validator().validate_packet(directory, "for-import")
+    assert result["errors"] == [], result["errors"]
+    assert result["valid"] is True
+    return result
+
+
+async def test_two_revision_export_preserves_each_revision_and_its_own_reviews(
+    client, session, researcher_user, do_login, tmp_path
+):
+    project, article, _ = await _world(session, researcher_user)
+    _, links = await _prediction(session, project, article, snapshot=True)
+    await _login(do_login, LEAD)
+    created = await _propose(client, project, article, links[:1], _content(statement="First."))
+    fid = created["finding_id"]
+    await _approve(client, do_login, REV1, project, article, fid, 1, links[:1])
+    await _revise(client, project, article, fid, links[1:], "Second.")
+    await _approve(client, do_login, REV2, project, article, fid, 2, links[1:])
+
+    first = await client.get(_export_url(project))
+    assert first.status_code == 200, first.text
+    files = _unzip(first.content)
+    findings = _jsonl(files, "findings.jsonl")
+    # complete 1..2 chain under the stable id; nothing renumbered
+    assert [(f["finding_id"], f["revision"]) for f in findings] == [(f"finding:{fid}", 1)] + [
+        (f"finding:{fid}", 2)
+    ]
+    assert [f["statement"] for f in findings] == ["First.", "Second."]
+    assert [f["export_state"] for f in findings] == ["approved-for-export"] * 2
+    assert [f["passage_ids"] for f in findings] == [
+        [f"passage:{links[0]['evidence_ref']}"],
+        [f"passage:{links[1]['evidence_ref']}"],
+    ]
+    assessments = _jsonl(files, "assessments.jsonl")
+    by_rev = {a["finding_revision"]: a for a in assessments}
+    assert sorted(by_rev) == [1, 2] and len(assessments) == 2
+    assert by_rev[1]["passage_id"] == findings[0]["passage_ids"][0]
+    assert by_rev[2]["passage_id"] == findings[1]["passage_ids"][0]
+    assert by_rev[1]["reviewer_ref"] != by_rev[2]["reviewer_ref"]
+    assert len({a["assessed_snapshot_sha256"] for a in assessments}) == 1
+    manifest = json.loads(files["manifest.json"])
+    assert manifest["export_status"]["state"] == "complete"
+    for secret in (REV1[0], REV2[0], LEAD[0]):
+        assert secret.encode() not in b"".join(files.values())
+    _validate_files(files, tmp_path / "one")
+    # deterministic bytes and repeated frozen validation
+    second = await client.get(_export_url(project))
+    assert second.content == first.content
+    _validate_files(_unzip(second.content), tmp_path / "two")
+
+
+async def test_unreviewed_history_is_exported_proposed_never_approved(
+    client, session, researcher_user, do_login, tmp_path
+):
+    project, article, _ = await _world(session, researcher_user)
+    _, links = await _prediction(session, project, article, snapshot=True)
+    await _login(do_login, LEAD)
+    fid = (await _propose(client, project, article, links[:1]))["finding_id"]
+    await _revise(client, project, article, fid, links[1:], "Second.")
+    await _approve(client, do_login, REV1, project, article, fid, 2, links[1:])
+    files = _unzip((await client.get(_export_url(project))).content)
+    findings = _jsonl(files, "findings.jsonl")
+    assert [(f["revision"], f["export_state"], f["review_state"]) for f in findings] == [
+        (1, "proposed", "unreviewed"),
+        (2, "approved-for-export", "human-reviewed"),
+    ]
+    assert {a["finding_revision"] for a in _jsonl(files, "assessments.jsonl")} == {2}
+    _validate_files(files, tmp_path / "p")
+
+
+async def test_approved_history_with_unapproved_latest_is_withheld_whole(
+    client, session, researcher_user, do_login, tmp_path
+):
+    project, article, _ = await _world(session, researcher_user)
+    _, links = await _prediction(session, project, article, snapshot=True)
+    await _login(do_login, LEAD)
+    fid = (await _propose(client, project, article, links[:1]))["finding_id"]
+    await _approve(client, do_login, REV1, project, article, fid, 1, links[:1])
+    await _revise(client, project, article, fid, links[1:], "Second.")
+    files = _unzip((await client.get(_export_url(project))).content)
+    assert fid not in b"".join(files.values()).decode()
+    manifest = json.loads(files["manifest.json"])
+    assert manifest["export_status"]["state"] == "withheld"
+    assert "not-approved=2" in manifest["export_status"]["reasons"]
+    _validate_files(files, tmp_path / "p")
+
+
+async def test_history_spanning_two_snapshots_fails_closed(
+    client, session, researcher_user, do_login, tmp_path
+):
+    project, article, _ = await _world(session, researcher_user)
+    _, links_a = await _prediction(session, project, article, snapshot=True)
+    _, links_b = await _prediction(
+        session, project, article, snapshot=True, quotes=("Other passage.", "Another.")
+    )
+    await _login(do_login, LEAD)
+    fid = (await _propose(client, project, article, links_a[:1]))["finding_id"]
+    await _approve(client, do_login, REV1, project, article, fid, 1, links_a[:1])
+    await _revise(client, project, article, fid, links_b[:1], "Second.")
+    await _approve(client, do_login, REV2, project, article, fid, 2, links_b[:1])
+    files = _unzip((await client.get(_export_url(project))).content)
+    assert fid not in b"".join(files.values()).decode()
+    manifest = json.loads(files["manifest.json"])
+    assert "mixed-snapshot=2" in manifest["export_status"]["reasons"]
+    _validate_files(files, tmp_path / "p")
+
+
+async def test_findings_of_one_article_on_different_snapshots_are_withheld(
+    client, session, researcher_user, do_login, tmp_path
+):
+    project, article, _ = await _world(session, researcher_user)
+    _, links_a = await _prediction(session, project, article, snapshot=True)
+    _, links_b = await _prediction(
+        session, project, article, snapshot=True, quotes=("Other passage.", "Another.")
+    )
+    await _login(do_login, LEAD)
+    one = (await _propose(client, project, article, links_a[:1]))["finding_id"]
+    two = (await _propose(client, project, article, links_b[:1], _content(statement="B.")))[
+        "finding_id"
+    ]
+    await _approve(client, do_login, REV1, project, article, one, 1, links_a[:1])
+    await _approve(client, do_login, REV1, project, article, two, 1, links_b[:1])
+    files = _unzip((await client.get(_export_url(project))).content)
+    blob = b"".join(files.values()).decode()
+    assert one not in blob and two not in blob
+    assert (
+        "paper-snapshot-conflict=2"
+        in json.loads(files["manifest.json"])["export_status"]["reasons"]
+    )
+    _validate_files(files, tmp_path / "p")

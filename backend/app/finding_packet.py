@@ -1,10 +1,18 @@
 """Pure builder of a source-evidence-packet/0.1.0 export from curated findings.
 
 No database, clock, environment or randomness: the same input yields identical bytes.
-A finding is exported only when it is the latest revision, approved by independent
-reviewers, supported by a human supports/contradicts judgment on an exact/normalized
-matched passage of a paper with a public identifier and a captured snapshot. Everything
-else is omitted and counted by reason; nothing is guessed or defaulted into approval.
+A finding is exported as its complete, immutable revision chain (1..n under one stable
+finding id) only when the *latest* revision is approved by independent reviewers and
+supported by a human supports/contradicts judgment on an exact/normalized matched passage of
+a paper with a public identifier and a captured snapshot. Each historical revision keeps its
+own content, evidence and original assessments; its state is derived from its own reviews
+only (a later approval never propagates backward, an earlier one never forward). The frozen
+schema has no field for an approve/reject decision, so a rejected or unapproved historical
+revision is written as ``proposed`` and its original judgments remain the only trace of the
+review. If any record of a chain cannot be represented faithfully (gap, duplicate, missing or
+mixed source snapshot, unrepresentable evidence or judgment, conflicting shared passage), the
+whole chain is omitted and counted by reason; nothing is guessed, dropped selectively or
+defaulted into approval.
 
 Rights (app.rights): a quotation is included only when the article's latest rights
 declaration allows redistribution under an allowlisted licence. Without one, quotations are
@@ -39,6 +47,7 @@ MATCH_STATUSES = {
 }
 JUDGMENTS = {"supports", "contradicts", "insufficient", "unclear"}
 SUPPORT_OR_CONTRA = {"supports", "contradicts"}
+ORIGINS = {"source-explicit", "ai-paraphrase", "reviewer-interpretation"}
 NA = "not-available"
 ARTIFACTS = ("papers", "findings", "passages", "assessments")
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
@@ -139,10 +148,18 @@ def _passage_state(ev: dict[str, Any], snapshot_id: str | None) -> dict[str, Any
     }
 
 
-def _evaluate(f: dict[str, Any], papers: dict[str, dict[str, Any]]) -> tuple[str | None, dict]:
-    """Return (omit_reason | None, detail). detail carries what the exporter needs."""
-    if not f.get("is_latest"):
-        return "not-latest", {}
+def _paper_snapshots(paper: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    """Known source snapshots of a paper by id (``snapshots``, else the one ``snapshot``)."""
+    if not paper:
+        return {}
+    raw = paper.get("snapshots")
+    if raw is None:
+        raw = [paper["snapshot"]] if paper.get("snapshot") else []
+    return {str(s["id"]): s for s in raw if s and _text(s.get("id"))}
+
+
+def _gate(f: dict[str, Any], paper: dict[str, Any] | None) -> tuple[str | None, dict]:
+    """Approval gate of the LATEST revision: (omit_reason | None, detail)."""
     proposer = f.get("proposer_ref")
     reviews = [r for r in f.get("reviews", []) if r.get("reviewer_ref") != proposer]
     if any(r.get("decision") == "reject" for r in reviews):
@@ -152,7 +169,6 @@ def _evaluate(f: dict[str, Any], papers: dict[str, dict[str, Any]]) -> tuple[str
         return "not-approved", {}
 
     evidence = {e["evidence_ref"]: e for e in f.get("evidence", [])}
-    paper = papers.get(f.get("article_id"))
     snap_id = _text(paper["snapshot"]["id"]) if paper and paper.get("snapshot") else None
     # A passage counts as matched on its own match data, independent of snapshot state.
     matched = {
@@ -186,16 +202,172 @@ def _evaluate(f: dict[str, Any], papers: dict[str, dict[str, Any]]) -> tuple[str
         for j in r.get("judgments", [])
     ):
         return "no-source-snapshot", {}
-    independent = {
-        r["reviewer_ref"]
+    return None, {"snap_sha": snap_sha}
+
+
+def _own_state(f: dict[str, Any], passages: dict[str, dict[str, Any]]) -> tuple[str, str, str]:
+    """(export_state, review_state, verification_level) from this revision's OWN reviews only."""
+    reviews = f.get("reviews", [])
+    if not reviews:
+        return "proposed", "unreviewed", "unverified"
+    approvers = [r for r in reviews if r.get("decision") == "approve"]
+    supported = any(
+        j.get("status") in SUPPORT_OR_CONTRA
+        and passages.get(j.get("evidence_ref"), {}).get("status") in GOOD_MATCH
         for r in approvers
-        if any(
-            j.get("status") not in (None, "not_assessed") and j.get("evidence_ref") in passages
-            for j in r.get("judgments", [])
-        )
+        for j in r.get("judgments", [])
+    )
+    judged = any(j.get("status") in JUDGMENTS for r in reviews for j in r.get("judgments", []))
+    if approvers and supported and not any(r.get("decision") == "reject" for r in reviews):
+        independent = {
+            r["reviewer_ref"]
+            for r in approvers
+            if any(j.get("status") not in (None, "not_assessed") for j in r.get("judgments", []))
+        }
+        level = "independently-verified" if len(independent) >= 2 else "source-verified"
+        return "approved-for-export", "human-reviewed", level
+    return "proposed", "human-reviewed", "human-reviewed" if judged else "unverified"
+
+
+def _review_problem(review: dict[str, Any], f: dict[str, Any], refs: set[str]) -> bool:
+    """True when a review cannot be written as native assessments without loss or invention."""
+    if not _text(review.get("id")) or not _text(review.get("reviewer_ref")):
+        return True
+    if review.get("reviewer_ref") == f.get("proposer_ref"):
+        return True  # a self-review is not independent and has no faithful representation
+    try:
+        _ts(review["created_at"])
+    except (KeyError, TypeError, ValueError, AttributeError):
+        return True
+    judgments = review.get("judgments") or []
+    seen = [j.get("evidence_ref") for j in judgments]
+    if not judgments or len(set(seen)) != len(seen) or any(r not in refs for r in seen):
+        return True
+    for j in judgments:
+        status = j.get("status")
+        if status not in JUDGMENTS and status != "not_assessed":
+            return True
+        if status in JUDGMENTS and _text(j.get("rationale")) is None:
+            return True
+    return False
+
+
+def _content_problem(f: dict[str, Any]) -> bool:
+    content = f.get("content")
+    if not isinstance(content, dict) or not _text(content.get("statement")):
+        return True
+    if content.get("origin") not in ORIGINS or not isinstance(content.get("context"), dict):
+        return True
+    if not isinstance(content.get("numeric_results", []), list):
+        return True
+    try:
+        _ts(f["created_at"])
+    except (KeyError, TypeError, ValueError, AttributeError):
+        return True
+    return False
+
+
+def _passage_record(
+    ref: str,
+    ev: dict[str, Any],
+    state: dict[str, Any],
+    paper_id: str,
+    snap_id: str,
+    include_quotes: bool,
+) -> dict[str, Any]:
+    quote = ev["quote"]
+    return {
+        "passage_id": "passage:" + ref,
+        "paper_id": paper_id,
+        "quote_state": "included" if include_quotes else "withheld-rights",
+        "quote": quote if include_quotes else "withheld",
+        "quote_sha256": _sha(quote.encode("utf-8")),
+        "source": {
+            "snapshot_ref": snap_id,
+            "view_id": state["view_id"],
+            "start": state["start"],
+            "end": state["end"],
+        },
+        "match": {
+            "receipt_ref": state["receipt_ref"],
+            "status": state["status"],
+            "matcher": state["matcher"],
+        },
+        "producer_ids": {"evidence_ref": ref},
     }
-    level = "independently-verified" if len(independent) >= 2 else "source-verified"
-    return None, {"passages": passages, "snap_sha": snap_sha, "level": level}
+
+
+def _evaluate_chain(
+    revs: list[dict[str, Any]], papers: dict[str, dict[str, Any]]
+) -> tuple[str | None, dict]:
+    """Return (omit_reason | None, detail) for one finding's whole revision chain."""
+    numbers = [r["revision"] for r in revs]
+    if len(set(numbers)) != len(numbers):
+        return "duplicate-revision", {}
+    revs = sorted(revs, key=lambda r: r["revision"])
+    if [r["revision"] for r in revs] != list(range(1, len(revs) + 1)):
+        return "revision-gap", {}
+    if len({r.get("article_id") for r in revs}) != 1:
+        return "inconsistent-history", {}
+    latest = revs[-1]
+    if not latest.get("is_latest") or any(r.get("is_latest") for r in revs[:-1]):
+        return "not-latest", {}
+    paper = papers.get(latest.get("article_id"))
+    snaps = _paper_snapshots(paper)
+    latest_sids = {str(e.get("snapshot_id") or "") for e in latest.get("evidence", [])}
+    gate_paper = None
+    if paper is not None:
+        only = next(iter(latest_sids)) if len(latest_sids) == 1 else None
+        gate_paper = {**paper, "snapshot": snaps.get(only) if only else None}
+    reason, gate = _gate(latest, gate_paper)
+    if reason == "no-source-snapshot" and len(latest_sids) > 1:
+        reason = "mixed-snapshot"
+    if reason is not None:
+        return reason, {}
+
+    # --- the whole chain must be representable under the paper's ONE snapshot ---------
+    sids = {str(e.get("snapshot_id") or "") for r in revs for e in r.get("evidence", [])}
+    if "" in sids or any(s not in snaps for s in sids):
+        return "no-source-snapshot", {}
+    if len(sids) != 1:
+        return "mixed-snapshot", {}
+    snap_id = next(iter(sids))
+    snap_sha = _snapshot_sha(snaps[snap_id])
+    if snap_sha is None or _text(snaps[snap_id].get("id")) != snap_id:
+        return "no-source-snapshot", {}
+    paper_id = "paper:" + paper["article_id"]
+    include_quotes = quotes_redistributable(paper.get("rights"))
+
+    out_revs, passage_pairs = [], []
+    for r in revs:
+        evidence_list = r.get("evidence") or []
+        refs = [e.get("evidence_ref") for e in evidence_list]
+        if not evidence_list or len(set(refs)) != len(refs) or _content_problem(r):
+            return "unrepresentable-history", {}
+        passages = {}
+        for e in evidence_list:
+            state = _passage_state(e, snap_id)
+            if state is None:
+                return "unrepresentable-history", {}
+            passages[e["evidence_ref"]] = state
+            passage_pairs.append(
+                (
+                    "passage:" + e["evidence_ref"],
+                    _passage_record(e["evidence_ref"], e, state, paper_id, snap_id, include_quotes),
+                )
+            )
+        if any(_review_problem(v, r, set(passages)) for v in r.get("reviews", [])):
+            return "unrepresentable-history", {}
+        states = _own_state(r, passages)
+        if r is latest and states[0] != "approved-for-export":
+            return "not-approved", {}
+        out_revs.append({"f": r, "passages": passages, "states": states})
+    return None, {
+        "revs": out_revs,
+        "snap_id": snap_id,
+        "snap_sha": snap_sha,
+        "passage_pairs": passage_pairs,
+    }
 
 
 def _paper_rights(rights: dict[str, Any] | None) -> dict[str, Any]:
@@ -224,18 +396,47 @@ def build_packet(data: dict[str, Any]) -> PacketResult:
         raise ValueError("a packet needs the 40-hex producer commit")
     papers = {p["article_id"]: p for p in data.get("papers", [])}
 
-    exported: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    chains: dict[str, list[dict[str, Any]]] = {}
+    for f in data.get("findings", []):
+        chains.setdefault(f["finding_id"], []).append(f)
+    verdicts: dict[str, tuple[str | None, dict]] = {
+        fid: _evaluate_chain(chains[fid], papers) for fid in sorted(chains)
+    }
+    # One paper carries exactly one source snapshot: chains of the same paper on different
+    # snapshots conflict, and no old review is ever repointed. All of them are withheld.
+    by_paper: dict[str, set[str]] = {}
+    for fid, (reason, detail) in verdicts.items():
+        if reason is None:
+            by_paper.setdefault(chains[fid][0]["article_id"], set()).add(detail["snap_id"])
+    for fid, (reason, _) in list(verdicts.items()):
+        if reason is None and len(by_paper[chains[fid][0]["article_id"]]) > 1:
+            verdicts[fid] = ("paper-snapshot-conflict", {})
+    # A shared passage id must denote one identical record in every chain that uses it.
+    variants: dict[str, dict[str, set[str]]] = {}
+    for fid, (reason, detail) in verdicts.items():
+        if reason is None:
+            for pid, rec in detail["passage_pairs"]:
+                variants.setdefault(pid, {}).setdefault(_line(rec), set()).add(fid)
+    for forms in variants.values():
+        if len(forms) > 1:
+            for owners in forms.values():
+                for fid in owners:
+                    verdicts[fid] = ("passage-conflict", {})
+
+    exported: list[dict[str, Any]] = []
     omitted: dict[str, int] = {}
     per_finding: list[dict[str, Any]] = []
-    for f in sorted(data.get("findings", []), key=lambda x: (x["finding_id"], x["revision"])):
-        reason, detail = _evaluate(f, papers)
-        entry = {"finding_id": f["finding_id"], "revision": f["revision"]}
+    for fid in sorted(chains):
+        reason, detail = verdicts[fid]
+        for f in sorted(chains[fid], key=lambda x: x["revision"]):
+            entry = {"finding_id": fid, "revision": f["revision"]}
+            if reason is None:
+                per_finding.append({**entry, "exported": True, "reason": None})
+            else:
+                omitted[reason] = omitted.get(reason, 0) + 1
+                per_finding.append({**entry, "exported": False, "reason": reason})
         if reason is None:
-            exported.append((f, detail))
-            per_finding.append({**entry, "exported": True, "reason": None})
-        else:
-            omitted[reason] = omitted.get(reason, 0) + 1
-            per_finding.append({**entry, "exported": False, "reason": reason})
+            exported.append({"id": fid, **detail})
 
     paper_recs: dict[str, dict[str, Any]] = {}
     passage_recs: dict[str, dict[str, Any]] = {}
@@ -244,10 +445,9 @@ def build_packet(data: dict[str, Any]) -> PacketResult:
     stamps: list[str] = []
     rights_used: dict[str, dict[str, Any]] = {}
 
-    for f, detail in exported:
-        article = papers[f["article_id"]]
+    for chain in exported:
+        article = papers[chain["revs"][0]["f"]["article_id"]]
         paper_id = "paper:" + article["article_id"]
-        snap = article["snapshot"]
         rights = article.get("rights")
         include_quotes = quotes_redistributable(rights)
         if paper_id not in paper_recs:
@@ -260,20 +460,16 @@ def build_packet(data: dict[str, Any]) -> PacketResult:
                 "source_type": _source_type(list(article.get("pub_types") or [])),
                 "source_snapshot": {
                     "state": "captured",
-                    "snapshot_ref": str(snap["id"]),
-                    "sha256": detail["snap_sha"],
+                    "snapshot_ref": chain["snap_id"],
+                    "sha256": chain["snap_sha"],
                 },
                 "rights": {**_paper_rights(rights), "full_text_included": False},
                 "producer_ids": {"article_ref": article["article_id"]},
             }
-        evidence = {e["evidence_ref"]: e for e in f["evidence"]}
-        passages = detail["passages"]
-        for ref in sorted(passages):
-            pid = "passage:" + ref
+        for pid, rec in chain["passage_pairs"]:
             if pid in passage_recs:
                 continue
-            p = passages[ref]
-            quote = evidence[ref]["quote"]
+            passage_recs[pid] = rec
             used = rights_used.setdefault(
                 article["article_id"],
                 {
@@ -286,79 +482,60 @@ def build_packet(data: dict[str, Any]) -> PacketResult:
                 },
             )
             used["quotes_included" if include_quotes else "quotes_withheld"] += 1
-            passage_recs[pid] = {
-                "passage_id": pid,
-                "paper_id": paper_id,
-                "quote_state": "included" if include_quotes else "withheld-rights",
-                "quote": quote if include_quotes else "withheld",
-                "quote_sha256": _sha(quote.encode("utf-8")),
-                "source": {
-                    "snapshot_ref": str(snap["id"]),
-                    "view_id": p["view_id"],
-                    "start": p["start"],
-                    "end": p["end"],
-                },
-                "match": {
-                    "receipt_ref": p["receipt_ref"],
-                    "status": p["status"],
-                    "matcher": p["matcher"],
-                },
-                "producer_ids": {"evidence_ref": ref},
-            }
-        content = f["content"]
-        producer_ids: dict[str, Any] = {"evidence_refs": sorted(passages)}
-        answers = {evidence[r]["answer_ref"] for r in passages}
-        predictions = {evidence[r]["prediction_id"] for r in passages}
-        if len(answers) == 1:
-            producer_ids["answer_ref"] = next(iter(answers))
-        if len(predictions) == 1:
-            producer_ids["prediction_ref"] = str(next(iter(predictions)))
-        created = _ts(f["created_at"])
-        stamps.append(created)
-        finding_id = "finding:" + f["finding_id"]
-        finding_recs.append(
-            {
-                "finding_id": finding_id,
-                "revision": f["revision"],
-                "paper_id": paper_id,
-                "statement": content["statement"],
-                "origin": content["origin"],
-                "export_state": "approved-for-export",
-                "review_state": "human-reviewed",
-                "verification_level": detail["level"],
-                "context": content["context"],
-                "numeric_results": content.get("numeric_results", []),
-                "passage_ids": ["passage:" + r for r in sorted(passages)],
-                "producer_ids": producer_ids,
-                "created_at": created,
-            }
-        )
-        for review in sorted(f["reviews"], key=lambda r: str(r["id"])):
-            judgments = sorted(review.get("judgments", []), key=lambda j: j["evidence_ref"])
-            assessed_at = _ts(review["created_at"])
-            for n, j in enumerate(judgments, start=1):
-                if j["evidence_ref"] not in passages:
-                    continue
-                status = j["status"]
-                rationale = _text(j.get("rationale")) if status in JUDGMENTS else None
-                if status in JUDGMENTS and rationale is None:
-                    continue  # a judgment without rationale cannot be expressed; never invent
-                stamps.append(assessed_at)
-                assessment_recs.append(
-                    {
-                        "assessment_id": f"assessment:{review['id']}-{n}",
-                        "finding_id": finding_id,
-                        "finding_revision": f["revision"],
-                        "passage_id": "passage:" + j["evidence_ref"],
-                        "protocol": "seip-support-v1",
-                        "status": status,
-                        "rationale": rationale or NA,
-                        "reviewer_ref": _reviewer_ref(review["reviewer_ref"]),
-                        "assessed_at": assessed_at,
-                        "assessed_snapshot_sha256": detail["snap_sha"],
-                        "producer_ids": {"support_assessment_ref": str(review["id"])},
-                    }
-                )
+        for item in chain["revs"]:
+            f, passages = item["f"], item["passages"]
+            export_state, review_state, level = item["states"]
+            evidence = {e["evidence_ref"]: e for e in f["evidence"]}
+            content = f["content"]
+            producer_ids: dict[str, Any] = {"evidence_refs": sorted(passages)}
+            answers = {evidence[r]["answer_ref"] for r in passages}
+            predictions = {evidence[r]["prediction_id"] for r in passages}
+            if len(answers) == 1:
+                producer_ids["answer_ref"] = next(iter(answers))
+            if len(predictions) == 1:
+                producer_ids["prediction_ref"] = str(next(iter(predictions)))
+            created = _ts(f["created_at"])
+            stamps.append(created)
+            finding_id = "finding:" + f["finding_id"]
+            finding_recs.append(
+                {
+                    "finding_id": finding_id,
+                    "revision": f["revision"],
+                    "paper_id": paper_id,
+                    "statement": content["statement"],
+                    "origin": content["origin"],
+                    "export_state": export_state,
+                    "review_state": review_state,
+                    "verification_level": level,
+                    "context": content["context"],
+                    "numeric_results": content.get("numeric_results", []),
+                    "passage_ids": ["passage:" + r for r in sorted(passages)],
+                    "producer_ids": producer_ids,
+                    "created_at": created,
+                }
+            )
+            for review in sorted(f["reviews"], key=lambda r: str(r["id"])):
+                judgments = sorted(review["judgments"], key=lambda j: j["evidence_ref"])
+                assessed_at = _ts(review["created_at"])
+                for n, j in enumerate(judgments, start=1):
+                    status = j["status"]
+                    rationale = _text(j.get("rationale")) if status in JUDGMENTS else None
+                    stamps.append(assessed_at)
+                    assessment_recs.append(
+                        {
+                            "assessment_id": f"assessment:{review['id']}-{n}",
+                            "finding_id": finding_id,
+                            "finding_revision": f["revision"],
+                            "passage_id": "passage:" + j["evidence_ref"],
+                            "protocol": "seip-support-v1",
+                            "status": status,
+                            "rationale": rationale or NA,
+                            "reviewer_ref": _reviewer_ref(review["reviewer_ref"]),
+                            "assessed_at": assessed_at,
+                            "assessed_snapshot_sha256": chain["snap_sha"],
+                            "producer_ids": {"support_assessment_ref": str(review["id"])},
+                        }
+                    )
 
     records = {
         "papers": sorted(paper_recs.values(), key=lambda r: r["paper_id"]),
@@ -430,7 +607,8 @@ def build_packet(data: dict[str, Any]) -> PacketResult:
     ).encode("utf-8")
     report = {
         "state": state,
-        "exported": len(exported),
+        "exported": len(finding_recs),
+        "exported_findings": len(exported),
         "omitted": n_omitted,
         "omitted_by_reason": dict(sorted(omitted.items())),
         "access_level": access_level,
