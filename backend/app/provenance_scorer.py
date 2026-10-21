@@ -38,11 +38,47 @@ class PersistedScorerTrace:
         group_id,
         stage,
         sequence=0,
+        benchmark_run=None,
+        benchmark_variant=None,
+        benchmark_system_template=None,
+        benchmark_user_template=None,
+        benchmark_template_id=None,
+        benchmark_template_version=None,
     ):
         self.session = session
         self.snapshot = snapshot
         self.view = next(v for v in snapshot.views if v.id == view_id)
         self.job, self.prompt, self.model = job, prompt, model
+        if benchmark_run is not None:
+            if benchmark_run.project_id != snapshot.project_id:
+                raise ValueError("benchmark run and source project differ")
+            self.search_id = benchmark_run.search_id
+            self.inference_job_id = None
+            self.benchmark_run_id = benchmark_run.id
+            self.variant = benchmark_variant
+            self.actor_ref = f"worker:benchmark:{benchmark_run.id}"
+            self.prompt_identity = PromptIdentity(
+                template_id=benchmark_template_id,
+                version=benchmark_template_version,
+                system_template=benchmark_system_template,
+                user_template=benchmark_user_template,
+                field_schema=field_schema,
+                field_schema_sha256=digest(field_schema),
+            )
+        else:
+            self.search_id = job.search_id
+            self.inference_job_id = job.id
+            self.benchmark_run_id = None
+            self.variant = None
+            self.actor_ref = f"worker:inference:{job.id}"
+            self.prompt_identity = PromptIdentity(
+                template_id=prompt.id,
+                version=prompt.version_number,
+                system_template=prompt.system_prompt,
+                user_template=prompt.user_prompt_schema,
+                field_schema=field_schema,
+                field_schema_sha256=digest(field_schema),
+            )
         self.field_schema, self.group_id, self.stage = field_schema, group_id, stage
         self.sequence = sequence
         self.row: Invocation | None = None
@@ -112,21 +148,16 @@ class PersistedScorerTrace:
         envelope = prepare_invocation(
             self.snapshot,
             group_id=self.group_id,
-            search_id=self.job.search_id,
-            inference_job_id=self.job.id,
+            search_id=self.search_id,
+            inference_job_id=self.inference_job_id,
+            benchmark_run_id=self.benchmark_run_id,
+            variant=self.variant,
             stage=self.stage,
             call_kind=kind,
             sequence=self.sequence,
             attempt=1,
             # Job configuration only; scorer wire inputs are in request/input_spans.
-            prompt=PromptIdentity(
-                template_id=self.prompt.id,
-                version=self.prompt.version_number,
-                system_template=self.prompt.system_prompt,
-                user_template=self.prompt.user_prompt_schema,
-                field_schema=self.field_schema,
-                field_schema_sha256=digest(self.field_schema),
-            ),
+            prompt=self.prompt_identity,
             model=ModelIdentity(backend=self.model.backend_type.value, identifier=identity),
             request=request,
             source_view_ids=(self.view.id,),
@@ -197,7 +228,7 @@ class PersistedScorerTrace:
             outcome,
             response=response,
             reconciliation=Reconciliation(
-                actor_ref=f"worker:inference:{self.job.id}", reason="actual SystemOne HTTP response"
+                actor_ref=self.actor_ref, reason="actual SystemOne HTTP response"
             ),
         )
         await self.session.commit()
@@ -234,7 +265,7 @@ class PersistedScorerTrace:
                 parsed={"confidence_score": score},
             ),
             reconciliation=Reconciliation(
-                actor_ref=f"worker:inference:{self.job.id}", reason="actual ONNX session output"
+                actor_ref=self.actor_ref, reason="actual ONNX session output"
             ),
         )
         await self.session.commit()
@@ -248,9 +279,7 @@ class PersistedScorerTrace:
                 raw_availability="unavailable",
                 reason="ONNX session raised without output",
             ),
-            reconciliation=Reconciliation(
-                actor_ref=f"worker:inference:{self.job.id}", reason="ONNX execution failed"
-            ),
+            reconciliation=Reconciliation(actor_ref=self.actor_ref, reason="ONNX execution failed"),
         )
         await self.session.commit()
 

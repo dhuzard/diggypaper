@@ -54,6 +54,7 @@ from app.inference.scoring import is_scorer, score_prediction
 from app.provenance_capture import capture_article_source
 from app.provenance_chat import PersistedChatTrace
 from app.provenance_render import render_chat
+from app.provenance_scorer import PersistedScorerTrace
 from app.schema import project_fields
 from app.searches import ScopedProject, get_search, gold_condition, lot_condition
 
@@ -263,7 +264,44 @@ async def _do_benchmark(
                 trace = None
                 try:
                     if scorer:
-                        prediction = await score_prediction(model, project, article, light=False)
+                        if article.id not in frozen_sources:
+                            frozen_sources[article.id] = await capture_article_source(
+                                session,
+                                project_id=run.project_id,
+                                article_id=article.id,
+                                text_sections=project.text_sections,
+                            )
+                            await session.commit()  # Release source lock before model dispatch.
+                        snapshot, view_id = frozen_sources[article.id]
+                        if model.backend_type == BackendType.ONNX_LOCAL:
+                            view_id = next(
+                                v.id for v in snapshot.views if v.kind == "title_abstract"
+                            )
+                        view = next(v for v in snapshot.views if v.id == view_id)
+                        trace = PersistedScorerTrace(
+                            session,
+                            snapshot=snapshot,
+                            view_id=view_id,
+                            job=run,
+                            prompt=None,
+                            model=model,
+                            field_schema=fields
+                            if model.backend_type == BackendType.SYSTEMONE
+                            else [],
+                            group_id=uuid.uuid4(),
+                            stage="main",
+                            benchmark_run=run,
+                            benchmark_variant=vname,
+                            benchmark_system_template=system,
+                            benchmark_user_template=user_schema,
+                            benchmark_template_id=variant.template_id,
+                            benchmark_template_version=variant.template_version,
+                        )
+                        prediction = await score_prediction(
+                            model, project, article, light=False, trace=trace, text=view.text
+                        )
+                        if trace.producing_invocation is None:
+                            raise InferenceError("scorer_call_not_captured")
                     else:
                         # Real chat drivers can retain an exact, committed source
                         # view and request. Injected test doubles retain legacy
@@ -329,6 +367,9 @@ async def _do_benchmark(
                 took = time.monotonic() - start
                 total_time += took
                 preds[article.id] = prediction
+                # A scorer may select an earlier winning window; the last dispatched
+                # call is not necessarily the one that produced this prediction.
+                producing = trace.producing_invocation if trace else None
                 session.add(
                     BenchmarkPrediction(
                         benchmark_run_id=run.id,
@@ -342,7 +383,7 @@ async def _do_benchmark(
                         search_id=run.search_id if trace else None,
                         provenance_project_id=run.project_id if trace else None,
                         source_snapshot_id=trace.snapshot.id if trace else None,
-                        invocation_id=trace.row.id if trace and trace.row else None,
+                        invocation_id=producing.id if producing else None,
                         invocation_group_id=trace.group_id if trace else None,
                     )
                 )
