@@ -28,9 +28,7 @@ def _uuid(name: str, *args, **kw) -> sa.Column:
 
 
 def _created(name: str = "created_at") -> sa.Column:
-    return sa.Column(
-        name, sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
-    )
+    return sa.Column(name, sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False)
 
 
 def upgrade() -> None:
@@ -58,9 +56,7 @@ def upgrade() -> None:
         _uuid("id", primary_key=True),
         _uuid("project_id", nullable=False),
         _uuid("article_id", nullable=False),
-        _uuid(
-            "prediction_id", sa.ForeignKey("article_predictions.id", **_CASCADE), nullable=False
-        ),
+        _uuid("prediction_id", sa.ForeignKey("article_predictions.id", **_CASCADE), nullable=False),
         _uuid("finding_id", sa.ForeignKey("findings.id", **_SET_NULL), nullable=True),
         sa.Column("quote_index", sa.Integer(), nullable=False),
         sa.Column("identifier_system", sa.String(64), nullable=False),
@@ -102,9 +98,7 @@ def upgrade() -> None:
         _uuid("id", primary_key=True),
         _uuid("project_id", nullable=False),
         _uuid("article_id", nullable=False),
-        _uuid(
-            "prediction_id", sa.ForeignKey("article_predictions.id", **_CASCADE), nullable=False
-        ),
+        _uuid("prediction_id", sa.ForeignKey("article_predictions.id", **_CASCADE), nullable=False),
         _uuid("finding_id", sa.ForeignKey("findings.id", **_SET_NULL), nullable=True),
         sa.Column("observation_id", sa.String(120), nullable=False),
         sa.Column("source_kind", sa.String(16), nullable=False),

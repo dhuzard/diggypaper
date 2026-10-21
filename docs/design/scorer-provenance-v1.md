@@ -1,6 +1,7 @@
 # SEIP scorer call capture
 
-Normal inference now freezes the article once before the scorer cascade. Each
+Normal inference freezes the article once before the scorer cascade; benchmarks
+freeze it once per article and reuse that snapshot across models and variants. Each
 SystemOne HTTP request is persisted from the actual driver body before dispatch,
 including its bounded text window, question set, window index and response.
 Window text is mapped to exact offsets in the retained article view. For a
@@ -25,7 +26,13 @@ model input; `PromptIdentity` must not be presented as a sent prompt.
 
 Scorers have `quotation_producer=not_produced`, empty generated quotations and
 no quote occurrence checks. These calls cannot establish textual support for
-an answer. A normal scorer result without a succeeded captured call fails the
-job instead of writing an unbound prediction. Transport loss retains an
+an answer. Any scorer result without a succeeded captured call fails the
+job or benchmark instead of writing an unbound prediction. Transport loss retains an
 `outcome_unknown` call; provider errors retain their status, not error bodies.
-The benchmark scorer path remains legacy and is outside this slice.
+Benchmark scorer invocations carry the exact run, search and resolved variant identity,
+with no inference-job ID. Their configured template identity and field schema are
+frozen as context; actual SystemOne questions remain in the captured request.
+SystemOne reads the selected composed view; ONNX reads title/abstract only. Each
+benchmark prediction references the selected producing invocation (the winning
+window or detail call), its group and frozen source. Existing historical rows
+remain unversioned; no invocation or source history is backfilled.
