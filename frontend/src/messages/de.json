@@ -959,6 +959,7 @@
     "nextStep": "Nächster Schritt",
     "jobPending": "In der Warteschlange…",
     "jobRunning": "Läuft… diese Seite aktualisiert sich selbst.",
+    "jobStuck": "Seit {minutes} Min. in der Warteschlange: der Aufgaben-Worker scheint nicht zu laufen. Prüfen Sie „docker compose ps“; die Aufgabe startet, sobald der Worker läuft.",
     "jobFailed": "Die Aufgabe ist fehlgeschlagen:",
     "lastRun": "Letzte Ausführung: {date}",
     "extracted": "{n} Artikel extrahiert",

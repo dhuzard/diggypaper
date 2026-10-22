@@ -26,6 +26,7 @@ from app.db.models import (
     ArticlePrediction,
     BackendType,
     ImportJob,
+    ImportJobStatus,
     InferenceJob,
     ModelRegistry,
     NtsAdjudication,
@@ -202,6 +203,51 @@ def _dataset_payload(d: NtsDataset) -> dict:
     }
 
 
+async def _queue(db: AsyncSession, project_id: uuid.UUID, kind: str, send) -> dict:
+    """Record the job as PENDING, then hand it to the worker.
+
+    The row exists before the message is sent, so the page shows the task as queued even when
+    no worker picks it up; the worker then updates that same row. One task of a kind at a time.
+    """
+    active = await db.scalar(
+        select(ImportJob.id).where(
+            ImportJob.project_id == project_id,
+            ImportJob.kind == kind,
+            ImportJob.status.in_([ImportJobStatus.PENDING, ImportJobStatus.RUNNING]),
+        )
+    )
+    if active is not None:
+        raise HTTPException(status_code=409, detail=f"{kind} already queued or running")
+    job = ImportJob(
+        project_id=project_id,
+        query=kind,
+        kind=kind,
+        status=ImportJobStatus.PENDING,
+        result_json={"phase": "queued"},
+    )
+    db.add(job)
+    await db.commit()
+    record_id = str(job.id)
+    try:
+        result = send(record_id)
+    except Exception as exc:  # broker unreachable: say so on the row, not only in the logs
+        await db.refresh(job)
+        job.status = ImportJobStatus.FAILED
+        job.error = f"task queue unavailable: {type(exc).__name__}"
+        job.completed_at = datetime.now(UTC)
+        await db.commit()
+        raise HTTPException(status_code=503, detail="task queue unavailable") from None
+    if celery_app.conf.task_always_eager:
+        status = result.state  # already ran inline and updated the row itself
+    else:
+        await db.refresh(job)
+        if job.job_id is None:  # the worker may already have claimed the row
+            job.job_id = result.id
+            await db.commit()
+        status = "PENDING"
+    return {"job_id": result.id, "record_id": record_id, "status": status}
+
+
 @router.post("/{project_id}/nts/alures/sync", status_code=202)
 async def alures_sync(
     project_id: uuid.UUID, db: DbDep, user: UserDep, body: SyncBody | None = None
@@ -210,9 +256,12 @@ async def alures_sync(
     await _require_project_member(db, project_id, user)
     await _require_lead(db, project_id, user)
     offline = bool(body and body.offline)
-    result = nts_alures_sync_task.delay(str(project_id), offline)
-    status = result.state if celery_app.conf.task_always_eager else "PENDING"
-    return {"job_id": result.id, "status": status}
+    return await _queue(
+        db,
+        project_id,
+        "nts-alures",
+        lambda rid: nts_alures_sync_task.delay(str(project_id), offline, rid),
+    )
 
 
 @router.get("/{project_id}/nts/alures/datasets")
@@ -237,9 +286,9 @@ async def join(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
     """Recompute publication-NTS links and count observations (Celery task)."""
     await _require_project_member(db, project_id, user)
     await _require_lead(db, project_id, user)
-    result = nts_join_task.delay(str(project_id))
-    status = result.state if celery_app.conf.task_always_eager else "PENDING"
-    return {"job_id": result.id, "status": status}
+    return await _queue(
+        db, project_id, "nts-join", lambda rid: nts_join_task.delay(str(project_id), rid)
+    )
 
 
 @router.get("/{project_id}/nts/links")
