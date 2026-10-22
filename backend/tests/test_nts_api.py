@@ -173,6 +173,7 @@ async def test_setup_requires_lead_and_installs_the_template(client, session, do
     assert (
         status["is_nts_project"] and status["extracted_articles"] == 0 and not status["has_links"]
     )
+    assert status["extraction_job"] is None and status["proposed_findings"] == 0
 
 
 async def test_end_to_end_proposals_join_summary_review_and_adjudication(
@@ -185,8 +186,14 @@ async def test_end_to_end_proposals_join_summary_review_and_adjudication(
     await _run_extractor(engine, session, project)
 
     # --- proposals: one finding per extractor proposal, automation proposer, idempotent
+    status = (await client.get(_base(project))).json()
+    assert status["extraction_job"]["status"] == "COMPLETED"
+    assert status["extraction_job"]["result"]["processed"] == 1
+    assert status["proposed_findings"] == 0
     created = (await client.post(f"{_base(project)}/propose")).json()
     assert created["predictions"] == 1 and created["created"] > 0 and created["skipped"] == 0
+    status = (await client.get(_base(project))).json()
+    assert status["proposed_findings"] == created["created"]
     again = (await client.post(f"{_base(project)}/propose")).json()
     assert again["created"] == 0 and again["skipped"] == created["created"]
     findings = (

@@ -9,7 +9,6 @@ import {
   NtsReviewItem,
   NtsStatus,
   NtsSummaryRow,
-  findingsExportUrl,
   getNtsReviewQueue,
   getNtsStatus,
   getNtsSummary,
@@ -26,6 +25,7 @@ import {
 import { useSearchId } from "@/lib/useSearch";
 import { RequireAuth } from "@/components/RequireAuth";
 import { NtsReviewQueue } from "@/components/NtsReviewQueue";
+import { NtsAction, NtsWorkflow, ntsWorkRunning } from "@/components/NtsWorkflow";
 import { Button } from "@/components/ui/Button";
 import { Badge, Card } from "@/components/ui/Card";
 import { Textarea, Select } from "@/components/ui/Field";
@@ -146,7 +146,7 @@ function NtsContent() {
   }, [load]);
 
   // A queued task finishes in the background: poll while one is pending or running.
-  const running = status?.jobs.some((j) => j.status === "PENDING" || j.status === "RUNNING") ?? false;
+  const running = status ? ntsWorkRunning(status) : false;
   useEffect(() => {
     if (!running) return;
     const timer = setInterval(() => void load(), 3000);
@@ -165,6 +165,30 @@ function NtsContent() {
       setError(e instanceof Error ? e.message : "error");
     } finally {
       setBusy(null);
+    }
+  }
+
+  // Background tasks report their progress in their step; only immediate results become a note.
+  function runAction(action: NtsAction) {
+    switch (action) {
+      case "extract":
+        return act(action, async () => {
+          await triggerInference(projectId, { model: NTS_MODEL_NAME, search_id: searchId });
+        });
+      case "propose":
+        return act(action, async () => t("proposeResult", await ntsPropose(projectId)));
+      case "sync":
+        return act(action, async () => {
+          await ntsAluresSync(projectId);
+        });
+      case "sync-offline":
+        return act(action, async () => {
+          await ntsAluresSync(projectId, true);
+        });
+      case "join":
+        return act(action, async () => {
+          await ntsJoin(projectId);
+        });
     }
   }
 
@@ -198,100 +222,14 @@ function NtsContent() {
         </Card>
       ) : (
         <>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <Card title={t("step1")}>
-              <p className="text-xs text-muted">{t("step1Hint", { model: NTS_MODEL_NAME })}</p>
-              <p className="mt-2 text-sm text-foreground">{t("extracted", { n: status.extracted_articles })}</p>
-              {isLead && (
-                <Button
-                  className="mt-2"
-                  size="sm"
-                  disabled={!frozen}
-                  loading={busy === "extract"}
-                  onClick={() =>
-                    void act("extract", async () => {
-                      const r = await triggerInference(projectId, { model: NTS_MODEL_NAME, search_id: searchId });
-                      return t("jobQueued", { status: r.status });
-                    })
-                  }
-                >
-                  {t("runExtraction")}
-                </Button>
-              )}
-            </Card>
-            <Card title={t("step2")}>
-              <p className="text-xs text-muted">{t("step2Hint")}</p>
-              {isLead && (
-                <Button
-                  className="mt-2"
-                  size="sm"
-                  disabled={status.extracted_articles === 0}
-                  loading={busy === "propose"}
-                  onClick={() =>
-                    void act("propose", async () => {
-                      const r = await ntsPropose(projectId);
-                      return t("proposeResult", r);
-                    })
-                  }
-                >
-                  {t("propose")}
-                </Button>
-              )}
-            </Card>
-            <Card title={t("step3")}>
-              <p className="text-xs text-muted">{t("step3Hint")}</p>
-              <p className="mt-2 text-sm text-foreground">
-                {status.datasets.length > 0 ? t("datasets", { n: status.datasets.length }) : t("noDatasets")}
-              </p>
-              {isLead && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    loading={busy === "sync"}
-                    onClick={() =>
-                      void act("sync", async () => t("jobQueued", { status: (await ntsAluresSync(projectId)).status }))
-                    }
-                  >
-                    {t("syncAlures")}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    loading={busy === "sync-offline"}
-                    onClick={() =>
-                      void act("sync-offline", async () =>
-                        t("jobQueued", { status: (await ntsAluresSync(projectId, true)).status })
-                      )
-                    }
-                  >
-                    {t("syncOffline")}
-                  </Button>
-                  <Button
-                    size="sm"
-                    disabled={status.extracted_articles === 0}
-                    loading={busy === "join"}
-                    onClick={() => void act("join", async () => t("jobQueued", { status: (await ntsJoin(projectId)).status }))}
-                  >
-                    {t("join")}
-                  </Button>
-                </div>
-              )}
-            </Card>
-            <Card title={t("step4")}>
-              <p className="text-xs text-muted">{t("step4Hint")}</p>
-              <p className="mt-2 text-sm text-foreground">{t("pending", { n: status.review_pending })}</p>
-              {isLead && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <a className="text-sm text-primary hover:underline" href={findingsExportUrl(projectId, "restricted")}>
-                    {t("exportPacket")} ↓
-                  </a>
-                  <a className="text-sm text-primary hover:underline" href={findingsExportUrl(projectId, "public")}>
-                    {t("exportPublic")} ↓
-                  </a>
-                </div>
-              )}
-            </Card>
-          </div>
+          <NtsWorkflow
+            projectId={projectId}
+            status={status}
+            frozen={frozen}
+            isLead={isLead}
+            busy={busy}
+            onAction={(a) => void runAction(a)}
+          />
 
           {status.jobs.length > 0 && (
             <Card title={t("jobs")}>
@@ -310,7 +248,7 @@ function NtsContent() {
             </Card>
           )}
 
-          <Card title={t("summary")}>
+          <Card title={t("summary")} id="nts-summary">
             {summary.length === 0 ? (
               <EmptyState title={t("noLinks")} />
             ) : (
@@ -382,7 +320,7 @@ function NtsContent() {
             )}
           </Card>
 
-          <Card title={t("links")}>
+          <Card title={t("links")} id="nts-links">
             {links.length === 0 ? (
               <EmptyState title={t("noLinks")} />
             ) : (
@@ -429,7 +367,7 @@ function NtsContent() {
             )}
           </Card>
 
-          <Card title={t("reviewQueue")}>
+          <Card title={t("reviewQueue")} id="nts-review">
             <NtsReviewQueue projectId={projectId} items={queue} searchId={searchId} onReviewed={() => void load()} />
           </Card>
         </>
