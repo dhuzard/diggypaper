@@ -44,6 +44,9 @@ _HEX40 = re.compile(r"^[0-9a-f]{40}$")
 _RECIPIENT = re.compile(r"^recipient:[a-z0-9][a-z0-9-]{0,62}$")
 _GRANT = re.compile(r"^grant:[0-9a-f]{32}$")
 _DECISION = re.compile(r"^decision:[0-9a-f]{32}$")
+# Same leak rule as the contract validator (README section 3).
+_EMAIL = re.compile(r"[^\s@]+@[^\s@]+\.[^\s@]+")
+_BARE_DIGEST = re.compile(r"(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])")
 
 
 def canonical_bytes(doc: Mapping[str, Any]) -> bytes:
@@ -119,6 +122,8 @@ def build_project_descriptor(
             raise ValueError(f"invalid decision_ref {decision_ref!r}")
         if not value.strip():
             raise ValueError(f"disclosed {name} is empty")
+        if _EMAIL.search(value) or _BARE_DIGEST.search(value):
+            raise ValueError(f"disclosed {name} contains an email or a bare digest")
         metadata[name] = {"decision_ref": decision_ref, "state": "disclosed", "value": value}
 
     refs = [dict(a) for a in artifacts]

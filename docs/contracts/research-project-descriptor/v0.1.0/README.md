@@ -2,7 +2,7 @@
 
 Status: **draft** contract, the first slice of [issue #53](https://github.com/dhuzard/diggypaper/issues/53). It is the Diggypaper producer side of the ORAtlas connector contract [#206](https://github.com/dhuzard/oratlas/issues/206), under the [R0 threat model #202](https://github.com/dhuzard/oratlas/issues/202). This slice adds docs, a JSON Schema, synthetic fixtures, an offline validator and a pure producer-side builder (`backend/app/project_descriptor.py`). It adds no database migration, API route, UI, token or LLM call.
 
-Grant and audit records now exist (section 9). The connector endpoints and the authorized export are later #53 slices; until they land, **nothing in Diggypaper issues a descriptor to anyone**.
+Grant and audit records exist, and `GET /api/v1/connector/projects/{id}/descriptor` issues a descriptor only under a live grant (section 9). Artifact references and the authorized export are later #53 slices; until then a descriptor lists no artifacts.
 
 The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
 
@@ -125,11 +125,20 @@ The same rules as SEP section 6 apply. Within `0.1.x`, only additive changes are
 - **Audit.** `connector_audit_events` records creation, revocation, granted access and refused access with a fixed reason. It has no foreign key, so it outlives the grant and the project, and it is never updated or deleted; downgrading refuses while it has rows. Its `actor_ref` is the salted global account digest and is never returned by the API.
 - **No retention period** is set for the audit log. That stays an open policy decision under ORAtlas #202.
 
+**Implemented: descriptor issue** (`app/api/v1/connector.py`):
+
+- **Endpoint and credential.** `GET /api/v1/connector/projects/{id}/descriptor` needs `Authorization: Bearer <credential>` and the `list_project` scope. A session cookie is never a credential.
+- **Uniform refusal.** A missing, malformed, unknown, revoked or expired credential gets the same 404 and body. So do a guessed project, another project and a missing scope. Each refusal is audited with its reason.
+- **What is disclosed.** The title and description appear only when the grant discloses them and holds `read_selected_metadata`; an empty description stays withheld. A disclosed value carrying an email or a bare digest is refused with a 409 and nothing is issued, so the lead has to fix the metadata.
+- **Lifetime.** A descriptor's `expires_at` is the earlier of 7 days and the grant's expiry. It never outlives its grant.
+- **Body and digest.** The body is the exact canonical bytes, so the descriptor digest is the SHA-256 of the response body.
+- **No caching.** Responses carry `Cache-Control: no-store, private`, and revocation takes effect on the next request. A descriptor a recipient already holds remains a snapshot that consumers MUST drop (section 5); Diggypaper cannot recall it.
+- **Producer commit.** As for packets, issue needs the server's 40-hex `GIT_COMMIT`. Without it the endpoint returns a 409, but only after authorization.
+
 **Remaining:**
 
-1. **Connector endpoints.** Bearer-authenticated, read-only project listing and descriptor issue through `authorize()`. A guessed project id, an unrelated project, a stranger or a member of another project gets the same response as a missing project, with nothing about other projects.
-2. **Replay and post-revocation tests end to end** over HTTP, including an old credential and a cached descriptor after revocation.
-3. **Authorized export.** `obtain_authorized_export` returns the exact packet bytes whose digest was listed, within the packet's own rights and only while the holder is still a lead. It never widens a restricted packet.
-4. **Annotator connections.** Delegated consent from an annotator holder, approved by a lead. Today only a lead can be a holder.
+1. **Artifact references.** `list_artifacts` lists packet digests. This needs the packet build pulled out of the findings export route, with the frozen packet bytes unchanged.
+2. **Authorized export.** `obtain_authorized_export` returns the exact packet bytes whose digest was listed, within the packet's own rights and only while the holder is still a lead. It never widens a restricted packet.
+3. **Annotator connections.** Delegated consent from an annotator holder, approved by a lead. Today only a lead can be a holder.
 
 ORAtlas ingestion stays gated by #202/#206. The ORAtlas `diggypaper.synthetic.*` fixtures can be replaced by these fixtures once ORAtlas pins them.

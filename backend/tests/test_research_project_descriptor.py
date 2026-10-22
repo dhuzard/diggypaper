@@ -225,6 +225,14 @@ def test_builder_carries_no_private_metadata():
         ),
         ({"grant_ref": GRANT, "disclosed": {"members": ("x", DECISION)}}, "not disclosable"),
         ({"grant_ref": GRANT, "disclosed": {"title": ("  ", DECISION)}}, "empty"),
+        (
+            {"grant_ref": GRANT, "disclosed": {"title": ("ask lead@example.org", DECISION)}},
+            "email or a bare digest",
+        ),
+        (
+            {"grant_ref": GRANT, "disclosed": {"description": ("x " + "ab" * 32, DECISION)}},
+            "email or a bare digest",
+        ),
         ({"grant_ref": "grant:short"}, "invalid grant_ref"),
         ({"recipient_ref": "oratlas"}, "invalid recipient_ref"),
         ({"producer_commit": "unknown"}, "40-hex"),
@@ -255,7 +263,9 @@ def test_packet_artifact_binds_exact_manifest_bytes():
     assert packet_artifact(PROJECT_ID, files)["digest"] != ref["digest"]
 
 
-def test_no_route_exposes_the_descriptor():
+def test_only_the_grant_checked_connector_issues_descriptors():
     api = ROOT / "backend" / "app" / "api"
-    for path in api.rglob("*.py"):
-        assert "project_descriptor" not in path.read_text(encoding="utf-8"), path
+    users = sorted(
+        p.name for p in api.rglob("*.py") if "project_descriptor" in p.read_text(encoding="utf-8")
+    )
+    assert users == ["connector.py"]
