@@ -1243,7 +1243,7 @@ export const deleteSearch = (projectId: string, searchId: string): Promise<void>
 
 // --- NTS publication traceability (issue #11) ---------------------------------
 
-export const NTS_MODEL_NAME = "nts-deterministic-extractor-v1";
+export const NTS_MODEL_NAME = "nts-deterministic-extractor-v2";
 
 export interface NtsDataset {
   id: string;

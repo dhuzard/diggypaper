@@ -1,7 +1,7 @@
 """NTS publication traceability endpoints (issue #11), under ``/projects/{id}/nts``.
 
 Setup turns a project into an NTS project (question + fields + extractor model); the ordinary
-inference endpoint then runs ``nts-deterministic-extractor-v1``. Proposals, ALURES sync and the
+inference endpoint then runs ``nts-deterministic-extractor-v2``. Proposals, ALURES sync and the
 join derive data from stored predictions; adjudications are the only writes a human makes here
 (finding reviews stay on the findings endpoints).
 """
@@ -14,7 +14,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
@@ -25,8 +25,6 @@ from app.db.models import (
     Article,
     ArticlePrediction,
     BackendType,
-    Finding,
-    FindingRevision,
     ImportJob,
     InferenceJob,
     ModelRegistry,
@@ -36,7 +34,7 @@ from app.db.models import (
     User,
 )
 from app.nts import service
-from app.nts.backend import MODEL_IDENTIFIER, MODEL_NAME
+from app.nts.backend import MODEL_IDENTIFIER, MODEL_NAME, MODEL_NAMES
 from app.nts.fields import NTS_FIELDS, NTS_QUESTION, is_nts_project
 from app.pseudonym import anonymized_actor_ref
 from app.schema import project_fields
@@ -118,25 +116,18 @@ async def status(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
     )
     extraction = await db.scalar(
         select(InferenceJob)
-        .where(InferenceJob.project_id == project_id, InferenceJob.model_used == MODEL_NAME)
+        .where(InferenceJob.project_id == project_id, InferenceJob.model_used.in_(MODEL_NAMES))
         .order_by(InferenceJob.created_at.desc())
         .limit(1)
     )
-    proposed = await db.scalar(
-        select(func.count(func.distinct(Finding.id)))
-        .join(FindingRevision, FindingRevision.finding_id == Finding.id)
-        .where(
-            Finding.project_id == project_id,
-            FindingRevision.proposer_ref == service.AUTOMATION_PROPOSER_REF,
-        )
-    )
+    proposed = await service.proposed_count(db, project_id)
     return {
         "is_nts_project": is_nts_project(project_fields(project)),
         "model_name": MODEL_NAME,
         "extracted_articles": len(predictions),
         # The extractor runs as an ordinary inference job; its latest run, so the UI can follow it.
         "extraction_job": _job_payload(extraction) if extraction is not None else None,
-        "proposed_findings": proposed or 0,
+        "proposed_findings": proposed,
         "datasets": [_dataset_payload(d) for d in datasets],
         "has_links": links is not None,
         "review_pending": len(await service.review_queue(db, project_id)),

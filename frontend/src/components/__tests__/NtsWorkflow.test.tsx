@@ -3,7 +3,7 @@ import { NtsWorkflow, ntsStepStates, ntsWorkRunning } from "@/components/NtsWork
 import type { NtsStatus } from "@/lib/api";
 
 jest.mock("@/lib/api", () => ({
-  NTS_MODEL_NAME: "nts-deterministic-extractor-v1",
+  NTS_MODEL_NAME: "nts-deterministic-extractor-v2",
   findingsExportUrl: (project: string, scope: string) => `/export/${project}/${scope}`,
 }));
 jest.mock("next-intl", () => ({
@@ -21,7 +21,7 @@ const project = "11111111-1111-4111-8111-111111111111";
 function status(overrides: Partial<NtsStatus> = {}): NtsStatus {
   return {
     is_nts_project: true,
-    model_name: "nts-deterministic-extractor-v1",
+    model_name: "nts-deterministic-extractor-v2",
     extracted_articles: 0,
     extraction_job: null,
     proposed_findings: 0,

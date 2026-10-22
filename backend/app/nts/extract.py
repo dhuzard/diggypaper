@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from app.finding_schema import FindingContent
 from app.nts.counts import (
@@ -71,10 +71,15 @@ def _subject(sentence: str) -> str:
     return _UNKNOWN if subj.lower() in _GENERIC_SUBJECTS else subj
 
 
-def _content(statement: str, population: str, numeric: list[dict] | None = None) -> dict[str, Any]:
+def _content(
+    statement: str,
+    population: str,
+    numeric: list[dict] | None = None,
+    origin: str = "source-explicit",
+) -> dict[str, Any]:
     return {
         "statement": statement,
-        "origin": "source-explicit",
+        "origin": origin,
         "context": {
             "population": population,
             "exposure": _UNKNOWN,
@@ -96,6 +101,7 @@ def _make(
     population: str,
     numeric: list[dict] | None = None,
     typed: dict | None = None,
+    worded: str | None = None,
 ) -> Proposal:
     text = frozen.source["sections"][si]["text"]
     window, receipt = _unique_window(frozen, si, text, window)
@@ -105,7 +111,11 @@ def _make(
         quote = quote[:2000]  # FindingContent.statement bound; receipt below is for the cut text
         receipt = match_receipt(frozen, quote)
         window = (window[0], window[0] + len(quote))
-    content = _content(quote, population, numeric)
+    # v1 states the quote itself; v2 words the claim and keeps the quote as its evidence only.
+    if worded is None:
+        content = _content(quote, population, numeric)
+    else:
+        content = _content(worded, population, numeric, origin="ai-paraphrase")
     FindingContent.model_validate(content)  # same validation Finding Curation applies
     key = f"{kind}|{si}|{window[0]}|{window[1]}"
     return Proposal(
@@ -149,8 +159,90 @@ def _numeric_for(cluster: Cluster) -> list[dict[str, Any]]:
     return out
 
 
-def propose(frozen: FrozenSource, case_id: str) -> dict[str, Any]:
-    """All proposals, count observations and extraction diagnostics for one frozen article."""
+Statements = Literal["verbatim", "short"]
+
+_AUTH_LABELS = {
+    "apafis": "French APAFIS authorization",
+    "uk-ppl": "UK Home Office project licence",
+    "es-regional": "Spanish regional authorization",
+    "ro-project-authorization": "Romanian project authorization",
+    "ro-ethics-approval": "Romanian ethics approval",
+    "ro-facility-authorization": "Romanian facility authorization",
+}
+_SCOPE_WORDS = {
+    "article-total": "in total",
+    "cohort-total": "in one cohort",
+    "per-group": "per group",
+    "additional-to-group": "in addition to the groups",
+}
+_MAX_COUNT_ITEMS = 8
+
+
+def _for_population(population: str) -> str:
+    return "" if population == _UNKNOWN else f", for {population}"
+
+
+def _nts_statement(mentions: list, population: str) -> str:
+    """One sentence naming each cited identifier as normalized, with the form the article used."""
+    parts = []
+    for m in mentions:
+        part = m.normalized
+        if m.version_cited:
+            part += f" version {m.version_cited}"
+        if m.date_cited:
+            part += f" ({m.date_cited})"
+        if m.verbatim.strip() != m.normalized:
+            part += f', written "{m.verbatim.strip()}"'
+        if part not in parts:
+            parts.append(part)
+    noun = "summary" if len(parts) == 1 else "summaries"
+    return f"The article cites the ALURES non-technical {noun} {'; '.join(parts)}{_for_population(population)}."
+
+
+def _authorization_statement(auths: list, population: str) -> str:
+    parts = []
+    for a in auths:
+        part = f"{_AUTH_LABELS.get(a.kind, a.kind)} {a.value}"
+        if part not in parts:
+            parts.append(part)
+    noun = "authorization" if len(parts) == 1 else "authorizations"
+    return (
+        f"The article cites the national {noun} {'; '.join(parts)}{_for_population(population)} "
+        "(not an NTS identifier)."
+    )
+
+
+def _count_statement(cluster: Cluster, population: str) -> str:
+    """The exact numbers of a cluster with their scope; repeated sentences are listed once."""
+    items: list[str] = []
+    for o in cluster.observations:
+        if o.number is None:
+            continue
+        sex = "" if o.sex in ("unknown", "") else f" {o.sex.replace('+', ' and ')}"
+        item = f"{o.number}{sex} {_SCOPE_WORDS.get(o.count_scope, o.count_scope)}"
+        if o.derived:
+            item += " (derived)"
+        if item not in items:
+            items.append(item)
+    if not items:
+        return f"Animal numbers are mentioned without an exact value{_for_population(population)}."
+    shown = "; ".join(items[:_MAX_COUNT_ITEMS])
+    if len(items) > _MAX_COUNT_ITEMS:
+        shown += f"; and {len(items) - _MAX_COUNT_ITEMS} more (see the typed values)"
+    who = "" if population == _UNKNOWN else f" ({population})"
+    return f"Animal numbers reported{who}: {shown}."
+
+
+def propose(
+    frozen: FrozenSource, case_id: str, statements: Statements = "verbatim"
+) -> dict[str, Any]:
+    """All proposals, count observations and extraction diagnostics for one frozen article.
+
+    ``statements="verbatim"`` (extractor v1) states each finding as its quoted passage;
+    ``"short"`` (v2) words the claim in one machine sentence (origin ``ai-paraphrase``) and keeps
+    the same passage as evidence. Windows, quotes, receipts and typed values are identical.
+    """
+    short = statements == "short"
     sections = frozen.source["sections"]
     article_ref = str(frozen.snapshot.article_id)
     proposals: list[Proposal] = []
@@ -184,6 +276,7 @@ def propose(frozen: FrozenSource, case_id: str) -> dict[str, Any]:
                         "nts_mentions": [m.__dict__ for m in hit["nts"]],
                         "same_passage_authorizations": [x.__dict__ for x in hit["auth"]],
                     },
+                    worded=_nts_statement(hit["nts"], population) if short else None,
                 )
                 proposals.append(p)
             elif hit["auth"]:
@@ -198,6 +291,7 @@ def propose(frozen: FrozenSource, case_id: str) -> dict[str, Any]:
                         "authorizations": [x.__dict__ for x in hit["auth"]],
                         "note": "national/institutional numbers; not NTS identifiers and not equal to one",
                     },
+                    worded=_authorization_statement(hit["auth"], population) if short else None,
                 )
                 proposals.append(p)
             if hit["nts"] and hit["auth"]:
@@ -213,6 +307,7 @@ def propose(frozen: FrozenSource, case_id: str) -> dict[str, Any]:
                             "authorizations": [x.__dict__ for x in hit["auth"]],
                             "note": "same sentence as an NTS identifier; kept as a separate finding because the two identifier systems are not interchangeable",
                         },
+                        worded=_authorization_statement(hit["auth"], population) if short else None,
                     )
                 )
 
@@ -234,6 +329,7 @@ def propose(frozen: FrozenSource, case_id: str) -> dict[str, Any]:
             pop,
             numeric=_numeric_for(cl),
             typed={"cohort": cl.section_title},
+            worded=_count_statement(cl, pop) if short else None,
         )
         p.observation_ids = [o.observation_id for o in cl.observations]
         proposals.append(p)
