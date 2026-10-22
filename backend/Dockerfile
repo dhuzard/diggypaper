@@ -21,7 +21,7 @@ COPY alembic ./alembic
 COPY alembic.ini ./
 COPY entrypoint.sh ./
 RUN sed -i "s/\r$//" entrypoint.sh && chmod +x entrypoint.sh \
-    && mkdir -p /app/models /app/exports && chown -R app:app /app/models /app/exports
+    && mkdir -p /app/models /app/exports /app/data/nts && chown -R app:app /app/models /app/exports /app/data
 
 EXPOSE 8000
 ENTRYPOINT ["./entrypoint.sh"]

@@ -35,6 +35,7 @@ celery_app.conf.update(
         "app.tasks.export",
         "app.tasks.inference",
         "app.tasks.notify",
+        "app.tasks.nts",
     ],
 )
 

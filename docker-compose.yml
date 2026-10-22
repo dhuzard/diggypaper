@@ -87,6 +87,7 @@ services:
     volumes:
       - models:/app/models
       - exports:/app/exports  # zips RO-Crate générés par le worker, servis par le backend
+      - nts-data:/app/data  # exports ALURES téléchargés (NTS_DATA_DIR), conservés entre rebuilds
     environment:
       LLM_API_BASE_URL: ${LLM_API_BASE_URL:-}
       DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-fr}
@@ -127,6 +128,7 @@ services:
     volumes:
       - models:/app/models  # encodeurs ONNX (Laya) téléchargés par le backend, lus par le worker
       - exports:/app/exports
+      - nts-data:/app/data
     environment:
       LLM_API_BASE_URL: ${LLM_API_BASE_URL:-}
       LAYA_URL: ${LAYA_URL:-}
@@ -183,6 +185,7 @@ services:
 
 volumes:
   exports:
+  nts-data:
   pgdata:
   ollama:
   models:
