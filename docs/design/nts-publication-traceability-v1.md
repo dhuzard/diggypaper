@@ -102,5 +102,22 @@ Curation tables or to the `source-evidence-packet/0.1.0` contract:
    ratio), `/review-queue` (automation proposals not yet reviewed, with quote, match status and
    the ids needed to open the review), `/alures/datasets`.
 
+## Extractor v2: short statements — 2026-10-22
+
+`nts-deterministic-extractor-v1` stated every finding as its quoted passage, so a reviewer read a
+whole Methods paragraph as the "claim" of an animal-count finding. `-v2`
+(`diggypaper.nts.extract/2.0.0`, migration 0033) words the claim in one machine sentence with
+`origin: ai-paraphrase`, for example "Animal numbers reported (rat (Wistar)): 2 female per group;
+2 male per group." or "The article cites the ALURES non-technical summary NTS-ES-414463, written
+"nts-es-414463"…". Quotes, windows, receipts, answers and typed values are byte-identical to v1.
+
+- Both versions stay registered and runnable (`backend.EXTRACTORS`); a registry row whose
+  identifier does not match its name is refused, so a run is always attributable to the code that
+  produced it. The file-based PoC keeps v1 (`propose(..., statements="verbatim")`).
+- Each version has its own automation proposer reference; findings from v1 keep theirs.
+- Re-extracting an article (any version) supersedes its untouched automation proposals in the
+  review queue and in `proposed_findings`; they stay in the history. A proposal a member has
+  edited is never dropped.
+
 Tests: `tests/test_nts_backend.py` (backend, provenance) and `tests/test_nts_api.py` (end to end
 on a real extractor run with a synthetic ALURES export).

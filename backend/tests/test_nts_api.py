@@ -3,6 +3,7 @@ summary, review queue and adjudications, end to end on a real extractor run."""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -14,6 +15,7 @@ from test_nts_backend import ETHICS
 from app.core.security import hash_password
 from app.db.models import (
     Article,
+    ArticlePrediction,
     Finding,
     FindingRevision,
     ImportJob,
@@ -30,7 +32,7 @@ from app.db.models import (
     UserRole,
 )
 from app.nts import service
-from app.nts.backend import MODEL_NAME
+from app.nts.backend import EXTRACTORS, MODEL_IDENTIFIER, MODEL_NAME
 from app.tasks.inference import _run_inference
 from app.tasks.nts import _alures_sync, _join
 
@@ -92,7 +94,7 @@ async def _login(do_login, who):
     assert response.status_code == 200, response.text
 
 
-async def _run_extractor(engine, session, project):
+async def _run_extractor(engine, session, project, model_name=MODEL_NAME):
     prompt = PromptTemplate(
         project_id=project.id,
         version_number="v1.0",
@@ -104,7 +106,7 @@ async def _run_extractor(engine, session, project):
     job = InferenceJob(
         project_id=project.id,
         prompt_template_id=prompt.id,
-        model_used=MODEL_NAME,
+        model_used=model_name,
         status=InferenceJobStatus.PENDING,
     )
     session.add(job)
@@ -392,6 +394,66 @@ async def test_end_to_end_proposals_join_summary_review_and_adjudication(
     assert ro_again["id"] != ro["id"] and ro_again["adjudication"] is None  # derived row recomputed
 
 
+async def test_reextraction_replaces_untouched_proposals_and_keeps_v1_attributed(
+    client, session, engine, do_login
+):
+    project, article, _users = await _world(session)
+    await _login(do_login, LEAD)
+    assert (await client.post(f"{_base(project)}/setup")).status_code == 200
+    await session.refresh(project)
+    v1 = "nts-deterministic-extractor-v1"
+    session.add(
+        ModelRegistry(name=v1, backend_type="DETERMINISTIC", model_identifier=EXTRACTORS[v1][0])
+    )
+    await session.commit()
+
+    # a v1 run: proposals are attributed to v1 and keep its verbatim statements
+    await _run_extractor(engine, session, project, model_name=v1)
+    first = (await client.post(f"{_base(project)}/propose")).json()["created"]
+    queue = (await client.get(f"{_base(project)}/review-queue")).json()["items"]
+    assert len(queue) == first and {q["proposed_by"] for q in queue} == {"automation"}
+    assert {q["content"]["origin"] for q in queue} == {"source-explicit"}
+    revisions = (await session.execute(select(FindingRevision))).scalars().all()
+    assert {r.proposer_ref for r in revisions} == {service.AUTOMATION_PROPOSER_REFS[v1]}
+
+    # a member edits one v1 proposal before the article is extracted again
+    edited = queue[0]
+    revised = await client.post(
+        f"/api/v1/projects/{project.id}/articles/{article.id}/findings/{edited['finding_id']}/revisions",
+        json={
+            "content": {
+                **edited["content"],
+                "statement": "Edited.",
+                "origin": "reviewer-interpretation",
+            },
+            "evidence": [{k: edited[k] for k in ("prediction_id", "answer_ref", "evidence_ref")}],
+        },
+    )
+    assert revised.status_code == 201, revised.text
+
+    # a v2 run of the same article: new proposals replace the untouched v1 ones in the queue
+    # (SQLite timestamps have second resolution; date the v1 run explicitly earlier)
+    for old_prediction in (await session.execute(select(ArticlePrediction))).scalars().all():
+        old_prediction.created_at = datetime(2026, 1, 1, tzinfo=UTC)
+    await session.commit()
+    await _run_extractor(engine, session, project)
+    status = (await client.get(_base(project))).json()
+    assert status["proposed_findings"] == 0  # the latest extraction has nothing proposed yet
+    second = (await client.post(f"{_base(project)}/propose")).json()["created"]
+    assert second == first
+    queue = (await client.get(f"{_base(project)}/review-queue")).json()["items"]
+    automated = [q for q in queue if q["proposed_by"] == "automation"]
+    assert len(automated) == second  # no duplicate from the superseded run
+    assert {q["content"]["origin"] for q in automated} == {"ai-paraphrase"}
+    kept = [q for q in queue if q["finding_id"] == edited["finding_id"]]
+    assert len(kept) == 1 and kept[0]["statement"] == "Edited."  # human work is never dropped
+    status = (await client.get(_base(project))).json()
+    assert status["proposed_findings"] == second
+    assert status["review_pending"] == len(queue)
+    # the superseded v1 findings are still in the history
+    assert len((await session.execute(select(Finding))).scalars().all()) == first + second
+
+
 async def test_join_without_alures_marks_links_unavailable(
     client, session, engine, do_login, nts_dir, monkeypatch
 ):
@@ -433,7 +495,11 @@ async def test_propose_rejects_tampered_graph(session, engine):
             {"key": "animal_counts", "label": "c", "type": "text"},
         ],
     )
-    session.add(ModelRegistry(name=MODEL_NAME, backend_type="DETERMINISTIC", model_identifier="x"))
+    session.add(
+        ModelRegistry(
+            name=MODEL_NAME, backend_type="DETERMINISTIC", model_identifier=MODEL_IDENTIFIER
+        )
+    )
     await session.commit()
     await _run_extractor(engine, session, project)
     prediction = (await service.latest_nts_predictions(session, project.id))[0]

@@ -33,11 +33,17 @@ from app.db.models import (
 from app.evidence_links import EvidenceEnvelopeV1
 from app.finding_schema import FindingContent
 from app.nts import alures, gate0
-from app.nts.backend import MODEL_IDENTIFIER, MODEL_NAME
+from app.nts.backend import EXTRACTORS, MODEL_NAME, MODEL_NAMES
 from app.nts.pipeline import load_alures
 from app.pseudonym import reviewer_reference
 
-AUTOMATION_PROPOSER_REF = hashlib.sha256(f"automation:{MODEL_IDENTIFIER}".encode()).hexdigest()
+# One proposer per extractor version: a finding records which version proposed it.
+AUTOMATION_PROPOSER_REFS = {
+    name: hashlib.sha256(f"automation:{identifier}".encode()).hexdigest()
+    for name, (identifier, _statements) in EXTRACTORS.items()
+}
+AUTOMATION_PROPOSER_REF = AUTOMATION_PROPOSER_REFS[MODEL_NAME]
+_AUTOMATION_REFS = tuple(AUTOMATION_PROPOSER_REFS.values())
 
 LINK_STATE_BY_JOIN = {
     "unmatched": "ARTICLE_CONFIRMED_ID_ABSENT_IN_ALURES",
@@ -78,7 +84,7 @@ async def latest_nts_predictions(
         .join(Article, Article.id == ArticlePrediction.article_id)
         .where(
             Article.project_id == project_id,
-            ArticlePrediction.model_used == MODEL_NAME,
+            ArticlePrediction.model_used.in_(MODEL_NAMES),
             ArticlePrediction.evidence_graph_json.is_not(None),
         )
         .order_by(ArticlePrediction.created_at.desc(), ArticlePrediction.id.desc())
@@ -129,7 +135,7 @@ async def propose_findings(
             revision=1,
             content_json=content.model_dump(mode="json"),
             proposer_id=None,
-            proposer_ref=AUTOMATION_PROPOSER_REF,
+            proposer_ref=AUTOMATION_PROPOSER_REFS[prediction.model_used],
         )
         db.add(revision)
         await db.flush()
@@ -639,18 +645,41 @@ async def summary(db: AsyncSession, project_id: uuid.UUID) -> list[dict[str, Any
     return out
 
 
+async def proposed_count(db: AsyncSession, project_id: uuid.UUID) -> int:
+    """Findings the automation proposed from the latest extraction of each article."""
+    current = [p.id for p in await latest_nts_predictions(db, project_id)]
+    if not current:
+        return 0
+    return (
+        await db.scalar(
+            select(func.count(func.distinct(Finding.id)))
+            .join(FindingRevision, FindingRevision.finding_id == Finding.id)
+            .join(FindingEvidence, FindingEvidence.revision_id == FindingRevision.id)
+            .where(
+                Finding.project_id == project_id,
+                FindingRevision.revision == 1,
+                FindingRevision.proposer_ref.in_(_AUTOMATION_REFS),
+                FindingEvidence.prediction_id.in_(current),
+            )
+        )
+        or 0
+    )
+
+
 async def review_queue(
     db: AsyncSession, project_id: uuid.UUID, viewer_ref: str | None = None
 ) -> list[dict[str, Any]]:
     """NTS findings whose latest revision no human has reviewed yet, with where to review them.
 
     A finding belongs to the queue when the automation proposed it; a member may have revised
-    it since, in which case the latest (human) revision is the one awaiting review. Proposers
+    it since, in which case the latest (human) revision is the one awaiting review. An untouched
+    proposal from an extraction that was run again is left out (the new run proposes it again);
+    it stays in the history and remains reviewable through the findings API. Proposers
     are reported only as ``automation`` / ``you`` / ``member``: the viewer learns whether they
     may review (the API refuses a proposer reviewing their own revision), never who else did.
     """
     automated = select(FindingRevision.finding_id).where(
-        FindingRevision.proposer_ref == AUTOMATION_PROPOSER_REF
+        FindingRevision.proposer_ref.in_(_AUTOMATION_REFS)
     )
     latest_rev = (
         select(FindingRevision.finding_id, func.max(FindingRevision.revision).label("latest"))
@@ -674,6 +703,7 @@ async def review_queue(
     ).all()
     if not rows:
         return []
+    current = {p.id for p in await latest_nts_predictions(db, project_id)}
     reviewed = {
         rid
         for (rid,) in (
@@ -700,6 +730,8 @@ async def review_queue(
     for finding, rev, ev in rows:
         if rev.id in reviewed:
             continue
+        if rev.proposer_ref in _AUTOMATION_REFS and ev.prediction_id not in current:
+            continue  # re-extracted since: the newer run's proposal replaces this one
         prediction = predictions.get(ev.prediction_id)
         quote = status = None
         if prediction is not None and prediction.evidence_graph_json:
@@ -732,7 +764,7 @@ async def review_queue(
             ),
             None,
         )
-        if rev.proposer_ref == AUTOMATION_PROPOSER_REF:
+        if rev.proposer_ref in _AUTOMATION_REFS:
             proposed_by = "automation"
         elif viewer_ref is not None and rev.proposer_ref == viewer_ref:
             proposed_by = "you"

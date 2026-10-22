@@ -153,7 +153,9 @@ class NeverCalled:
         raise AssertionError("deterministic backend must not call the chat service")
 
 
-async def _nts_project(session: AsyncSession, *, fields=None):
+async def _nts_project(
+    session: AsyncSession, *, fields=None, name=backend.MODEL_NAME, identifier=None
+):
     project = Project(
         title="NTS",
         created_by=None,
@@ -170,9 +172,9 @@ async def _nts_project(session: AsyncSession, *, fields=None):
         user_prompt_schema="Article text:\n{article_text}",
     )
     model = ModelRegistry(
-        name=backend.MODEL_NAME,
+        name=name,
         backend_type=BackendType.DETERMINISTIC,
-        model_identifier=backend.MODEL_IDENTIFIER,
+        model_identifier=identifier or backend.EXTRACTORS[name][0],
     )
     session.add_all([prompt, model])
     await session.commit()
@@ -188,7 +190,7 @@ async def _nts_project(session: AsyncSession, *, fields=None):
     job = InferenceJob(
         project_id=project.id,
         prompt_template_id=prompt.id,
-        model_used=backend.MODEL_NAME,
+        model_used=name,
         status=InferenceJobStatus.PENDING,
     )
     session.add(job)
@@ -255,4 +257,97 @@ async def test_extractor_refuses_a_project_without_nts_fields(engine, session):
         await _run_inference(str(job.id), session_factory=factory, inference=NeverCalled())
     await session.refresh(job)
     assert job.status == InferenceJobStatus.FAILED  # misconfiguration is loud, never silent
+    assert (await session.execute(select(ArticlePrediction))).scalars().all() == []
+
+
+GROUPS = section(
+    "Dose finding",
+    "The reported values reflect combined data (two females + two males per group; total n = 4). "
+    "Doses were escalated. "
+    "The reported values reflect combined data (two females + two males per group; total n = 4).",
+)
+
+
+def _proposals(decision):
+    return decision["nts_extraction"]["proposals"]
+
+
+def test_v2_words_short_statements_over_the_same_evidence_as_v1():
+    snapshot, view_id = _snapshot([ETHICS, ANIMALS])
+    v1 = backend.extract_decision(snapshot, view_id, "verbatim")
+    v2 = backend.extract_decision(snapshot, view_id, "short")
+    # same quotes, links, answers and typed values: only the statement and its origin differ
+    for key in ("evidence_quotes", "evidence_links", "nts_identifier", "animal_counts"):
+        assert v1[key] == v2[key]
+    pairs = list(zip(_proposals(v1), _proposals(v2), strict=True))
+    for a, b in pairs:
+        assert (a["finding_id"], a["window"], a["receipt"]) == (
+            b["finding_id"],
+            b["window"],
+            b["receipt"],
+        )
+        assert a["content"]["numeric_results"] == b["content"]["numeric_results"]
+        assert a["content"]["origin"] == "source-explicit"
+        assert a["content"]["statement"] == v1["evidence_quotes"][a["quote_index"]]
+        assert b["content"]["origin"] == "ai-paraphrase"
+        assert len(b["content"]["statement"]) < 300
+    by_kind = {}
+    for p in _proposals(v2):
+        by_kind.setdefault(p["kind"], []).append(p["content"]["statement"])
+    assert any("NTS-RO-406074 version 1 (8 October 2025)" in s for s in by_kind["nts-identifier"])
+    assert all(s.endswith("(not an NTS identifier).") for s in by_kind["national-authorization"])
+    assert any(
+        s.startswith("Animal numbers reported") and "40" in s for s in by_kind["animal-counts"]
+    )
+
+
+def test_v2_count_statement_names_the_scope_and_lists_repeats_once():
+    snapshot, view_id = _snapshot([GROUPS])
+    decision = backend.extract_decision(snapshot, view_id, "short")
+    counts = [p for p in _proposals(decision) if p["kind"] == "animal-counts"]
+    assert counts
+    statement = counts[0]["content"]["statement"]
+    assert "2 female per group" in statement and "2 male per group" in statement
+    assert statement.count("2 female per group") == 1
+    assert len(counts[0]["content"]["numeric_results"]) >= 2  # every typed value is kept
+
+
+def test_v2_statement_keeps_the_form_the_article_used():
+    text = "Procedures were approved (ALURES #nts-es-414463)."
+    snapshot, view_id = _snapshot([section("Ethics", text)])
+    decision = backend.extract_decision(snapshot, view_id, "short")
+    statement = next(
+        p["content"]["statement"] for p in _proposals(decision) if p["kind"] == "nts-identifier"
+    )
+    assert 'NTS-ES-414463, written "nts-es-414463"' in statement
+
+
+@pytest.mark.parametrize(
+    ("name", "origin"),
+    [
+        ("nts-deterministic-extractor-v1", "source-explicit"),
+        ("nts-deterministic-extractor-v2", "ai-paraphrase"),
+    ],
+)
+async def test_each_registered_version_runs_its_own_output(engine, session, name, origin):
+    _project, _article, job = await _nts_project(session, name=name)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    await _run_inference(str(job.id), session_factory=factory, inference=NeverCalled())
+    pred = (await session.execute(select(ArticlePrediction))).scalar_one()
+    assert pred.model_used == name
+    origins = {p["content"]["origin"] for p in _proposals(pred.decision_json)}
+    assert origins == {origin}
+    call = (await session.execute(select(Invocation))).scalar_one()
+    assert invocation_from_record(call).model.identifier == backend.EXTRACTORS[name][0]
+
+
+async def test_a_registry_row_naming_another_version_is_refused(engine, session):
+    _project, _article, job = await _nts_project(
+        session, identifier=backend.EXTRACTORS["nts-deterministic-extractor-v1"][0]
+    )
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    with pytest.raises(Exception, match="deterministic_extractor_unknown_version"):
+        await _run_inference(str(job.id), session_factory=factory, inference=NeverCalled())
+    await session.refresh(job)
+    assert job.status == InferenceJobStatus.FAILED
     assert (await session.execute(select(ArticlePrediction))).scalars().all() == []
