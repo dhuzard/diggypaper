@@ -330,6 +330,59 @@ async def test_end_to_end_proposals_join_summary_review_and_adjudication(
     assert status["has_links"] and status["review_pending"] == len(remaining)
     assert {j["kind"] for j in status["jobs"]} == {"nts-alures", "nts-join"}
 
+    # --- a member rewrites a proposal: revision 2 awaits review, never by its own author
+    edited = remaining[0]
+    assert edited["proposed_by"] == "automation" and edited["can_review"]
+    assert edited["content"]["statement"] == edited["statement"]
+    findings_url = f"/api/v1/projects/{project.id}/articles/{article.id}/findings"
+    base_url = f"{findings_url}/{edited['finding_id']}"
+    revised = await client.post(
+        f"{base_url}/revisions",
+        json={
+            "content": {
+                **edited["content"],
+                "statement": "Short reviewer wording.",
+                "origin": "reviewer-interpretation",
+            },
+            "evidence": [
+                {
+                    "prediction_id": edited["prediction_id"],
+                    "answer_ref": edited["answer_ref"],
+                    "evidence_ref": edited["evidence_ref"],
+                }
+            ],
+        },
+    )
+    assert revised.status_code == 201, revised.text
+    mine = next(
+        q
+        for q in (await client.get(f"{_base(project)}/review-queue")).json()["items"]
+        if q["finding_id"] == edited["finding_id"]
+    )
+    assert mine["revision"] == 2 and mine["statement"] == "Short reviewer wording."
+    assert mine["quote"] == edited["quote"]  # the verbatim passage is unchanged
+    assert mine["proposed_by"] == "you" and not mine["can_review"]
+    verdict = {
+        "decision": "approve",
+        "rationale": "Shorter wording, same values.",
+        "judgments": [
+            {"evidence_ref": edited["evidence_ref"], "status": "supports", "rationale": "Stated."}
+        ],
+    }
+    assert (await client.post(f"{base_url}/revisions/2/reviews", json=verdict)).status_code == 403
+    assert (await client.post(f"{base_url}/revisions/1/reviews", json=verdict)).status_code == 409
+    await _login(do_login, LEAD)
+    theirs = next(
+        q
+        for q in (await client.get(f"{_base(project)}/review-queue")).json()["items"]
+        if q["finding_id"] == edited["finding_id"]
+    )
+    assert theirs["proposed_by"] == "member" and theirs["can_review"]
+    assert (await client.post(f"{base_url}/revisions/2/reviews", json=verdict)).status_code == 201
+    after = (await client.get(f"{_base(project)}/review-queue")).json()["items"]
+    assert edited["finding_id"] not in {q["finding_id"] for q in after}
+    assert len(after) == len(remaining) - 1
+
     # --- re-join keeps finding links and replaces derived rows without duplicates
     joined_again = await _join(str(project.id), "celery-3")
     assert joined_again["links"] == joined["links"]
