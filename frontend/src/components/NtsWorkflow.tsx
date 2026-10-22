@@ -9,6 +9,9 @@ import { Badge } from "@/components/ui/Card";
 export type StepState = "done" | "running" | "todo" | "blocked" | "failed";
 export type NtsAction = "extract" | "propose" | "sync" | "sync-offline" | "join";
 
+// A queued task normally starts within seconds; after this, the worker is probably not running.
+const STUCK_AFTER_SECONDS = 60;
+
 const isActive = (job: Pick<NtsJob, "status"> | null | undefined) =>
   job?.status === "PENDING" || job?.status === "RUNNING";
 
@@ -67,11 +70,20 @@ function JobLine({ job }: { job: Omit<NtsJob, "kind"> | null }) {
   const t = useTranslations("nts");
   if (!job) return null;
   if (isActive(job)) {
+    // The page re-renders on each poll, so the waiting time stays current.
+    const waited = job.created_at ? (Date.now() - Date.parse(job.created_at)) / 1000 : 0;
     return (
-      <p className="flex items-center gap-2 text-sm text-primary" role="status">
-        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent motion-reduce:animate-none" />
-        {t(job.status === "PENDING" ? "jobPending" : "jobRunning")}
-      </p>
+      <>
+        <p className="flex items-center gap-2 text-sm text-primary" role="status">
+          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent motion-reduce:animate-none" />
+          {t(job.status === "PENDING" ? "jobPending" : "jobRunning")}
+        </p>
+        {job.status === "PENDING" && waited > STUCK_AFTER_SECONDS && (
+          <p className="text-sm text-warning" role="alert">
+            {t("jobStuck", { minutes: Math.floor(waited / 60) })}
+          </p>
+        )}
+      </>
     );
   }
   if (job.status === "FAILED") {

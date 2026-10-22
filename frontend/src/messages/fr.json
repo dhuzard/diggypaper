@@ -959,6 +959,7 @@
     "nextStep": "Étape suivante",
     "jobPending": "En file d'attente…",
     "jobRunning": "En cours… cette page se met à jour toute seule.",
+    "jobStuck": "Toujours en file d'attente depuis {minutes} min : le service de tâches (worker) ne semble pas tourner. Vérifiez « docker compose ps » ; la tâche partira dès son démarrage.",
     "jobFailed": "La tâche a échoué :",
     "lastRun": "Dernière exécution : {date}",
     "extracted": "{n} article(s) extrait(s)",

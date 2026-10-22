@@ -454,6 +454,90 @@ async def test_reextraction_replaces_untouched_proposals_and_keeps_v1_attributed
     assert len((await session.execute(select(Finding))).scalars().all()) == first + second
 
 
+class _Queued:
+    """What ``.delay`` returns when no worker has picked the message up yet."""
+
+    id = "celery-queued"
+    state = "PENDING"
+
+
+async def test_sync_is_recorded_as_pending_before_any_worker_runs(
+    client, session, engine, do_login, nts_dir, monkeypatch
+):
+    from app.api.v1 import nts as nts_api
+    from app.celery_app import celery_app
+
+    project, _article, _users = await _world(session)
+    await _login(do_login, LEAD)
+    assert (await client.post(f"{_base(project)}/setup")).status_code == 200
+    sent = []
+    monkeypatch.setattr(celery_app.conf, "task_always_eager", False)
+    monkeypatch.setattr(
+        nts_api.nts_alures_sync_task, "delay", lambda *a: sent.append(a) or _Queued()
+    )
+
+    response = await client.post(f"{_base(project)}/alures/sync", json={"offline": True})
+    assert response.status_code == 202, response.text
+    body = response.json()
+    assert body["status"] == "PENDING" and body["job_id"] == "celery-queued"
+    assert sent == [(str(project.id), True, body["record_id"])]
+    # the page sees the task as queued although no worker has run it
+    jobs = (await client.get(_base(project))).json()["jobs"]
+    assert [(j["id"], j["kind"], j["status"]) for j in jobs] == [
+        (body["record_id"], "nts-alures", "PENDING")
+    ]
+    # a second click while it is queued is refused instead of queuing a duplicate
+    assert (
+        await client.post(f"{_base(project)}/alures/sync", json={"offline": True})
+    ).status_code == 409
+
+    # the worker then runs it on that same row
+    _write_alures(nts_dir, project.id)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr("app.tasks._session_factory_override", factory)
+    await _alures_sync(str(project.id), True, "celery-queued", record_id=body["record_id"])
+    rows = (
+        (await session.execute(select(ImportJob).where(ImportJob.kind == "nts-alures")))
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1 and str(rows[0].id) == body["record_id"]
+    await session.refresh(rows[0])
+    assert rows[0].status == ImportJobStatus.COMPLETED and rows[0].job_id == "celery-queued"
+
+
+async def test_unreachable_task_queue_is_reported_on_the_job(
+    client, session, do_login, monkeypatch
+):
+    from app.api.v1 import nts as nts_api
+
+    project, _article, _users = await _world(session)
+    await _login(do_login, LEAD)
+    assert (await client.post(f"{_base(project)}/setup")).status_code == 200
+
+    def down(*_a):
+        raise ConnectionError("redis down")
+
+    monkeypatch.setattr(nts_api.nts_join_task, "delay", down)
+    response = await client.post(f"{_base(project)}/join")
+    assert response.status_code == 503
+    jobs = (await client.get(_base(project))).json()["jobs"]
+    assert len(jobs) == 1 and jobs[0]["status"] == "FAILED"
+    assert jobs[0]["error"] == "task queue unavailable: ConnectionError"
+    # a failed row does not block a retry
+    monkeypatch.setattr(nts_api.nts_join_task, "delay", lambda *_a: _Queued())
+    assert (await client.post(f"{_base(project)}/join")).status_code == 202
+
+
+async def test_a_task_without_a_record_still_gets_one(session, engine, monkeypatch):
+    project, _article, _users = await _world(session)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr("app.tasks._session_factory_override", factory)
+    await _join(str(project.id), "celery-old-message")  # queued before this change
+    rows = (await session.execute(select(ImportJob))).scalars().all()
+    assert len(rows) == 1 and rows[0].kind == "nts-join" and rows[0].job_id == "celery-old-message"
+
+
 async def test_join_without_alures_marks_links_unavailable(
     client, session, engine, do_login, nts_dir, monkeypatch
 ):

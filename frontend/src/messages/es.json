@@ -959,6 +959,7 @@
     "nextStep": "Paso siguiente",
     "jobPending": "En cola…",
     "jobRunning": "En curso… esta página se actualiza sola.",
+    "jobStuck": "En cola desde hace {minutes} min: el servicio de tareas (worker) no parece estar en marcha. Compruebe «docker compose ps»; la tarea empezará en cuanto arranque.",
     "jobFailed": "La tarea falló:",
     "lastRun": "Última ejecución: {date}",
     "extracted": "{n} artículo(s) extraído(s)",

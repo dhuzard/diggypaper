@@ -959,6 +959,7 @@
     "nextStep": "Next step",
     "jobPending": "Queued…",
     "jobRunning": "Running… this page updates by itself.",
+    "jobStuck": "Still queued after {minutes} min: the task worker does not seem to be running. Check \"docker compose ps\"; the task starts as soon as the worker does.",
     "jobFailed": "The task failed:",
     "lastRun": "Last run: {date}",
     "extracted": "{n} article(s) extracted",

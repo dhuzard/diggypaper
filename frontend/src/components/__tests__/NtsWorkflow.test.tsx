@@ -131,3 +131,32 @@ describe("NtsWorkflow", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 });
+
+describe("queued tasks", () => {
+  const queued = (secondsAgo: number) => ({
+    id: "j2",
+    kind: "nts-alures",
+    status: "PENDING" as const,
+    result: null,
+    error: null,
+    created_at: new Date(Date.now() - secondsAgo * 1000).toISOString(),
+    completed_at: null,
+  });
+
+  it("shows a freshly queued task as waiting, without alarm", () => {
+    render(
+      <NtsWorkflow projectId={project} status={status({ jobs: [queued(5)] })} frozen isLead busy={null} onAction={jest.fn()} />
+    );
+    expect(within(step("Download ALURES exports")).getByRole("status").textContent).toContain("Queued");
+    expect(within(step("Download ALURES exports")).queryByRole("alert")).toBeNull();
+  });
+
+  it("says the worker is probably down when a task stays queued", () => {
+    render(
+      <NtsWorkflow projectId={project} status={status({ jobs: [queued(300)] })} frozen isLead busy={null} onAction={jest.fn()} />
+    );
+    expect(within(step("Download ALURES exports")).getByRole("alert").textContent).toContain(
+      "Still queued after 5 min"
+    );
+  });
+});
