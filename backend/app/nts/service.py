@@ -639,38 +639,48 @@ async def summary(db: AsyncSession, project_id: uuid.UUID) -> list[dict[str, Any
     return out
 
 
-async def review_queue(db: AsyncSession, project_id: uuid.UUID) -> list[dict[str, Any]]:
-    """Automation-proposed findings that no human has reviewed yet, with where to review them."""
+async def review_queue(
+    db: AsyncSession, project_id: uuid.UUID, viewer_ref: str | None = None
+) -> list[dict[str, Any]]:
+    """NTS findings whose latest revision no human has reviewed yet, with where to review them.
+
+    A finding belongs to the queue when the automation proposed it; a member may have revised
+    it since, in which case the latest (human) revision is the one awaiting review. Proposers
+    are reported only as ``automation`` / ``you`` / ``member``: the viewer learns whether they
+    may review (the API refuses a proposer reviewing their own revision), never who else did.
+    """
+    automated = select(FindingRevision.finding_id).where(
+        FindingRevision.proposer_ref == AUTOMATION_PROPOSER_REF
+    )
+    latest_rev = (
+        select(FindingRevision.finding_id, func.max(FindingRevision.revision).label("latest"))
+        .where(FindingRevision.finding_id.in_(automated))
+        .group_by(FindingRevision.finding_id)
+        .subquery()
+    )
     rows = (
         await db.execute(
             select(Finding, FindingRevision, FindingEvidence)
             .join(FindingRevision, FindingRevision.finding_id == Finding.id)
-            .join(FindingEvidence, FindingEvidence.revision_id == FindingRevision.id)
-            .where(
-                Finding.project_id == project_id,
-                FindingRevision.proposer_ref == AUTOMATION_PROPOSER_REF,
+            .join(
+                latest_rev,
+                (latest_rev.c.finding_id == FindingRevision.finding_id)
+                & (latest_rev.c.latest == FindingRevision.revision),
             )
-            .order_by(Finding.article_id, Finding.created_at, Finding.id)
+            .join(FindingEvidence, FindingEvidence.revision_id == FindingRevision.id)
+            .where(Finding.project_id == project_id)
+            .order_by(Finding.article_id, Finding.created_at, Finding.id, FindingEvidence.id)
         )
     ).all()
     if not rows:
         return []
-    revision_ids = [rev.id for _, rev, _ in rows]
     reviewed = {
         rid
         for (rid,) in (
             await db.execute(
-                select(FindingReview.revision_id).where(FindingReview.revision_id.in_(revision_ids))
-            )
-        ).all()
-    }
-    latest = {
-        fid: n
-        for fid, n in (
-            await db.execute(
-                select(FindingRevision.finding_id, func.max(FindingRevision.revision))
-                .where(FindingRevision.finding_id.in_([f.id for f, _, _ in rows]))
-                .group_by(FindingRevision.finding_id)
+                select(FindingReview.revision_id).where(
+                    FindingReview.revision_id.in_([rev.id for _, rev, _ in rows])
+                )
             )
         ).all()
     }
@@ -688,7 +698,7 @@ async def review_queue(db: AsyncSession, project_id: uuid.UUID) -> list[dict[str
     }
     queue = []
     for finding, rev, ev in rows:
-        if rev.id in reviewed or latest.get(finding.id) != rev.revision:
+        if rev.id in reviewed:
             continue
         prediction = predictions.get(ev.prediction_id)
         quote = status = None
@@ -722,6 +732,12 @@ async def review_queue(db: AsyncSession, project_id: uuid.UUID) -> list[dict[str
             ),
             None,
         )
+        if rev.proposer_ref == AUTOMATION_PROPOSER_REF:
+            proposed_by = "automation"
+        elif viewer_ref is not None and rev.proposer_ref == viewer_ref:
+            proposed_by = "you"
+        else:
+            proposed_by = "member"
         queue.append(
             {
                 "finding_id": str(finding.id),
@@ -730,6 +746,9 @@ async def review_queue(db: AsyncSession, project_id: uuid.UUID) -> list[dict[str
                 "revision": rev.revision,
                 "kind": kind,
                 "statement": rev.content_json.get("statement"),
+                "content": rev.content_json,
+                "proposed_by": proposed_by,
+                "can_review": proposed_by != "you",
                 "quote": quote,
                 "quote_match": status,
                 "answer_ref": str(ev.answer_ref),

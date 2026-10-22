@@ -1382,6 +1382,12 @@ export interface NtsReviewItem {
   revision: number;
   kind: "nts-identifier" | "national-authorization" | "animal-counts" | null;
   statement: string | null;
+  /** Full content of the revision awaiting review (statement, context, typed numbers). */
+  content: FindingContent;
+  /** Who wrote this revision, as seen by the viewer (no identity is ever exposed). */
+  proposed_by: "automation" | "you" | "member";
+  /** False when the viewer wrote this revision: the API refuses a self-review. */
+  can_review: boolean;
   quote: string | null;
   quote_match: string | null;
   answer_ref: string;
@@ -1427,6 +1433,41 @@ export interface FindingReviewInput {
   rationale: string;
   judgments: { evidence_ref: string; status: SupportStatus; rationale: string }[];
 }
+
+/** A finding revision's content (contract source-evidence-packet/0.1.0, finding_schema.py). */
+export interface FindingContent {
+  statement: string;
+  origin: "source-explicit" | "ai-paraphrase" | "reviewer-interpretation";
+  context: {
+    population: string;
+    exposure: string;
+    comparator: string;
+    outcome: string;
+    time: string;
+    experimental_unit: string;
+  };
+  numeric_results: {
+    name: string;
+    value: number;
+    unit: string;
+    n: { value: number; definition: "article-level" | "experimental-unit" | "group" | "unknown" };
+  }[];
+}
+
+/** Proposes a new revision of a finding (same evidence links); earlier ones stay in history. */
+export const reviseFinding = (
+  projectId: string,
+  articleId: string,
+  findingId: string,
+  input: {
+    content: FindingContent;
+    evidence: { prediction_id: string; answer_ref: string; evidence_ref: string }[];
+  }
+): Promise<unknown> =>
+  request(`/projects/${projectId}/articles/${articleId}/findings/${findingId}/revisions`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 
 export interface FindingRevisionView {
   revision: number;

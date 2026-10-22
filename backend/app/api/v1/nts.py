@@ -272,7 +272,8 @@ async def summary(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
 @router.get("/{project_id}/nts/review-queue")
 async def review_queue(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
     await _require_project_member(db, project_id, user)
-    return {"items": await service.review_queue(db, project_id)}
+    viewer = anonymized_actor_ref(user.email)
+    return {"items": await service.review_queue(db, project_id, viewer)}
 
 
 @router.post("/{project_id}/nts/links/{link_id}/adjudications", status_code=201)
