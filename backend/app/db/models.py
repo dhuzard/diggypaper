@@ -31,6 +31,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.schema import DefaultClause
 from sqlalchemy.sql.elements import ClauseElement
 
+from app.connector_policy import AUDIT_EVENTS, GRANT_SCOPES, REFUSAL_REASONS, REVOCATION_REASONS
 from app.db.base import Base
 from app.rights import REDISTRIBUTABLE_LICENSES, REDISTRIBUTION_DECISIONS, sql_in
 
@@ -1934,4 +1935,131 @@ class NtsAdjudication(Base):
     adjudicator_ref: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+# --- ORAtlas connector grants (issue #53): LEAD-controlled, revocable, audited ----------------
+
+
+class ConnectorGrant(Base):
+    """A project lead's explicit, expiring, revocable grant for one external recipient.
+
+    Only the SHA-256 of the bearer credential is stored. The holder's membership and account
+    state are re-read on every use (app.connector_grants.authorize), never copied here. After
+    creation a row only changes by one-way revocation, or by nulling the holder FK.
+    """
+
+    __tablename__ = "connector_grants"
+    __table_args__ = (
+        UniqueConstraint("credential_sha256", name="uq_connector_grants_credential"),
+        CheckConstraint("length(credential_sha256) = 64", name="ck_connector_grants_credential"),
+        CheckConstraint("length(created_by_ref) = 64", name="ck_connector_grants_created_by"),
+        CheckConstraint("recipient_ref LIKE 'recipient:%'", name="ck_connector_grants_recipient"),
+        CheckConstraint("length(trim(purpose)) > 0", name="ck_connector_grants_purpose"),
+        CheckConstraint(
+            "scope_list_project OR scope_list_artifacts OR scope_read_selected_metadata "
+            "OR scope_obtain_authorized_export",
+            name="ck_connector_grants_scope",
+        ),
+        CheckConstraint(
+            "scope_read_selected_metadata OR NOT (disclose_title OR disclose_description)",
+            name="ck_connector_grants_disclosure",
+        ),
+        CheckConstraint("expires_at > created_at", name="ck_connector_grants_expiry"),
+        CheckConstraint(
+            "(revoked_at IS NULL AND revoked_by_ref IS NULL AND revocation_reason IS NULL) OR "
+            "(revoked_at IS NOT NULL AND revocation_reason IS NOT NULL AND "
+            f"revocation_reason IN ({sql_in(REVOCATION_REASONS)}))",
+            name="ck_connector_grants_revocation",
+        ),
+        Index("ix_connector_grants_project", "project_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    holder_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_by_ref: Mapped[str] = mapped_column(String(64), nullable=False)
+    recipient_ref: Mapped[str] = mapped_column(String(64), nullable=False)
+    purpose: Mapped[str] = mapped_column(Text, nullable=False)
+    scope_list_project: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    scope_list_artifacts: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    scope_read_selected_metadata: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    scope_obtain_authorized_export: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    disclose_title: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    disclose_description: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_by_ref: Mapped[str | None] = mapped_column(String(64))
+    revocation_reason: Mapped[str | None] = mapped_column(String(32))
+
+
+class ConnectorAuditEvent(Base):
+    """Append-only connector audit trail. No FK, so it outlives its grant and project."""
+
+    __tablename__ = "connector_audit_events"
+    __table_args__ = (
+        CheckConstraint(f"event IN ({sql_in(AUDIT_EVENTS)})", name="ck_connector_audit_event"),
+        CheckConstraint(
+            f"scope IS NULL OR scope IN ({sql_in(GRANT_SCOPES)})", name="ck_connector_audit_scope"
+        ),
+        CheckConstraint(
+            f"reason IS NULL OR reason IN ({sql_in(REFUSAL_REASONS + REVOCATION_REASONS)})",
+            name="ck_connector_audit_reason",
+        ),
+        CheckConstraint(
+            "actor_ref IS NULL OR length(actor_ref) = 64", name="ck_connector_audit_actor"
+        ),
+        Index("ix_connector_audit_grant", "grant_id", "created_at"),
+    )
+
+    # Integer key: the audit order is the insertion order, even within one timestamp.
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    grant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    project_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    event: Mapped[str] = mapped_column(String(32), nullable=False)
+    scope: Mapped[str | None] = mapped_column(String(40))
+    reason: Mapped[str | None] = mapped_column(String(40))
+    actor_ref: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+_GRANT_FIXED = (
+    "id project_id created_by_ref recipient_ref purpose scope_list_project scope_list_artifacts "
+    "scope_read_selected_metadata scope_obtain_authorized_export disclose_title "
+    "disclose_description credential_sha256 created_at expires_at"
+).split()
+_GRANT_REVOCATION = ("revoked_at", "revoked_by_ref", "revocation_reason")
+_grant_allowed = " AND ".join(
+    [f"NEW.{c} IS OLD.{c}" for c in _GRANT_FIXED]
+    + ["(NEW.holder_id IS OLD.holder_id OR NEW.holder_id IS NULL)"]
+    + [
+        "(OLD.revoked_at IS NULL OR ("
+        + " AND ".join(f"NEW.{c} IS OLD.{c}" for c in _GRANT_REVOCATION)
+        + "))"
+    ]
+)
+event.listen(
+    Base.metadata.tables["connector_grants"],
+    "after_create",
+    DDL(
+        "CREATE TRIGGER connector_grants_guard BEFORE UPDATE ON connector_grants "
+        f"WHEN NOT ({_grant_allowed}) BEGIN "
+        "SELECT RAISE(ABORT, 'connector_grants change only by revocation'); END"
+    ).execute_if(dialect="sqlite"),
+)
+for _op in ("UPDATE", "DELETE"):
+    event.listen(
+        Base.metadata.tables["connector_audit_events"],
+        "after_create",
+        DDL(
+            f"CREATE TRIGGER connector_audit_events_no_{_op.lower()} BEFORE {_op} ON "
+            "connector_audit_events BEGIN "
+            "SELECT RAISE(ABORT, 'connector_audit_events are append-only'); END"
+        ).execute_if(dialect="sqlite"),
     )

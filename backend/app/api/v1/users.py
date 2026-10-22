@@ -1,7 +1,7 @@
 """Routes RGPD : anonymisation (DELETE /users/me/anonymize) + export (GET /users/me/export-data)."""
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response
@@ -10,6 +10,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_current_user_or_anonymized, get_db
+from app.connector_grants import revoke_where
 from app.db.models import EvidenceSupportAssessment, HumanAnnotation, ProjectMember, User, UserRole
 from app.pseudonym import anonymized_actor_ref
 
@@ -64,6 +65,7 @@ async def anonymize(
         # Déjà anonymisé → idempotent, on ne touche à rien.
         return Response(status_code=204)
     anonymized_hash = anonymized_actor_ref(user.email)
+    await revoke_where(db, reason="account-anonymized", now=datetime.now(UTC), holder_id=user.id)
     await db.execute(
         update(HumanAnnotation)
         .where(HumanAnnotation.user_id == user.id)

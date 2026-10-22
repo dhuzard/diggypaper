@@ -83,6 +83,8 @@ EXPECTED_TABLES = {
     "nts_links",  # publication-NTS exact joins, recomputed per prediction
     "nts_count_observations",  # typed animal numbers as written / as published
     "nts_adjudications",  # append-only human decisions on links
+    "connector_grants",  # LEAD-controlled ORAtlas connector grants (issue #53)
+    "connector_audit_events",  # append-only connector audit trail
 }
 
 

@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import os
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.connector_grants import revoke_where
 from app.db.models import (
     EvidenceSupportAssessment,
     ExportJob,
@@ -30,6 +32,7 @@ from app.pseudonym import anonymized_actor_ref
 async def delete_user(db: AsyncSession, user: User) -> None:
     """Supprime le compte ; ses annotations restent, anonymisées (hash). Commit à l'appelant."""
     anon = anonymized_actor_ref(user.email)
+    await revoke_where(db, reason="account-deleted", now=datetime.now(UTC), holder_id=user.id)
     await db.execute(
         update(HumanAnnotation)
         .where(HumanAnnotation.user_id == user.id)
@@ -94,6 +97,11 @@ async def delete_projects(db: AsyncSession, project_ids: list, keep: tuple = ())
     directory = Path(os.environ.get("EXPORT_DIR", "/app/exports"))
     for name in names:
         (directory / name).unlink(missing_ok=True)
+    # The grants go with the project (FK cascade); their audit trail records why and stays.
+    await revoke_where(
+        db, reason="project-deleted", now=datetime.now(UTC), project_ids=list(project_ids)
+    )
+    await db.flush()
     res = await db.execute(delete(Project).where(Project.id.in_(project_ids)))
     await purge_orphans(db, list(members), keep)
     return res.rowcount or 0
