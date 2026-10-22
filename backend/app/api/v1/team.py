@@ -7,6 +7,7 @@ et le rôle) ; une adresse déjà inscrite est ajoutée directement. Si l'e-mail
 
 import logging
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -17,11 +18,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, get_db, rate_limit_user
 from app.api.v1.projects import _require_project_member
 from app.cleanup import purge_orphans
+from app.connector_grants import revoke_where
 from app.core.config import get_settings
 from app.db.models import Project, ProjectMember, ProjectMemberRole, User, UserRole
 from app.emails import mailer_from_db
 from app.i18n import default_lang, t
 from app.invitations import render_invitation, upsert_invitation
+from app.pseudonym import anonymized_actor_ref
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +149,15 @@ async def remove_member(
         ).scalar_one()
         if leads <= 1:
             raise HTTPException(status_code=409, detail="cannot remove the last lead")
+    # Leaving the project ends that member's connector grants (#53), in the same transaction.
+    await revoke_where(
+        db,
+        reason="membership-removed",
+        now=datetime.now(UTC),
+        project_ids=[project_id],
+        holder_id=user_id,
+        actor_ref=anonymized_actor_ref(user.email),
+    )
     await db.delete(member)
     await db.flush()
     await purge_orphans(db, [user_id])  # plus aucun projet : le compte disparaît

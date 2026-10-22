@@ -1,0 +1,48 @@
+{
+  "access_effect": "none",
+  "artifacts": [
+    {
+      "access_level": "public",
+      "deep_link": "/projects/00000000-0000-4000-8000-000000000053/findings",
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "packet_id": "packet:synth-canonical",
+      "retrieval": "authorized-export-required",
+      "schema_version": "source-evidence-packet/0.1.0",
+      "type": "source-evidence-packet"
+    }
+  ],
+  "audience": {
+    "grant_ref": "not-available",
+    "recipient_ref": "recipient:oratlas"
+  },
+  "creation_method": "synthetic-fixture",
+  "expires_at": "2026-10-29T00:00:00Z",
+  "holder": {
+    "membership": "active",
+    "role": "annotator"
+  },
+  "issued_at": "2026-10-22T00:00:00Z",
+  "policy": {
+    "cross_project_processing": "not-authorized",
+    "external_model_processing": "not-authorized",
+    "full_text": "not-included",
+    "publication": "not-released"
+  },
+  "producer": {
+    "commit": "synthetic-fixture",
+    "name": "diggypaper"
+  },
+  "project": {
+    "deep_link": "/projects/00000000-0000-4000-8000-000000000053",
+    "description": {
+      "state": "withheld"
+    },
+    "project_id": "00000000-0000-4000-8000-000000000053",
+    "title": {
+      "state": "withheld"
+    },
+    "visibility": "private"
+  },
+  "schema_version": "research-project-descriptor/0.1.0",
+  "scope": "private-descriptor"
+}
