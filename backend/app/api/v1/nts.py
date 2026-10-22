@@ -14,7 +14,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
@@ -25,7 +25,10 @@ from app.db.models import (
     Article,
     ArticlePrediction,
     BackendType,
+    Finding,
+    FindingRevision,
     ImportJob,
+    InferenceJob,
     ModelRegistry,
     NtsAdjudication,
     NtsDataset,
@@ -74,6 +77,17 @@ async def _ensure_model(db: AsyncSession) -> ModelRegistry:
     return model
 
 
+def _job_payload(job: ImportJob | InferenceJob) -> dict:
+    return {
+        "id": str(job.id),
+        "status": job.status.value if job.status else None,
+        "result": job.result_json,
+        "error": job.error,
+        "created_at": service._iso(job.created_at),
+        "completed_at": service._iso(job.completed_at),
+    }
+
+
 @router.get("/{project_id}/nts")
 async def status(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
     project = await _require_project_member(db, project_id, user)
@@ -102,25 +116,31 @@ async def status(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
         .scalars()
         .all()
     )
+    extraction = await db.scalar(
+        select(InferenceJob)
+        .where(InferenceJob.project_id == project_id, InferenceJob.model_used == MODEL_NAME)
+        .order_by(InferenceJob.created_at.desc())
+        .limit(1)
+    )
+    proposed = await db.scalar(
+        select(func.count(func.distinct(Finding.id)))
+        .join(FindingRevision, FindingRevision.finding_id == Finding.id)
+        .where(
+            Finding.project_id == project_id,
+            FindingRevision.proposer_ref == service.AUTOMATION_PROPOSER_REF,
+        )
+    )
     return {
         "is_nts_project": is_nts_project(project_fields(project)),
         "model_name": MODEL_NAME,
         "extracted_articles": len(predictions),
+        # The extractor runs as an ordinary inference job; its latest run, so the UI can follow it.
+        "extraction_job": _job_payload(extraction) if extraction is not None else None,
+        "proposed_findings": proposed or 0,
         "datasets": [_dataset_payload(d) for d in datasets],
         "has_links": links is not None,
         "review_pending": len(await service.review_queue(db, project_id)),
-        "jobs": [
-            {
-                "id": str(j.id),
-                "kind": j.kind,
-                "status": j.status.value if j.status else None,
-                "result": j.result_json,
-                "error": j.error,
-                "created_at": service._iso(j.created_at),
-                "completed_at": service._iso(j.completed_at),
-            }
-            for j in jobs
-        ],
+        "jobs": [{"kind": j.kind, **_job_payload(j)} for j in jobs],
     }
 
 

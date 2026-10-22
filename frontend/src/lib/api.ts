@@ -1271,6 +1271,10 @@ export interface NtsStatus {
   is_nts_project: boolean;
   model_name: string;
   extracted_articles: number;
+  /** Latest run of the extractor (an ordinary inference job), null before the first one. */
+  extraction_job: Omit<NtsJob, "kind"> | null;
+  /** Findings proposed by the extractor (reviewed or not). */
+  proposed_findings: number;
   datasets: NtsDataset[];
   has_links: boolean;
   review_pending: number;
