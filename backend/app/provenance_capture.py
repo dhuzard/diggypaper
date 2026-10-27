@@ -3,25 +3,46 @@
 The caller must commit the returned snapshot before any external model request.
 Source writers must participate in the Article row lock; the source-coherence
 slice makes full-text/PDF replacement do so. No historical source is inferred.
+
+An unchanged article yields the snapshot already stored for it rather than a new
+row: two captures are the same revision when every captured value is equal
+(components, views, source attribution, raw-artifact digest, identifiers), not
+when a text digest alone coincides. A snapshot is only reused while a review token
+issued for it now would still expire before the retention sweep may delete it.
 """
 
 from __future__ import annotations
 
 import hashlib
 import uuid
+from datetime import timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Article, ArticleFile
+from app.db.models import Article, ArticleFile, SourceSnapshot
 from app.provenance import (
     Components,
     RawArtifact,
     SourceDescription,
     SourceSnapshotV1,
+    canonical_json,
+    source_from_record,
     source_record,
 )
 from app.provenance_render import composed_view, legacy_methods_view, title_abstract_view
+from app.review_source import TOKEN_LIFETIME
+
+# Unreferenced snapshots older than this are deleted by the maintenance sweep, so a
+# capture reuses a snapshot only while a token issued now expires before that.
+UNREFERENCED_RETENTION = timedelta(hours=24)
+REUSE_WINDOW = UNREFERENCED_RETENTION - TOKEN_LIFETIME
+
+
+def _revision_key(payload: dict) -> bytes:
+    """Everything captured except the per-row id, capture time and random view ids."""
+    views = [{k: v for k, v in view.items() if k != "id"} for view in payload["views"]]
+    return canonical_json({**payload, "id": None, "captured_at": None, "views": views})
 
 
 async def capture_article_source(
@@ -103,6 +124,21 @@ async def capture_article_source(
             title_abstract_view(components),
         ),
     )
+    key = _revision_key(snapshot.model_dump(mode="json"))
+    candidates = await session.scalars(
+        select(SourceSnapshot)
+        .where(
+            SourceSnapshot.project_id == project_id,
+            SourceSnapshot.article_id == article_id,
+            SourceSnapshot.payload["views"][0]["sha256"].as_string() == selected.sha256,
+            SourceSnapshot.captured_at >= snapshot.captured_at - REUSE_WINDOW,
+        )
+        .order_by(SourceSnapshot.captured_at.desc())
+    )
+    for row in candidates:
+        if _revision_key(row.payload) == key:
+            existing = source_from_record(row)
+            return existing, existing.views[0].id
     session.add(source_record(snapshot))
     await session.flush()
     return snapshot, selected.id

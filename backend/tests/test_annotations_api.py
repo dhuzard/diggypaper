@@ -10,6 +10,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import jwt
+from sqlalchemy import func, select
 
 from app.core.config import get_settings
 from app.db.models import (
@@ -19,6 +20,7 @@ from app.db.models import (
     Project,
     ProjectMember,
     ProjectMemberRole,
+    SourceSnapshot,
 )
 from app.provenance import (
     ModelIdentity,
@@ -93,6 +95,31 @@ async def test_get_article_returns_methods_text(client, session, researcher_user
     assert body["title"] == "A study"
     assert body["methods_text"] == "Mice were randomized to groups."
     assert body["source_view_token"]
+
+
+async def test_get_article_reuses_snapshot_until_source_changes(
+    client, session, researcher_user, do_login
+):
+    await do_login("researcher@lab.fr", "researcher-pass-123", consent=True)
+    project, article = await _make_project_with_article(session, researcher_user)
+    url = f"/api/v1/projects/{project.id}/articles/{article.id}"
+
+    def snapshot_of(body) -> str:
+        claims = jwt.decode(
+            body["source_view_token"], get_settings().jwt_secret, algorithms=["HS256"]
+        )
+        return claims["snapshot"]
+
+    async def rows() -> int:
+        return await session.scalar(select(func.count()).select_from(SourceSnapshot))
+
+    first = (await client.get(url)).json()
+    assert snapshot_of((await client.get(url)).json()) == snapshot_of(first)
+    assert await rows() == 1
+    article.methods_text = "Different methods and animals."
+    await session.commit()
+    assert snapshot_of((await client.get(url)).json()) != snapshot_of(first)
+    assert await rows() == 2
 
 
 async def test_review_binds_retained_display_after_source_replacement(
