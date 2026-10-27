@@ -408,3 +408,53 @@ async def test_failed_benchmark_http_retains_failure_without_prediction(engine, 
     invocation = (await session.execute(select(Invocation))).scalar_one()
     assert invocation.outcome == "failed"
     assert "provider secret" not in str(invocation.response_capture)
+
+
+async def test_oversized_benchmark_response_fails_one_article_not_the_run(
+    engine, session, monkeypatch
+):
+    """F-14 : réponse trop grosse pour la provenance = appel failed, run poursuivi."""
+    project, prompt, arts = await _project_with_articles(session, 2)
+    run = BenchmarkRun(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        models_tested=["Kev-4B"],
+        options={},
+        status=BenchmarkStatus.PENDING,
+    )
+    session.add(run)
+    await session.commit()
+    monkeypatch.setattr("app.provenance_chat.MAX_CHAT_RESPONSE_BYTES", 256)
+
+    def respond(request):
+        if "abstract 0" in request.content.decode():
+            content = '{"use_ai_behavior": true, "reasoning_summary": "' + "x" * 300 + '"}'
+        else:
+            content = '{"use_ai_behavior": true}'
+        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+    async def skip_unload(*_args):
+        pass
+
+    monkeypatch.setattr("app.tasks.benchmark.unload_ollama", skip_unload)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
+        inference = OpenAICompatibleService("http://test/v1", http=http)
+        factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        await _run_benchmark(str(run.id), session_factory=factory, inference=inference)
+
+    await session.refresh(run)
+    assert run.status == BenchmarkStatus.COMPLETED
+    preds = {
+        p.article_id: p for p in (await session.execute(select(BenchmarkPrediction))).scalars()
+    }
+    calls = {c.article_id: c for c in (await session.execute(select(Invocation))).scalars()}
+    first, second = arts
+    assert set(preds) == set(calls) == {first.id, second.id}
+    assert preds[first.id].error == "response_too_large"
+    assert preds[first.id].decision_json == {} and preds[first.id].invocation_id is None
+    assert calls[first.id].outcome == "failed"
+    assert calls[first.id].response_capture["parsed"]["raw_size"] > 256
+    assert "xxxx" not in str(calls[first.id].response_capture)
+    assert preds[second.id].error is None
+    assert preds[second.id].invocation_id == calls[second.id].id
+    assert calls[second.id].outcome == "succeeded"

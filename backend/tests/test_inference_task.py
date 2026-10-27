@@ -430,3 +430,71 @@ async def test_run_inference_skips_job_cancelled_before_start(engine, session):
     fake = FakeInference()
     assert await _run_inference(str(job.id), session_factory=factory, inference=fake) == {}
     assert fake.calls == 0
+
+
+async def test_oversized_response_fails_one_article_not_the_job(engine, session, monkeypatch):
+    """F-14 : une réponse trop grosse pour la provenance = appel failed + article suivant."""
+    project = Project(title="P", created_by=None, status=ProjectStatus.FROZEN)
+    session.add(project)
+    await session.commit()
+    prompt = PromptTemplate(
+        project_id=project.id,
+        version_number="v1.0",
+        system_prompt="SYS",
+        user_prompt_schema="Article Text:\n{methods_text}",
+    )
+    model = ModelRegistry(name="Kev-4B", model_identifier="kef/kev-4b")
+    session.add_all([prompt, model])
+    await session.commit()
+    await _seed(session, project, prompt, model, n_articles=2)
+    job = InferenceJob(
+        project_id=project.id,
+        prompt_template_id=prompt.id,
+        model_used="Kev-4B",
+        status=InferenceJobStatus.PENDING,
+    )
+    session.add(job)
+    await session.commit()
+    monkeypatch.setattr("app.provenance_chat.MAX_CHAT_RESPONSE_BYTES", 256)
+
+    class OversizedFirst:
+        async def infer(self, model, system_prompt, user_prompt, *, trace=None) -> dict:
+            assert trace is not None
+            await trace.before_dispatch(
+                {
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "temperature": 0.0,
+                    "response_format": {"type": "json_object"},
+                }
+            )
+            output = {"confidence_score": 0.9, "evidence_quotes": []}
+            if "Methods 0." in user_prompt:
+                output["reasoning_summary"] = "x" * 300  # > budget monkeypatché
+            raw = json.dumps({"choices": [{"message": {"content": json.dumps(output)}}]}).encode()
+            await trace.on_http_response(raw, 200)  # lève pour l'article 0
+            return output
+
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    result = await _run_inference(str(job.id), session_factory=factory, inference=OversizedFirst())
+
+    assert result["processed"] == 1 and result["invalid_json"] == 1
+    await session.refresh(job)
+    assert job.status == InferenceJobStatus.COMPLETED
+    articles = {a.methods_text: a for a in (await session.execute(select(Article))).scalars().all()}
+    first, second = articles["Methods 0."], articles["Methods 1."]
+    preds = (await session.execute(select(ArticlePrediction))).scalars().all()
+    assert [p.article_id for p in preds] == [second.id]
+    calls = (await session.execute(select(Invocation))).scalars().all()
+    by_article = {call.article_id: call for call in calls}
+    assert len(calls) == 2 and set(by_article) == {first.id, second.id}
+    failed = by_article[first.id]
+    assert failed.outcome == "failed"
+    assert failed.response_capture["raw_availability"] == "unavailable"
+    assert failed.response_capture["parsed"]["raw_size"] > 256
+    assert "xxxx" not in str(failed.response_capture)
+    assert by_article[second.id].outcome == "succeeded"
+    assert preds[0].invocation_id == by_article[second.id].id

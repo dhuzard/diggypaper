@@ -317,9 +317,13 @@ async def _do_benchmark(
                     if not isinstance(prediction, dict):
                         raise InferenceError("invalid_json")  # JSON valide mais pas un objet
                 except InferenceError as exc:
-                    if str(exc) != "invalid_json":
+                    if str(exc) == "invalid_json":
+                        prediction, error = {}, "invalid_json"  # sortie non-JSON : réponse fausse
+                    elif str(exc) == "response_too_large_for_provenance":
+                        # L'appel est déjà enregistré « failed » sans corps ; l'article compte faux.
+                        prediction, error = {}, "response_too_large"
+                    else:
                         raise
-                    prediction, error = {}, "invalid_json"  # sortie non-JSON : réponse fausse
                 took = time.monotonic() - start
                 total_time += took
                 preds[article.id] = prediction
@@ -338,7 +342,7 @@ async def _do_benchmark(
                         provenance_project_id=run.project_id if trace else None,
                         source_snapshot_id=trace.snapshot.id if trace else None,
                         invocation_id=producing.id if producing else None,
-                        invocation_group_id=trace.group_id if trace else None,
+                        invocation_group_id=trace.group_id if producing else None,
                     )
                 )
                 done_steps += 1

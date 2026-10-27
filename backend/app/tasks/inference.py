@@ -404,9 +404,10 @@ async def _do_inference(
             if prediction is None:
                 prediction, producing = await predict(main, article, light=False)
         except InferenceError as exc:
-            # Petits modèles : une sortie non-JSON ne doit pas tuer tout le job ;
-            # timeout / connexion / HTTP restent fatals.
-            if str(exc) != "invalid_json":
+            # Petits modèles : une sortie non-JSON ne doit pas tuer tout le job ; idem une
+            # réponse trop grosse pour la provenance (l'appel est déjà enregistré « failed »).
+            # Timeout / connexion / HTTP restent fatals.
+            if str(exc) not in ("invalid_json", "response_too_large_for_provenance"):
                 raise
             invalid += 1
             await _progress(session, job, processed, len(articles), invalid, counts())
