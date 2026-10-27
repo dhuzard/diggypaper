@@ -40,7 +40,8 @@ the same `actor_ref` the person has on annotations and gold in that project. No 
 prediction or project cascades its assessments under the existing product cleanup
 policy. A populated migration will not downgrade and discard the records.
 
-This does not implement a reviewer interface, source-view verification of what
-the assessor read, gold adjudication, qualification metrics, or independent
-review. A support label should not be used as qualified reference data until
+Status 2026-10-27: implemented (`app/api/v1/support_assessments.py`, migration `f0027`,
+`SupportAssessmentPanel.tsx` as the reviewer interface); source-view verification of what
+the assessor read, gold adjudication, qualification metrics and independent review remain
+outside this slice. A support label should not be used as qualified reference data until
 those procedures and the 30-paper pilot are complete.

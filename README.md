@@ -103,6 +103,7 @@ une seconde question aux seuls articles retenus par la première, sans rien réa
 Chaîne de provenance ajoutée en octobre 2026 (migrations `f0022` → `f0028`), décrite dans
 [l'audit initial](docs/audits/2026-10-scientific-evidence-integrity.md), [l'audit de fusion](docs/audits/2026-10-17-seip-merge-audit.md)
 et les contrats de `docs/design/`. Une correspondance de texte n'est jamais un jugement de soutien scientifique.
+L'index [docs/seip/README.md](docs/seip/README.md) donne, pour chaque document SEIP, constats, NTS et connecteur, son statut d'implémentation et les modules concernés.
 - **Versions de source figées** : avant chaque appel au modèle, le texte exactement envoyé
   (sections, méthodes, résumé) est copié dans une version immuable avec son empreinte SHA-256,
   son origine (PMC, PDF déposé, résumé seul) et la version de l'extraction. Le remplacement d'un

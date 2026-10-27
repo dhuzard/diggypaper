@@ -1,6 +1,7 @@
 # NTS publication traceability (optional research module, issue #11)
 
-Status: research PoC. Optional and offline-first; nothing in the existing Article x Search x
+Status: research PoC, integrated in the platform since 2026-10-19 (migrations `f0031`–`f0033`,
+see below). Optional and offline-first; nothing in the existing Article x Search x
 AnswerRecord, screening, gold, RO-Crate or Finding Curation behaviour changes. Code:
 `backend/app/nts/`; CLI: `python -m app.nts run --run-dir runs/<study>`; first study:
 `runs/nts-publication-traceability-poc-v1/`.
@@ -65,7 +66,7 @@ also a first-class producer inside the platform, without any change to the froze
 Curation tables or to the `source-evidence-packet/0.1.0` contract:
 
 1. **Deterministic inference backend.** `model_registry.backend_type = DETERMINISTIC`
-   (migration 0031 seeds `nts-deterministic-extractor-v1`). An ordinary inference job runs
+   (migration `f0031` seeds `nts-deterministic-extractor-v1`). An ordinary inference job runs
    `app/nts/backend.py` in process: the platform captures the `SourceSnapshot`, prepares the
    `Invocation` from the rendered messages, records the program's JSON output verbatim
    (sha256) as the response, checks every quote with the real matcher and builds the
@@ -106,7 +107,7 @@ Curation tables or to the `source-evidence-packet/0.1.0` contract:
 
 `nts-deterministic-extractor-v1` stated every finding as its quoted passage, so a reviewer read a
 whole Methods paragraph as the "claim" of an animal-count finding. `-v2`
-(`diggypaper.nts.extract/2.0.0`, migration 0033) words the claim in one machine sentence with
+(`diggypaper.nts.extract/2.0.0`, migration `f0033`) words the claim in one machine sentence with
 `origin: ai-paraphrase`, for example "Animal numbers reported (rat (Wistar)): 2 female per group;
 2 male per group." or "The article cites the ALURES non-technical summary NTS-ES-414463, written
 "nts-es-414463"…". Quotes, windows, receipts, answers and typed values are byte-identical to v1.

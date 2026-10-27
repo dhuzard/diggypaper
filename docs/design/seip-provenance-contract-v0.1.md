@@ -1,8 +1,8 @@
 # SEIP source and invocation contract v0.1
 
-> Status update 2026-10-17: this contract is implemented on `main` (migration `0022`, `app/provenance.py`, `app/provenance_capture.py`); the annotation drift field is named `current_display_text_drift` with states `legacy_unversioned` / `view_bound` rather than `current_source_drift`. See the [merge audit](../audits/2026-10-17-seip-merge-audit.md).
+> Status update 2026-10-17: this contract is implemented on `main` (migration `f0022`, `app/provenance.py`, `app/provenance_capture.py`); the annotation drift field is named `current_display_text_drift` with states `legacy_unversioned` / `view_bound` rather than `current_source_drift`. See the [merge audit](../audits/2026-10-17-seip-merge-audit.md).
 
-Design input for [issue #2](https://github.com/dhuzard/diggypaper/issues/2), 2026-10-16. Status: **reviewed proposal, not implemented**. This freezes the scientific invariants and fixture expectations before the additive migration. Physical column names, indexes and request trace adapters may be refined in the implementation PR if these invariants and old-client behavior remain testable.
+Design input for [issue #2](https://github.com/dhuzard/diggypaper/issues/2), 2026-10-16. Status 2026-10-27: **implemented** (`app/provenance.py`, `app/provenance_capture.py`, `app/review_source.py`, migrations `f0022` and `f0024`; scorer call kinds retired, see [scorer-provenance-v1.md](scorer-provenance-v1.md)); the text below is the reviewed proposal as frozen on 2026-10-16. This freezes the scientific invariants and fixture expectations before the additive migration. Physical column names, indexes and request trace adapters may be refined in the implementation PR if these invariants and old-client behavior remain testable.
 
 ## Storage boundary
 

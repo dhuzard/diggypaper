@@ -47,7 +47,7 @@ RO-Crate behaviour. Export follows the frozen contract
   the producer commit; without it the export is refused (409), because the frozen 0.1.0
   contract has no "unknown" commit and a producer never invents one. `make up` passes
   `git rev-parse HEAD` through `docker-compose.yml`.
-- **Redistribution rights** (`article_rights_declarations`, migration 0030, append-only):
+- **Redistribution rights** (`article_rights_declarations`, migration `f0030`, append-only):
   `POST /projects/{id}/articles/{article_id}/rights` (LEAD only) records one decision per
   revision (`license_id`, `redistribution` = `allowed | metadata-only | restricted`, a
   non-blank `basis`, an optional https `evidence_url`) under the LEAD's pseudonym;
@@ -69,4 +69,7 @@ RO-Crate behaviour. Export follows the frozen contract
     whose quotes are included. `tests/test_article_rights_api.py` runs CRT's importer on a
     real export when `CRT_CHECKOUT` points to a CRT checkout.
 
-Not in this slice: UI, LEAD release step, split/merge helpers, the Template importer.
+Status 2026-10-27: backend, API and export implemented (`app/api/v1/findings.py`,
+`app/finding_packet.py`, migrations `f0029`–`f0030`); the only review UI is the NTS review
+queue (`NtsReviewQueue.tsx`); a general findings UI, the LEAD release step and split/merge
+helpers are not built, and the Template importer belongs to CRT.

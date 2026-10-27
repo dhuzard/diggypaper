@@ -1,6 +1,6 @@
 # Captured article-input quotation matcher v1.2
 
-> Status update 2026-10-17: persistence (`app/quote_checks.py`, migration `0023`), API exposure (`quote_checks` in the article GET) and UI (`QuoteOccurrencePanel.tsx`) are now on `main`. No frontend UTF-16 adapter exists yet. See the [merge audit](../audits/2026-10-17-seip-merge-audit.md).
+> Status update 2026-10-17: persistence (`app/quote_checks.py`, migration `f0023`), API exposure (`quote_checks` in the article GET) and UI (`QuoteOccurrencePanel.tsx`) are now on `main`. No frontend UTF-16 adapter exists yet. See the [merge audit](../audits/2026-10-17-seip-merge-audit.md).
 
 Pure foundation for [SEIP issue #3](https://github.com/dhuzard/diggypaper/issues/3),
 based on `9e5859c1d00921fb19f5c61146deeb39977b2df9`. This implements deterministic
