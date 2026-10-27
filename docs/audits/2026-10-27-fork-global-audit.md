@@ -68,13 +68,16 @@ SystemOne) were removed** (`5845f0f`, migration `0023`).
 |---|---|
 | `ruff check app tests`, `ruff format --check` | pass |
 | Frontend `tsc --noEmit`, `jest` | pass, 66 tests in 8 suites |
-| Backend `pytest` (SQLite, Python 3.12, Linux) | see §2.1 |
+| Backend `pytest` (SQLite, Python 3.12, Linux) | pass, 1 369 passed, 20 skipped, 3 min 20 s |
 | PostgreSQL-only tests (`SEIP_TEST_POSTGRES_URL`) | **not run**, no database in this environment; still not in CI (#62) |
 | Simulated merge of upstream into the fork (`git merge-tree`) | **20 conflicted files**, see §3 |
 
 ### 2.1 Backend test run
 
-Recorded at the end of the run; see the commit that adds this file for the exact numbers.
+`pip install -c constraints.txt -e '.[dev]'` in a fresh virtualenv, then `python -m pytest -q`:
+1 369 passed, 20 skipped (all PostgreSQL-only), 200 s. The 2026-10-17 audit recorded 832
+passed, so the fork added about 540 tests in ten days, almost all for SEIP, findings, NTS and
+the connector.
 
 ## 3. The structural finding: the fork and upstream have crossed
 
