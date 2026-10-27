@@ -239,7 +239,7 @@ Omission MUST be visible. `export_status.withheld_counts` states how many record
 
 ## 7. Validator error codes
 
-All codes are implemented and have a negative fixture in `fixtures/invalid/<code>/` except where noted. The negative fixtures are not committed: `fixtures/build_fixtures.py` writes them deterministically (section 10) and the tests rebuild them. Sorted output order is `(code, file, id)`.
+All codes are implemented and have a negative fixture in `fixtures/invalid/<code>/` except where noted. Sorted output order is `(code, file, id)`.
 
 | Code | Condition |
 |---|---|
@@ -356,7 +356,7 @@ python docs/contracts/source-evidence-packet/v0.1.0/validator/sep_validate.py --
 python docs/contracts/source-evidence-packet/v0.1.0/validator/sep_validate.py --mapping-report <dir>
 ```
 
-Default is `--for-import`. Offline, deterministic, no clock or randomness. Prints JSON `{"valid", "errors":[{code,file,id,message}], "warnings", "counts"}` sorted by `(code, file, id)`, plus `"packet_digest"` (section 2.1) when `valid` is true. Exit 0 valid, 1 invalid, 2 usage. Tests: `backend/tests/test_source_evidence_packet.py`. Regenerate fixtures with `python docs/contracts/source-evidence-packet/v0.1.0/fixtures/build_fixtures.py` (idempotent, byte-identical on every run). Only `fixtures/valid/canonical/` is committed; the builder also writes `fixtures/invalid/<code>/` (git-ignored), and the tests rebuild the whole tree in a temporary copy (`backend/tests/contract_fixtures.py`) and check that the committed canonical packet is byte-identical to a fresh build.
+Default is `--for-import`. Offline, deterministic, no clock or randomness. Prints JSON `{"valid", "errors":[{code,file,id,message}], "warnings", "counts"}` sorted by `(code, file, id)`, plus `"packet_digest"` (section 2.1) when `valid` is true. Exit 0 valid, 1 invalid, 2 usage. Tests: `backend/tests/test_source_evidence_packet.py`. Regenerate fixtures with `python docs/contracts/source-evidence-packet/v0.1.0/fixtures/build_fixtures.py` (idempotent, byte-identical on every run). The committed `fixtures/invalid/<code>/` tree is byte-identical to the builder's output; the tests rebuild the whole tree in a temporary copy (`backend/tests/contract_fixtures.py`) and check that the committed canonical packet is byte-identical to a fresh build.
 
 ## 11. Open items
 

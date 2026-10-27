@@ -1,0 +1,6 @@
+{
+  "errors": [
+    "embargo-expired-or-missing",
+    "private-packet-not-exportable"
+  ]
+}
