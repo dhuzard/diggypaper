@@ -11,6 +11,7 @@ import { QuoteOccurrencePanel } from "@/components/QuoteOccurrencePanel";
 import { SupportAssessmentPanel } from "@/components/SupportAssessmentPanel";
 import { SwipeableCard } from "@/components/SwipeableCard";
 import { Button } from "@/components/ui/Button";
+import { addQuote } from "@/lib/highlight";
 import { articlesStoreKey, withSearch } from "@/lib/search";
 import { useSearchId, useSearches } from "@/lib/useSearch";
 import {
@@ -41,6 +42,7 @@ import {
  */
 export default function AnnotatePage() {
   const t = useTranslations("annotate");
+  const ti = useTranslations("import"); // libellés des parties du texte
   const tc = useTranslations("common");
   const locale = useLocale();
   const params = useParams<{ id: string }>();
@@ -64,10 +66,13 @@ export default function AnnotatePage() {
   const [tab, setTab] = useState<"document" | "annotation">("document");
   const router = useRouter();
   const [fields, setFields] = useState<SchemaField[]>([]);
+  const [sections, setSections] = useState<string[]>(["methods"]); // parties du texte lues par la recherche
   const [queue, setQueue] = useState<string[]>([]);
   const [status, setStatus] = useState<
     "idle" | "accepted" | "rejected" | "submitted"
   >("idle");
+  // Extraits de preuve de l'annotation en cours (réponse du modèle, relecture existante, ajouts à la main)
+  const [quotes, setQuotes] = useState<string[]>([]);
   const [goldBusy, setGoldBusy] = useState(false);
   const [goldNote, setGoldNote] = useState<string | null>(null);
 
@@ -76,7 +81,7 @@ export default function AnnotatePage() {
     if (!projectId) return;
     const load = async () => {
       // Filtres de la liste d'articles (mémorisés par l'onglet).
-      let saved: { filter?: string; sort?: "added" | "date_desc" | "date_asc" | "score_desc"; answers?: Record<string, string | boolean> } = {};
+      let saved: { filter?: string; sort?: "added" | "date_desc" | "date_asc" | "score_desc"; answers?: Record<string, string | boolean>; q?: string; fulltext?: boolean } = {};
       try {
         saved = JSON.parse(sessionStorage.getItem(articlesStoreKey(projectId, searchId)) ?? "{}");
       } catch {
@@ -86,11 +91,11 @@ export default function AnnotatePage() {
         queueMode === "review" ? "TO_REVIEW" : queueMode === "list" && saved.filter && saved.filter !== "ALL" ? (saved.filter as PredictionFilter) : undefined;
       const sort = queueMode === "list" ? (saved.sort ?? "added") : "added";
       const answers = queueMode === "all" ? {} : (saved.answers ?? {});
-      let r = await listArticles(projectId, 1, 200, status, sort, answers, searchId);
+      let r = await listArticles(projectId, 1, 200, status, sort, answers, searchId, queueMode === "all" ? undefined : saved.q, queueMode === "all" ? undefined : saved.fulltext);
       // La liste est paginée par 200 : on poursuit jusqu'à trouver l'article ouvert.
       const ids = r.items.map((a) => a.id);
       for (let p = 2; articleId && !ids.includes(articleId) && ids.length < r.total && p <= 5; p++) {
-        ids.push(...(await listArticles(projectId, p, 200, status, sort, answers, searchId)).items.map((a) => a.id));
+        ids.push(...(await listArticles(projectId, p, 200, status, sort, answers, searchId, queueMode === "all" ? undefined : saved.q, queueMode === "all" ? undefined : saved.fulltext)).items.map((a) => a.id));
       }
       // Rien à relire (pas encore trié / tout validé) : on propose tous les articles.
       if (ids.length === 0 && queueMode === "review") r = await listArticles(projectId, 1, 200, undefined, "added", {}, searchId);
@@ -119,7 +124,10 @@ export default function AnnotatePage() {
     if (!projectId || !articleId) return;
     setLoading(true);
     getProject(projectId, searchId)
-      .then((p) => setFields(p.fields ?? []))
+      .then((p) => {
+        setFields(p.fields ?? []);
+        setSections(p.text_sections ?? ["methods"]);
+      })
       .catch(() => {});
     getArticleWithPrediction(projectId, articleId, searchId)
       .then(({ article, prediction, review }) => {
@@ -152,6 +160,19 @@ export default function AnnotatePage() {
       setError((e as Error).message);
     }
   }, [projectId, articleId, article?.source_view_token, prediction, searchId, isBlind]);
+
+  // Repart des extraits de la relecture, sinon de ceux du modèle (rien à l'aveugle avant relecture).
+  useEffect(() => {
+    const locked = isBlind && !review;
+    const own = review?.decision_json?.evidence_quotes;
+    setQuotes(
+      Array.isArray(own)
+        ? (own as string[])
+        : review || locked
+          ? []
+          : prediction?.evidence_quotes ?? []
+    );
+  }, [articleId, review, prediction, isBlind]);
 
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
@@ -246,7 +267,29 @@ export default function AnnotatePage() {
       </div>
     );
 
-  const nextId = queue[queue.indexOf(articleId) + 1] ?? null;
+  const position = queue.indexOf(articleId);
+  const nextId = queue[position + 1] ?? null;
+  const prevId = position > 0 ? queue[position - 1] : null;
+  const goTo = (id: string) =>
+    withSearch(`/projects/${projectId}/annotate?article=${id}&queue=${queueMode}`, searchId);
+  const stepCls = (on: boolean) =>
+    `rounded border px-3 py-1 text-sm ${
+      on ? "border-border text-primary hover:bg-surface-muted" : "pointer-events-none border-border/50 text-muted/50"
+    }`;
+  const stepper =
+    queue.length > 1 && position >= 0 ? (
+      <nav aria-label={t("navArticles")} className="flex shrink-0 items-center gap-2">
+        <Link href={prevId ? goTo(prevId) : "#"} aria-disabled={!prevId} className={stepCls(!!prevId)}>
+          ← {t("previousArticle")}
+        </Link>
+        <span className="text-xs tabular-nums text-muted">
+          {position + 1} / {queue.length}
+        </span>
+        <Link href={nextId ? goTo(nextId) : "#"} aria-disabled={!nextId} className={stepCls(!!nextId)}>
+          {t("nextShort")} →
+        </Link>
+      </nav>
+    ) : null;
 
   // À l'aveugle et pas encore relu : rien du modèle (ni réponses, ni preuves surlignées).
   const blindLocked = isBlind && !review;
@@ -267,12 +310,15 @@ export default function AnnotatePage() {
     <div className="flex flex-col">
       {/* Barre supérieure (desktop) */}
       <header className="hidden border-b p-4 md:block">
-        <Link
-          href={withSearch(`/projects/${projectId}/articles`, searchId)}
-          className="text-sm text-primary hover:underline"
-        >
-          ← {t("backToArticles")}
-        </Link>
+        <div className="flex items-center justify-between gap-3">
+          <Link
+            href={withSearch(`/projects/${projectId}/articles`, searchId)}
+            className="text-sm text-primary hover:underline"
+          >
+            ← {t("backToArticles")}
+          </Link>
+          {stepper}
+        </div>
         <h1 className="mt-1 text-lg font-semibold">
           {article.title ?? `Article ${article.pmid ?? article.id}`}
         </h1>
@@ -287,13 +333,14 @@ export default function AnnotatePage() {
       </header>
 
       {/* Barre supérieure (mobile) : retour aux articles */}
-      <header className="border-b p-3 md:hidden">
+      <header className="flex items-center justify-between gap-2 border-b p-3 md:hidden">
         <Link
           href={withSearch(`/projects/${projectId}/articles`, searchId)}
           className="text-sm text-primary hover:underline"
         >
           ← {t("backToArticles")}
         </Link>
+        {stepper}
       </header>
 
       {isBlind && (
@@ -317,7 +364,7 @@ export default function AnnotatePage() {
             className="h-full"
           >
             <h2 className="mb-2 text-sm font-medium text-muted">
-              {t("methods")}
+              {sections.includes("all") ? ti("kind_all") : sections.map((k) => ti(`kind_${k}`)).join(" · ")}
             </h2>
             <div
               className={`mb-2 rounded border p-2 text-xs ${
@@ -363,7 +410,8 @@ export default function AnnotatePage() {
             ) : null}
             <EvidenceHighlighter
               text={article.text ?? article.methods_text ?? ""}
-              quotes={shownPrediction?.evidence_quotes}
+              quotes={quotes}
+              onAdd={(q) => setQuotes((prev) => addQuote(prev, q))}
             />
             {status !== "idle" && (
               <div className="mt-4">
@@ -435,6 +483,8 @@ export default function AnnotatePage() {
             fields={fields}
             onSubmit={handleSubmit}
             initial={initialAnnotation}
+            quotes={quotes}
+            onQuotesChange={setQuotes}
           />
           {shownPrediction && (
             <SupportAssessmentPanel

@@ -63,15 +63,15 @@ async def test_fetch_pmids_default_retmax_is_configured_cap():
         assert await fetch_pmids("cancer", None, http) == ["1", "2"]
 
 
-async def test_fetch_pmids_cap_follows_setting(monkeypatch):
-    """M1 : retmax est plafonné à IMPORT_MAX_ARTICLES (5000 par défaut, 10000 au plus)."""
+async def test_fetch_pmids_never_asks_more_than_the_ncbi_window(monkeypatch):
+    """Une requête esearch est bornée par la limite NCBI (9 999), quel que soit le plafond."""
     from app.core.config import get_settings
 
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.params["retmax"] == "10000"
+        assert request.url.params["retmax"] == "9999"
         return httpx.Response(200, json={"esearchresult": {"idlist": ["1"]}})
 
-    monkeypatch.setattr(get_settings(), "import_max_articles", 99999)  # borné par NCBI
+    monkeypatch.setattr(get_settings(), "import_max_articles", 99999)
 
     async with _client(handler) as http:
         assert await fetch_pmids("cancer", None, http, retmax=50000) == ["1"]
@@ -391,3 +391,66 @@ def test_parse_biblio_metadata():  # noqa: E501
     assert (a["journal"], a["pub_date"], a["doi"]) == ("Nature", "2024-05", "10.1/x")
     assert a["authors"] == ["Doe J", "The Group", "Poe P"] and a["pub_types"] == ["Review"]
     assert (b["journal"], b["pub_date"]) == ("J Neu", "2022-12-31")  # date électronique d'abord
+
+
+def test_sections_drop_latex_and_mark_display_formulas():
+    from app.pubmed import _extract_sections
+
+    xml = """<article xmlns:mml="http://www.w3.org/1998/Math/MathML"><body><sec><title>Methods</title>
+    <p>Reward is <inline-formula><alternatives><mml:math><mml:mi>p</mml:mi><mml:mo>&lt;</mml:mo>
+    <mml:mn>0.05</mml:mn></mml:math><tex-math>\\documentclass[12pt]{minimal}\\begin{document}$p&lt;0.05$
+    \\end{document}</tex-math></alternatives></inline-formula> here.
+    <disp-formula><alternatives><tex-math>\\documentclass{minimal}\\usepackage{amsmath}\\begin{document}
+    $$R=0$$\\end{document}</tex-math><mml:math><mml:mi>R</mml:mi></mml:math></alternatives></disp-formula>
+    where Po is the probability.</p></sec></body></article>"""
+    (sec,) = _extract_sections(xml)
+    assert "documentclass" not in sec["text"] and "usepackage" not in sec["text"]
+    assert "Reward is p" in sec["text"] and "0.05 here." in sec["text"]
+    assert "[formula]" in sec["text"]
+    assert sec["text"].endswith("where Po is the probability.")
+
+
+async def test_fetch_all_pmids_splits_queries_over_the_ncbi_window(monkeypatch):
+    """Au-delà de la fenêtre NCBI, la requête est découpée par date : tout est récupéré."""
+    import re
+    from datetime import date
+
+    from app import pubmed
+    from app.pubmed import fetch_all_pmids
+
+    monkeypatch.setattr(pubmed, "PUBMED_WINDOW", 5)
+    # 40 articles étalés sur 40 jours consécutifs de 2021 (pmid = 1000 + jour)
+    records = {str(1000 + d): date(2021, 1, 1).toordinal() + d for d in range(40)}
+
+    def in_range(term: str) -> list[str]:
+        lo, hi = (
+            date.fromisoformat(x.replace("/", "-")).toordinal()
+            for x in re.findall(r'"(\d{4}/\d\d/\d\d)"', term)
+        )
+        return [p for p, day in records.items() if lo <= day <= hi]
+
+    async def volume(term, key, http):
+        return len(in_range(term))
+
+    async def pmids(term, key, http, retmax=None):
+        # Comme esearch : les plus récents d'abord dans chaque tranche (sinon le premier élément
+        # dépend de la largeur des tranches, donc de la date du jour).
+        return sorted(in_range(term), reverse=True)[: retmax or 10**9]
+
+    monkeypatch.setattr(pubmed, "search_volume", volume)
+    monkeypatch.setattr(pubmed, "fetch_pmids", pmids)
+    got = await fetch_all_pmids("sleep", None, None, count=40, limit=10**9)
+    assert sorted(got) == sorted(records) and len(set(got)) == 40  # tous, sans doublon
+    assert got[0] == "1039"  # les plus récents d'abord
+    capped = await fetch_all_pmids("sleep", None, None, count=40, limit=12)
+    assert len(capped) == 12 and capped[0] == "1039"  # plafond configurable : on garde les récents
+
+
+def test_import_cap_zero_means_unlimited(monkeypatch):
+    from app.core.config import get_settings
+    from app.pubmed import UNLIMITED, _esearch_max
+
+    monkeypatch.setattr(get_settings(), "import_max_articles", 0)
+    assert _esearch_max() == UNLIMITED
+    monkeypatch.setattr(get_settings(), "import_max_articles", 50000)
+    assert _esearch_max() == 50000  # plus de plafond de 10 000 codé en dur

@@ -16,15 +16,18 @@ const SECTION_KINDS = [
   "other",
 ];
 
-const DEPTHS = [1, 2, 4, 8, 16];
-const CHOICE_METRICS: RankMetric[] = ["accuracy"];
+/** Exemple proposé (jamais appliqué sans clic) ; le texte de la question est traduit. */
+const SUGGESTED_FIELDS: SchemaField[] = [
+  { key: "use_ai_behavior", label: "Uses AI behavior analysis", type: "boolean" },
+  {
+    key: "animal_sex",
+    label: "Animal sex",
+    type: "choice",
+    options: ["MALE_ONLY", "FEMALE_ONLY", "BOTH_SEXES", "UNSPECIFIED"],
+  },
+];
 
-/** Durée lisible à partir de secondes. */
-function fmtDuration(sec: number): string {
-  if (sec < 90) return `${Math.round(sec)} s`;
-  if (sec < 5400) return `${Math.round(sec / 60)} min`;
-  return `${(sec / 3600).toFixed(1)} h`;
-}
+const CHOICE_METRICS: RankMetric[] = ["accuracy"];
 
 const slug = (s: string) =>
   s
@@ -41,27 +44,22 @@ export function QuestionEditor({
   question,
   fields,
   sections,
-  readWindows,
-  articleCount,
   onChange,
 }: {
   question: string;
   fields: SchemaField[];
   sections: string[];
-  readWindows: number;
-  articleCount?: number;
   onChange: (next: {
     question: string;
     fields: SchemaField[];
     sections: string[];
-    readWindows: number;
   }) => void;
 }) {
   const t = useTranslations("question");
   const ti = useTranslations("import");
   const set = (
-    patch: Partial<{ question: string; fields: SchemaField[]; sections: string[]; readWindows: number }>
-  ) => onChange({ question, fields, sections, readWindows, ...patch });
+    patch: Partial<{ question: string; fields: SchemaField[]; sections: string[] }>
+  ) => onChange({ question, fields, sections, ...patch });
 
   function patchField(i: number, patch: Partial<SchemaField> & { optionsText?: string }) {
     set({
@@ -103,6 +101,20 @@ export function QuestionEditor({
       <Field label={t("questionLabel")} hint={t("questionHint")}>
         <Textarea rows={2} value={question} onChange={(e) => set({ question: e.target.value })} />
       </Field>
+      {!question.trim() && !fields.length && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border p-3 text-sm">
+          <span className="text-muted">{t("suggestion")} :</span>
+          <span className="text-foreground">{t("suggestionText")}</span>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => set({ question: t("suggestionText"), fields: SUGGESTED_FIELDS })}
+          >
+            {t("suggestionUse")}
+          </Button>
+        </div>
+      )}
 
       <div>
         <p className="text-sm font-medium text-foreground">{t("fieldsTitle")}</p>
@@ -206,26 +218,6 @@ export function QuestionEditor({
               onChange={() => toggleSection(k)}
             />
           ))}
-        </div>
-
-        <div className="mt-4 max-w-md">
-          <Field label={t("depthLabel")} hint={t("depthHint")}>
-            <Select value={String(readWindows)} onChange={(e) => set({ readWindows: Number(e.target.value) })}>
-              {DEPTHS.map((w) => (
-                <option key={w} value={w}>
-                  {t(`depth_${w}`)} — ≈ {w === 1 ? 1 : Math.round(w * 4)} s {t("perArticle")}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          {articleCount ? (
-            <p className="mt-1 text-xs text-muted">
-              {t("depthEstimate", {
-                n: articleCount.toLocaleString(),
-                time: fmtDuration(articleCount * (readWindows === 1 ? 1 : readWindows * 4)),
-              })}
-            </p>
-          ) : null}
         </div>
       </div>
     </div>

@@ -18,12 +18,13 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr, TypeAdapter, ValidationError, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import maintenance
 from app.api.deps import get_current_admin, get_db
 from app.core.config import get_settings
 from app.core.crypto import MASK
 from app.db.models import SettingScope, User
 from app.emails import Mailer
-from app.settings.keys import KNOWN_KEYS
+from app.settings.keys import DEFAULTS, KNOWN_KEYS, SECRET_KEYS
 from app.settings.service import delete_setting, get_all, get_setting, set_setting
 
 logger = logging.getLogger(__name__)
@@ -100,6 +101,27 @@ async def read_settings(
     return result
 
 
+@router.get("/settings/env")
+async def settings_from_environment(admin: AdminDep) -> dict[str, dict]:
+    """Valeurs qui viennent de l'ENVIRONNEMENT du serveur (.env) quand la base n'en définit pas :
+    ce sont elles qui s'appliquent tant que le réglage est vide dans l'interface. Les secrets ne
+    sont jamais renvoyés (``set`` seulement)."""
+    s = get_settings()
+    env = {
+        "llm_api_base_url": DEFAULTS.get("llm_api_base_url", ""),
+        "smtp_host": s.smtp_host,
+        "smtp_port": str(s.smtp_port) if s.smtp_host else "",
+        "smtp_user": s.smtp_user,
+        "smtp_password": s.smtp_password,
+        "smtp_from_email": s.smtp_from,
+        "use_tls": ("true" if s.smtp_use_tls else "false") if s.smtp_host else "",
+    }
+    return {
+        key: {"set": bool(value), "value": None if key in SECRET_KEYS else (value or None)}
+        for key, value in env.items()
+    }
+
+
 @router.put("/settings")
 async def update_settings(
     payload: SettingsUpdate, db: DbDep, admin: AdminDep
@@ -173,3 +195,24 @@ async def test_smtp(payload: SmtpTestRequest, db: DbDep, admin: AdminDep) -> dic
             content={"sent": False, "error": f"SMTP test failed: {_smtp_error_category(exc)}"},
         )
     return {"sent": True}
+
+
+@router.get("/storage/status")
+async def storage_status(admin: AdminDep) -> dict:
+    """Occupation du disque (léger : alimente le bandeau d'alerte des administrateurs)."""
+    return maintenance.disk_status()
+
+
+@router.get("/storage")
+async def storage(db: DbDep, admin: AdminDep) -> dict:
+    """Disque, base, PDF et projets (taille, dernière activité, échéance de suppression)."""
+    settings = get_settings()
+    projects = await maintenance.project_usage(db)
+    return {
+        "disk": maintenance.disk_status(),
+        "db_bytes": await maintenance.db_bytes(db),
+        "pdf_bytes": sum(p["pdf_bytes"] for p in projects),
+        "retention_days": settings.project_retention_days,
+        "grace_days": settings.project_retention_grace_days,
+        "projects": projects[:50],
+    }

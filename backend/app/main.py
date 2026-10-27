@@ -12,8 +12,10 @@ from app.api.v1 import (
     annotations,
     auth,
     benchmarks,
+    citations,
     connector,
     connector_grants,
+    crate_import,
     export,
     findings,
     gold,
@@ -22,12 +24,13 @@ from app.api.v1 import (
     nts,
     projects,
     prompts,
+    query_assistant,
     searches,
     support_assessments,
     team,
     users,
 )
-from app.core.bootstrap import bootstrap_admin, bootstrap_models
+from app.core.bootstrap import bootstrap_admin
 from app.core.config import get_settings, validate_settings
 from app.i18n import I18nMiddleware
 
@@ -46,10 +49,6 @@ async def lifespan(app: FastAPI):
         await bootstrap_admin(settings)
     except Exception:  # noqa: BLE001 - le bootstrap ne doit pas bloquer le démarrage
         logger.exception("Bootstrap admin en échec (continuer sans admin)")
-    try:
-        await bootstrap_models(settings)
-    except Exception:  # noqa: BLE001
-        logger.exception("Pré-enregistrement des modèles en échec (ignoré)")
     yield
 
 
@@ -83,6 +82,9 @@ def create_app() -> FastAPI:
     app.include_router(connector_grants.router, prefix="/api/v1")
     app.include_router(connector.router, prefix="/api/v1")
     app.include_router(searches.router, prefix="/api/v1")
+    app.include_router(citations.router, prefix="/api/v1")
+    app.include_router(crate_import.router, prefix="/api/v1")
+    app.include_router(query_assistant.router, prefix="/api/v1")
     app.include_router(export.router, prefix="/api/v1")
     app.include_router(models.router, prefix="/api/v1")
     app.include_router(prompts.router, prefix="/api/v1")

@@ -4,27 +4,31 @@ import { ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { getProject, getInference, listJobs, ImportJob, InferenceJob, Project } from "@/lib/api";
-import { Badge, statusColor } from "@/components/ui/Card";
+import { cancelInference, deleteProject, getProject, getInference, listJobs, ImportJob, InferenceJob, Project } from "@/lib/api";
+import { Menu, MenuItem } from "@/components/ui/Menu";
 import { ProgressBar } from "@/components/ui/Feedback";
+import { JobProgress } from "@/components/JobProgress";
+import { isProjectLead } from "@/lib/role";
 import { withSearch } from "@/lib/search";
+import { useAuth } from "@/lib/auth";
 import { useSearchId, useSearches, useSelectSearch } from "@/lib/useSearch";
 
 const STEPS = [
   { key: "overview", href: "", needsCorpus: false, leadOnly: false, optional: false },
-  { key: "import", href: "/import", needsCorpus: false, leadOnly: false, optional: false },
+  { key: "import", href: "/import", needsCorpus: false, leadOnly: true, optional: false },
+  { key: "searches", href: "/searches", needsCorpus: true, leadOnly: false, optional: false },
   { key: "inference", href: "/inference", needsCorpus: true, leadOnly: true, optional: false },
   { key: "articles", href: "/articles", needsCorpus: true, leadOnly: false, optional: false },
   { key: "team", href: "/team", needsCorpus: false, leadOnly: false, optional: false },
   { key: "gold", href: "/gold", needsCorpus: true, leadOnly: false, optional: true },
   { key: "benchmarks", href: "/benchmarks", needsCorpus: true, leadOnly: true, optional: true },
-  { key: "prompts", href: "/prompts", needsCorpus: true, leadOnly: true, optional: true },
   { key: "nts", href: "/nts", needsCorpus: true, leadOnly: false, optional: true },
 ] as const;
 
 /** Navigation persistante du projet : fil d'Ariane + onglets des étapes. */
 export default function ProjectLayout({ children }: { children: ReactNode }) {
   const t = useTranslations("project");
+  const { user } = useAuth();
   const id = useParams<{ id: string }>().id;
   const pathname = usePathname();
   const [project, setProject] = useState<Project | null>(null);
@@ -114,7 +118,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
     let stopped = false;
     const check = async () => {
       try {
-        const j = await getInference(id, searchId);
+        const j = await getInference(id, undefined, true); // l'analyse en cours du projet
         if (!stopped) setInf(j);
       } catch {
         /* ignoré */
@@ -127,7 +131,25 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       stopped = true;
       clearInterval(timer);
     };
-  }, [id, pathname, analysing, searchId]);
+  }, [id, pathname, analysing]);
+  async function stopAnalysis() {
+    if (!window.confirm(t("stopConfirm"))) return;
+    try {
+      await cancelInference(id);
+      setInf(await getInference(id, undefined, true));
+    } catch {
+      /* l'état réel est relu au prochain tick */
+    }
+  }
+  async function handleDelete() {
+    if (!window.confirm(t("deleteConfirm"))) return;
+    try {
+      await deleteProject(id);
+      window.location.href = "/projects";
+    } catch {
+      window.alert(t("deleteFailed"));
+    }
+  }
   const ir = inf?.result ?? {};
   const itotal = typeof ir.total === "number" ? ir.total : 0;
   const idone = typeof ir.done === "number" ? ir.done : 0;
@@ -137,8 +159,8 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   const done = typeof r.done === "number" ? r.done : 0;
 
   const base = `/projects/${id}`;
-  const frozen = project?.status === "FROZEN" || project?.status === "COMPLETED";
-  const isLead = project?.role_in_project === "LEAD" || project?.role_in_project == null;
+  const hasCorpus = (project?.article_count ?? 0) > 0;
+  const isLead = isProjectLead(project, user);
   const isAnnotate = pathname.startsWith(`${base}/annotate`);
 
   return (
@@ -149,11 +171,51 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
             {t("backToProjects")}
           </Link>
           <span className="mx-1">/</span>
-          <span className="font-medium text-foreground">{project?.title ?? "…"}</span>
+          <span className="font-medium text-foreground" title={project?.description ?? undefined}>
+            {project?.title ?? "…"}
+          </span>
         </nav>
-        {project && (
-          <Badge color={statusColor(project.status)}>{project.status}</Badge>
-        )}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          {analysing && (
+            <JobProgress
+              inline
+              title={t("analysisBannerTitle")}
+              done={idone}
+              total={itotal}
+              segments={{
+                accepted: typeof ir.auto_accepted === "number" ? ir.auto_accepted : 0,
+                rejected: typeof ir.auto_rejected === "number" ? ir.auto_rejected : 0,
+                review: typeof ir.needs_review === "number" ? ir.needs_review : 0,
+              }}
+              action={
+                <span className="flex items-center gap-2">
+                  {!pathname.endsWith("/inference") && (
+                    <Link href={withSearch(`${base}/inference`, searchId)} className="text-primary hover:underline">
+                      {t("detailsLink")}
+                    </Link>
+                  )}
+                  {isLead && (
+                    <button
+                      type="button"
+                      onClick={() => void stopAnalysis()}
+                      className="rounded-md border border-danger/40 px-2 py-0.5 text-danger hover:bg-danger/10"
+                      title={t("stopTitle")}
+                    >
+                      ■ {t("stopShort")}
+                    </button>
+                  )}
+                </span>
+              }
+            />
+          )}
+          {project && isLead && (
+            <Menu label="⋯">
+              <MenuItem onClick={() => void handleDelete()}>
+                <span className="text-danger">{t("deleteProject")}</span>
+              </MenuItem>
+            </Menu>
+          )}
+        </div>
       </div>
 
       {importing && (
@@ -183,23 +245,6 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
             {t("importBannerHint")}{" "}
             {!pathname.endsWith("/import") && (
               <Link href={`${base}/import`} className="text-primary hover:underline">
-                {t("importBannerLink")} →
-              </Link>
-            )}
-          </p>
-        </div>
-      )}
-
-      {analysing && (
-        <div className="rounded-lg border border-primary/40 bg-primary/5 p-3">
-          <ProgressBar
-            value={itotal > 0 ? (idone / itotal) * 100 : null}
-            label={itotal > 0 ? t("analysisBanner", { done: idone, total: itotal }) : t("analysisBannerStart")}
-          />
-          <p className="mt-2 text-xs text-muted">
-            {t("importBannerHint")}{" "}
-            {!pathname.endsWith("/inference") && (
-              <Link href={withSearch(`${base}/inference`, searchId)} className="text-primary hover:underline">
                 {t("importBannerLink")} →
               </Link>
             )}
@@ -242,7 +287,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
               ? pathname === base
               : pathname.startsWith(href) || (s.key === "articles" && isAnnotate);
           const label = (s.key as string) === "overview" ? t("overview") : t(s.key);
-          const blocked = s.needsCorpus && project !== null && !frozen;
+          const blocked = s.needsCorpus && project !== null && !hasCorpus;
           const cls = `whitespace-nowrap border-b-2 px-3 py-2 text-sm ${
             s.optional ? "italic " : ""
           }${

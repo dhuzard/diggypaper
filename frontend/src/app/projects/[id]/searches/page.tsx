@@ -1,22 +1,28 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import {
   createSearch,
   deleteSearch,
   getProject,
+  listModels,
+  ModelInfo,
   renameSearch,
   SchemaField,
   SearchInfo,
   SearchKind,
   Selection,
 } from "@/lib/api";
-import { cleanSelection, prefillStoreKey, withSearch } from "@/lib/search";
+import { SearchCreate } from "@/lib/api";
+import { cleanSelection, isUntouched, prefillStoreKey, withSearch } from "@/lib/search";
 import { notifySearchesChanged, storeSearchId, useSearchId, useSearches, useSelectSearch } from "@/lib/useSearch";
 import { ArticleSelector } from "@/components/ArticleSelector";
 import { QuestionEditor } from "@/components/QuestionEditor";
+import { useAuth } from "@/lib/auth";
+import { isProjectLead } from "@/lib/role";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
@@ -25,7 +31,7 @@ import { EmptyState, ErrorBanner, Skeleton } from "@/components/ui/Feedback";
 
 const DEFAULT_BLIND_N = 40;
 
-type Definition = { question: string; fields: SchemaField[]; sections: string[]; readWindows: number };
+type Definition = { question: string; fields: SchemaField[]; sections: string[] };
 
 /** Items nettoyés pour l'API (options de choix sans entrées vides). */
 const cleanFields = (fields: SchemaField[]): SchemaField[] =>
@@ -76,6 +82,8 @@ function SearchCard({
               {s.is_default && <Badge color="blue">{t("initial")}</Badge>}
               {s.kind !== "standard" && <Badge color={s.kind === "blind" ? "yellow" : "gray"}>{t(`kind_${s.kind}`)}</Badge>}
               {current && <Badge color="green">{t("current")}</Badge>}
+              {s.schedule_state === "waiting" && <Badge color="gray">{t("scheduledBadge")}</Badge>}
+              {s.schedule_state === "failed" && <Badge color="red">{t("scheduleFailedBadge")}</Badge>}
             </h3>
           ) : (
             <form
@@ -151,12 +159,13 @@ function SearchCard({
 
 function SearchesContent() {
   const t = useTranslations("searches");
-  const locale = useLocale();
   const projectId = useParams<{ id: string }>().id;
   const router = useRouter();
   const searchId = useSearchId(projectId);
   const { searches, current, reload } = useSearches(projectId, searchId);
   const selectSearch = useSelectSearch(projectId);
+  const { user } = useAuth();
+  const role = user?.role;
   const [isLead, setIsLead] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -169,13 +178,23 @@ function SearchesContent() {
   const [originDef, setOriginDef] = useState<Definition | null>(null);
   const [creating, setCreating] = useState(false);
 
+  // Analyse programmée : elle démarre quand la recherche d'origine a fini.
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [sched, setSched] = useState(false);
+  const [m1, setM1] = useState("");
+  const [m2, setM2] = useState("");
+  const [instr, setInstr] = useState("");
+  useEffect(() => {
+    listModels(projectId).then(setModels).catch(() => setModels([]));
+  }, [projectId]);
+
   // Échantillon à l'aveugle
   const [blindN, setBlindN] = useState(DEFAULT_BLIND_N);
   const [blindBusy, setBlindBusy] = useState(false);
 
   useEffect(() => {
     getProject(projectId)
-      .then((p) => setIsLead(p.role_in_project === "LEAD" || p.role_in_project == null))
+      .then((p) => setIsLead(isProjectLead(p, { role })))
       .catch(() => {});
     try {
       const raw = sessionStorage.getItem(prefillStoreKey(projectId));
@@ -187,7 +206,7 @@ function SearchesContent() {
     } catch {
       /* pas de préremplissage */
     }
-  }, [projectId]);
+  }, [projectId, role]);
 
   // Question et items de la recherche d'origine : copiés par défaut, modifiables.
   const originId = selection.from_search_id ?? searches?.find((s) => s.is_default)?.id;
@@ -195,14 +214,14 @@ function SearchesContent() {
     if (!originId || !showForm) return;
     setEdit(null);
     getProject(projectId, originId)
-      .then((p) =>
+      .then((p) => {
+        const set = p.question_set !== false; // sinon : formulaire vide + suggestion
         setOriginDef({
-          question: p.question ?? "",
-          fields: p.fields ?? [],
+          question: set ? (p.question ?? "") : "",
+          fields: set ? (p.fields ?? []) : [],
           sections: p.text_sections ?? ["methods"],
-          readWindows: p.read_windows ?? 4,
-        })
-      )
+        });
+      })
       .catch(() => setOriginDef(null));
   }, [projectId, originId, showForm]);
 
@@ -211,17 +230,20 @@ function SearchesContent() {
     router.push(withSearch(`/projects/${projectId}/articles`, s.id));
   }
 
-  async function create(kind: SearchKind, body: { name: string; selection: Selection; def?: Definition | null }) {
+  async function create(
+    kind: SearchKind,
+    body: { name?: string; selection: Selection; def?: Definition | null; schedule?: SearchCreate["schedule"] }
+  ) {
     const s = await createSearch(projectId, {
       name: body.name,
       kind,
+      ...(body.schedule ? { schedule: body.schedule } : {}),
       selection: cleanSelection(body.selection),
       ...(body.def
         ? {
             question: body.def.question,
             fields: cleanFields(body.def.fields),
             text_sections: body.def.sections,
-            read_windows: body.def.readWindows,
           }
         : {}),
     });
@@ -235,8 +257,22 @@ function SearchesContent() {
     setCreating(true);
     setError(null);
     try {
-      const s = await create("standard", { name, selection, def: edit });
-      router.push(withSearch(`/projects/${projectId}/inference`, s.id));
+      const model = m2 || m1;
+      const s = await create("standard", {
+        name: name.trim() || undefined,
+        selection,
+        def: edit,
+        ...(sched && model
+          ? {
+              schedule: {
+                model,
+                ...(m2 && m1 && m1 !== m2 ? { prefilter_model: m1 } : {}),
+                ...(instr.trim() ? { instructions: instr.trim() } : {}),
+              },
+            }
+          : {}),
+      });
+      router.push(sched ? `/projects/${projectId}` : withSearch(`/projects/${projectId}/inference`, s.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : "error");
       setCreating(false);
@@ -249,7 +285,6 @@ function SearchesContent() {
     try {
       const from = current && !current.is_default ? current.id : undefined;
       const s = await create("blind", {
-        name: t("blindName", { n: blindN, date: new Date().toLocaleDateString(locale) }),
         selection: { from_search_id: from, sample_n: blindN, seed: Math.floor(Math.random() * 1e9) },
       });
       router.push(withSearch(`/projects/${projectId}/annotate?queue=all`, s.id));
@@ -258,6 +293,9 @@ function SearchesContent() {
       setBlindBusy(false);
     }
   }
+
+  // Aucune vraie recherche : on masque « Nouvelle recherche » (l'analyse la crée) ; l'échantillon à l'aveugle reste (référence avant analyse).
+  const none = !!searches && searches.every(isUntouched);
 
   if (!searches) return error ? <ErrorBanner message={error} onRetry={() => void reload()} /> : <Skeleton rows={3} />;
 
@@ -270,11 +308,21 @@ function SearchesContent() {
 
       {error && <ErrorBanner message={error} />}
 
-      {searches.length === 0 ? (
-        <EmptyState title={t("empty")} />
+      {none ? (
+        <EmptyState
+          title={t("empty")}
+          hint={t("emptyHint")}
+          action={
+            isLead && (
+              <Link href={`/projects/${projectId}/inference`}>
+                <Button>{t("runAnalysis")} →</Button>
+              </Link>
+            )
+          }
+        />
       ) : (
         <ul className="flex flex-col gap-3">
-          {searches.map((s) => (
+          {searches.filter((s) => !isUntouched(s)).map((s) => (
             <SearchCard
               key={s.id}
               s={s}
@@ -317,7 +365,7 @@ function SearchesContent() {
             </div>
           </Card>
 
-          {!showForm ? (
+          {none ? null : !showForm ? (
             <div>
               <Button variant="secondary" onClick={() => setShowForm(true)}>
                 + {t("newTitle")}
@@ -327,7 +375,7 @@ function SearchesContent() {
             <Card title={t("newTitle")}>
               <form onSubmit={handleCreate} className="flex flex-col gap-4">
                 <Field label={t("nameLabel")}>
-                  <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("namePlaceholder")} required />
+                  <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("namePlaceholder")} />
                 </Field>
                 <ArticleSelector
                   projectId={projectId}
@@ -340,23 +388,61 @@ function SearchesContent() {
                   <summary className="cursor-pointer text-sm font-medium text-foreground">{t("questionTitle")}</summary>
                   <p className="my-2 text-xs text-muted">{t("questionHint")}</p>
                   {edit ?? originDef ? (
-                    <QuestionEditor {...(edit ?? originDef)!} articleCount={count ?? undefined} onChange={setEdit} />
+                    <QuestionEditor {...(edit ?? originDef)!} onChange={setEdit} />
                   ) : (
                     <p className="text-sm text-muted">…</p>
                   )}
                 </details>
+                {models.length > 0 && (
+                  <div className="rounded-lg border border-border p-3">
+                    <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+                      <input type="checkbox" checked={sched} onChange={(e) => setSched(e.target.checked)} />
+                      {t("scheduleLabel", { origin: (searches?.find((s) => s.id === (selection.from_search_id ?? searches.find((x) => x.is_default)?.id)) ?? current)?.name ?? "…" })}
+                    </label>
+                    <p className="mt-1 text-xs text-muted">{t("scheduleHint")}</p>
+                    {sched && (
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <Field label={t("scheduleStage2")}>
+                          <select value={m2} onChange={(e) => setM2(e.target.value)} className="w-full rounded border border-border bg-surface p-2 text-sm text-foreground">
+                            <option value="">—</option>
+                            {models.map((m) => (
+                              <option key={m.id} value={m.name}>
+                                {m.name}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                        <Field label={t("scheduleStage1")}>
+                          <select value={m1} onChange={(e) => setM1(e.target.value)} className="w-full rounded border border-border bg-surface p-2 text-sm text-foreground">
+                            <option value="">—</option>
+                            {models.map((m) => (
+                              <option key={m.id} value={m.name}>
+                                {m.name}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                        <div className="sm:col-span-2">
+                          <Field label={t("scheduleInstructions")}>
+                            <Input value={instr} onChange={(e) => setInstr(e.target.value)} maxLength={2000} />
+                          </Field>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
                     type="submit"
                     loading={creating}
-                    disabled={!name.trim() || !count || (edit?.sections.length === 0)}
+                    disabled={(sched ? !(m2 || m1) : !count) || (edit?.sections.length === 0)}
                   >
-                    {t("create")}
+                    {sched ? t("createScheduled") : t("create")}
                   </Button>
                   <Button type="button" variant="secondary" onClick={() => setShowForm(false)}>
                     {t("cancel")}
                   </Button>
-                  {count === 0 && <span className="text-sm text-warning">{t("emptySelection")}</span>}
+                  {!sched && count === 0 && <span className="text-sm text-warning">{t("emptySelection")}</span>}
                 </div>
               </form>
             </Card>

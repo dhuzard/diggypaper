@@ -280,6 +280,10 @@ class Project(Base):
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    # Rétention : « Conserver » (compte comme une activité) et date de l'avertissement de
+    # suppression pour inactivité (cf. app.maintenance).
+    kept_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    retention_warned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     creator: Mapped["User | None"] = relationship(back_populates="created_projects")
     members: Mapped[list["ProjectMember"]] = relationship(
@@ -367,6 +371,12 @@ class Article(Base):
     # m3 : VARCHAR libre (pas un enum) — les langues hors en/fr/de/es gardent leur
     # libellé PubMed brut (ex. "Italian") ; pas de forçage 'en' (spec §3 : VARCHAR).
     original_language: Mapped[str | None] = mapped_column(String, server_default="en")
+    # D'où vient l'article : pubmed (recherche) | references (liste importée) | citation
+    # (chaînage de citations). NULL : import antérieur. ``origin_seeds`` : nombre d'articles de
+    # départ qui le citent ou qu'il cite ; ``origin_ref`` : identifiant du job d'import.
+    origin: Mapped[str | None] = mapped_column(String)
+    origin_seeds: Mapped[int | None] = mapped_column(Integer)
+    origin_ref: Mapped[str | None] = mapped_column(String)
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -648,6 +658,10 @@ class Search(Base):
         Uuid, ForeignKey("searches.id", ondelete="SET NULL")
     )
     parent_spec: Mapped[dict | None] = mapped_column(JSONB)
+    # Analyse programmée : {model, prefilter_model, instructions, selection, error?}. Le lot
+    # n'existe pas encore : calculé quand la recherche d'origine a fini (cf. app.scheduler).
+    schedule: Mapped[dict | None] = mapped_column(JSONB)
+    schedule_state: Mapped[str | None] = mapped_column(String)  # waiting | started | failed
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("users.id", ondelete="SET NULL")
     )

@@ -49,12 +49,9 @@ from app.inference import (
     make_inference_service,
     unload_ollama,
 )
-from app.inference.onnx_driver import unload as onnx_unload
-from app.inference.scoring import is_scorer, score_prediction
 from app.provenance_capture import capture_article_source
 from app.provenance_chat import PersistedChatTrace
 from app.provenance_render import render_chat
-from app.provenance_scorer import PersistedScorerTrace
 from app.schema import project_fields
 from app.searches import ScopedProject, get_search, gold_condition, lot_condition
 
@@ -242,14 +239,13 @@ async def _do_benchmark(
     if not models:
         raise LookupError(f"no registered models for {run.models_tested}")
 
-    total_steps = sum(len(lot) * (1 if is_scorer(m) else len(variants)) for m in models)
+    total_steps = len(lot) * len(variants) * len(models)
     done_steps = 0
     results_payload = []
     ram_mb = 0.0
     frozen_sources = {}
     for model in models:
-        scorer = is_scorer(model)  # un scoreur ignore le prompt : une seule « variante »
-        todo = variants[:1] if scorer else variants
+        todo = variants
         by_variant: dict[str, dict] = {}
         pending: list[BenchmarkResult] = []
         for variant in todo:
@@ -263,7 +259,10 @@ async def _do_benchmark(
                 error = None
                 trace = None
                 try:
-                    if scorer:
+                    # Real chat drivers can retain an exact, committed source
+                    # view and request. Injected test doubles retain legacy
+                    # behavior unless they implement the actual trace path.
+                    if isinstance(inference, OpenAICompatibleService):
                         if article.id not in frozen_sources:
                             frozen_sources[article.id] = await capture_article_source(
                                 session,
@@ -271,25 +270,27 @@ async def _do_benchmark(
                                 article_id=article.id,
                                 text_sections=project.text_sections,
                             )
-                            await session.commit()  # Release source lock before model dispatch.
+                            await session.commit()
                         snapshot, view_id = frozen_sources[article.id]
-                        if model.backend_type == BackendType.ONNX_LOCAL:
-                            view_id = next(
-                                v.id for v in snapshot.views if v.kind == "title_abstract"
-                            )
-                        view = next(v for v in snapshot.views if v.id == view_id)
-                        trace = PersistedScorerTrace(
+                        rendered = render_chat(
+                            snapshot,
+                            view_id,
+                            system,
+                            user_schema,
+                            examples=shots,
+                            example_ref=f"benchmark:{run.id}:gold_examples" if shots else None,
+                        )
+                        trace = PersistedChatTrace(
                             session,
                             snapshot=snapshot,
-                            view_id=view_id,
+                            rendered=rendered,
                             job=run,
                             prompt=None,
                             model=model,
-                            field_schema=fields
-                            if model.backend_type == BackendType.SYSTEMONE
-                            else [],
+                            field_schema=fields,
                             group_id=uuid.uuid4(),
                             stage="main",
+                            sequence=0,
                             benchmark_run=run,
                             benchmark_variant=vname,
                             benchmark_system_template=system,
@@ -297,67 +298,22 @@ async def _do_benchmark(
                             benchmark_template_id=variant.template_id,
                             benchmark_template_version=variant.template_version,
                         )
-                        prediction = await score_prediction(
-                            model, project, article, light=False, trace=trace, text=view.text
-                        )
-                        if trace.producing_invocation is None:
-                            raise InferenceError("scorer_call_not_captured")
-                    else:
-                        # Real chat drivers can retain an exact, committed source
-                        # view and request. Injected test doubles retain legacy
-                        # behavior unless they implement the actual trace path.
-                        if isinstance(inference, OpenAICompatibleService):
-                            if article.id not in frozen_sources:
-                                frozen_sources[article.id] = await capture_article_source(
-                                    session,
-                                    project_id=run.project_id,
-                                    article_id=article.id,
-                                    text_sections=project.text_sections,
-                                )
-                                await session.commit()
-                            snapshot, view_id = frozen_sources[article.id]
-                            rendered = render_chat(
-                                snapshot,
-                                view_id,
-                                system,
-                                user_schema,
-                                examples=shots,
-                                example_ref=f"benchmark:{run.id}:gold_examples" if shots else None,
-                            )
-                            trace = PersistedChatTrace(
-                                session,
-                                snapshot=snapshot,
-                                rendered=rendered,
-                                job=run,
-                                prompt=None,
-                                model=model,
-                                field_schema=fields,
-                                group_id=uuid.uuid4(),
-                                stage="main",
-                                sequence=0,
-                                benchmark_run=run,
-                                benchmark_variant=vname,
-                                benchmark_system_template=system,
-                                benchmark_user_template=user_schema,
-                                benchmark_template_id=variant.template_id,
-                                benchmark_template_version=variant.template_version,
-                            )
-                        legacy_system_text = (system + "\n\n" + shots).strip() if shots else system
-                        system_text = rendered.system.text if trace else legacy_system_text
-                        user_text = (
-                            rendered.user.text
-                            if trace
-                            else fill_prompt(user_schema, article, project.text_sections)
-                        )
-                        prediction = await infer_with(
-                            model,
-                            inference,
-                            system_text,
-                            user_text,
-                            trace=trace,
-                        )
-                        if trace is not None and trace.producing_invocation is None:
-                            raise InferenceError("benchmark call has no succeeded invocation")
+                    legacy_system_text = (system + "\n\n" + shots).strip() if shots else system
+                    system_text = rendered.system.text if trace else legacy_system_text
+                    user_text = (
+                        rendered.user.text
+                        if trace
+                        else fill_prompt(user_schema, article, project.text_sections)
+                    )
+                    prediction = await infer_with(
+                        model,
+                        inference,
+                        system_text,
+                        user_text,
+                        trace=trace,
+                    )
+                    if trace is not None and trace.producing_invocation is None:
+                        raise InferenceError("benchmark call has no succeeded invocation")
                     if not isinstance(prediction, dict):
                         raise InferenceError("invalid_json")  # JSON valide mais pas un objet
                 except InferenceError as exc:
@@ -367,8 +323,6 @@ async def _do_benchmark(
                 took = time.monotonic() - start
                 total_time += took
                 preds[article.id] = prediction
-                # A scorer may select an earlier winning window; the last dispatched
-                # call is not necessarily the one that produced this prediction.
                 producing = trace.producing_invocation if trace else None
                 session.add(
                     BenchmarkPrediction(
@@ -440,8 +394,6 @@ async def _do_benchmark(
                     "ram_usage_mb": ram_mb,
                 }
             )
-        if scorer and model.backend_type == BackendType.ONNX_LOCAL:
-            onnx_unload(model.model_identifier)
         base = getattr(inference, "base_url", None)
         if model.backend_type == BackendType.OLLAMA and isinstance(base, str):
             await unload_ollama(base, model.model_identifier)  # libère la RAM avant le suivant

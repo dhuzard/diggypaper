@@ -6,11 +6,13 @@ import { useParams, useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { getProject, prismaUrl, prismaPdfUrl, listArticles, Article, PredictionFilter, SchemaField } from "@/lib/api";
 import { AnswerFilters, Answers } from "@/components/AnswerFilters";
-import { ArticleLinks, Certainty, biblioLine } from "@/components/Certainty";
 import { BulkPdfUpload } from "@/components/BulkPdfUpload";
 import { ExportMenu } from "@/components/ExportMenu";
+import { ResultRow } from "@/components/ResultRow";
+import { Menu, MenuItem } from "@/components/ui/Menu";
+import { Modal } from "@/components/ui/Modal";
 import { RequireAuth } from "@/components/RequireAuth";
-import { Card, Badge, statusColor } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Skeleton, ErrorBanner, EmptyState } from "@/components/ui/Feedback";
 import { articlesStoreKey, prefillStoreKey, selectionFromFilters, withSearch } from "@/lib/search";
@@ -22,7 +24,7 @@ const PER_PAGE = 100;
 
 type Sort = "added" | "date_desc" | "date_asc" | "score_desc";
 /** Filtres mémorisés par projet et par recherche : retrouvés au retour d'un article (ou d'un rechargement). */
-function loadSaved(projectId: string, searchId?: string): { filter?: Filter; sort?: Sort; page?: number; answers?: Answers } {
+function loadSaved(projectId: string, searchId?: string): { filter?: Filter; sort?: Sort; page?: number; answers?: Answers; q?: string; fulltext?: boolean } {
   try {
     return JSON.parse(sessionStorage.getItem(articlesStoreKey(projectId, searchId)) ?? "{}");
   } catch {
@@ -47,8 +49,14 @@ function ResultsContent() {
   const [sort, setSort] = useState<Sort>("added");
   const effectiveSort = current?.kind === "blind" && sort === "score_desc" ? "added" : sort;
   const [fields, setFields] = useState<SchemaField[]>([]);
+  const [pdfOpen, setPdfOpen] = useState(false);
+  const [prismaOpen, setPrismaOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [answers, setAnswers] = useState<Answers>({}); // appliqués à la requête
   const [draft, setDraft] = useState<Answers>({}); // saisie (texte retardé de 300 ms)
+  const [text, setText] = useState(""); // recherche rapide appliquée (titre, auteurs, PMID, DOI)
+  const [textDraft, setTextDraft] = useState("");
+  const [fulltext, setFulltext] = useState<boolean | undefined>(undefined); // texte intégral (true) / résumé seul (false)
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
@@ -65,6 +73,9 @@ function ResultsContent() {
     setPage(saved.page ?? 1);
     setAnswers(saved.answers ?? {});
     setDraft(saved.answers ?? {});
+    setText(saved.q ?? "");
+    setTextDraft(saved.q ?? "");
+    setFulltext(saved.fulltext);
     getProject(projectId, searchId)
       .then((p) => setFields(p.fields ?? []))
       .catch(() => setFields([]))
@@ -79,25 +90,35 @@ function ResultsContent() {
     try {
       sessionStorage.setItem(
         articlesStoreKey(projectId, searchId),
-        JSON.stringify({ filter, sort, page, answers })
+        JSON.stringify({ filter, sort, page, answers, q: text, fulltext })
       );
     } catch {
       /* stockage indisponible : filtres non mémorisés */
     }
-  }, [ready, projectId, searchId, filter, sort, page, answers]);
+  }, [ready, projectId, searchId, filter, sort, page, answers, text, fulltext]);
 
   useEffect(() => {
     if (current?.kind === "blind" && sort === "score_desc") setSort("added");
   }, [current?.kind, sort]);
 
-  function setAnswer(key: string, value: string, text: boolean) {
+  // Recherche rapide : appliquée 300 ms après la dernière frappe, repart à la première page.
+  useEffect(() => {
+    if (textDraft === text) return;
+    const id = setTimeout(() => {
+      setText(textDraft);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(id);
+  }, [textDraft, text]);
+
+  function setAnswer(key: string, value: string, isText: boolean) {
     setDraft((d) => ({ ...d, [key]: value }));
     clearTimeout(timer.current);
     const apply = () => {
       setAnswers((a) => ({ ...a, [key]: value }));
       setPage(1);
     };
-    if (text) timer.current = setTimeout(apply, 300);
+    if (isText) timer.current = setTimeout(apply, 300);
     else apply();
   }
 
@@ -112,21 +133,23 @@ function ResultsContent() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const res = await listArticles(projectId, page, PER_PAGE, filter === "ALL" ? undefined : filter, effectiveSort, answers, searchId);
+      const res = await listArticles(projectId, page, PER_PAGE, filter === "ALL" ? undefined : filter, effectiveSort, answers, searchId, text, fulltext);
       setArticles(res.items);
       setTotal(res.total);
       setStats(res.stats);
     } catch (e) {
       setError(e instanceof Error ? e.message : "error");
     }
-  }, [projectId, page, filter, effectiveSort, answers, searchId]);
+  }, [projectId, page, filter, effectiveSort, answers, searchId, text, fulltext]);
 
   useEffect(() => {
     if (ready && searches !== null && restoredFor.current === articlesStoreKey(projectId, searchId)) void load();
   }, [ready, searches, load, projectId, searchId]);
 
   const count = (f: Filter) =>
-    f === "ALL" ? Object.values(stats).reduce((a, b) => a + b, 0) : stats[f] ?? 0;
+    f === "ALL"
+      ? Object.entries(stats).reduce((a, [k, n]) => (k === "TO_REVIEW" ? a : a + n), 0) // TO_REVIEW recoupe NEEDS_HUMAN_REVIEW
+      : stats[f] ?? 0;
   const triaged = count("ALL") - count("NONE") > 0;
   const queue = "list"; // la file de relecture reprend la liste affichée (filtres, tri)
 
@@ -135,7 +158,7 @@ function ResultsContent() {
     try {
       sessionStorage.setItem(
         prefillStoreKey(projectId),
-        JSON.stringify(selectionFromFilters(filter, answers, searchId))
+        JSON.stringify(selectionFromFilters(filter, answers, searchId, text, fulltext))
       );
     } catch {
       /* stockage indisponible : la page Recherches s'ouvre sans préremplissage */
@@ -147,90 +170,134 @@ function ResultsContent() {
   if (!articles) return <Skeleton rows={5} />;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-bold text-foreground">{t("title")}</h1>
-        <ExportMenu projectId={projectId} status={filter === "ALL" ? undefined : filter} answers={answers} />
-        {count("TO_REVIEW") > 0 && (
-          <Link href={withSearch(`/projects/${projectId}/annotate?queue=review`, searchId)}>
-            <Button>
-              {t("startReview")} ({count("TO_REVIEW")})
-            </Button>
-          </Link>
-        )}
+        <h1 className="text-xl font-bold text-foreground">
+          {t("title")} <span className="text-sm font-normal text-muted">{total.toLocaleString()}</span>
+        </h1>
+        <div className="flex flex-wrap items-center gap-2">
+          {count("TO_REVIEW") > 0 && (
+            <Link href={withSearch(`/projects/${projectId}/annotate?queue=review`, searchId)}>
+              <Button size="sm">
+                {t("startReview")} ({count("TO_REVIEW")})
+              </Button>
+            </Link>
+          )}
+          <ExportMenu projectId={projectId} status={filter === "ALL" ? undefined : filter} answers={answers} text={text} fulltext={fulltext} />
+          <Menu label={t("tools")}>
+            <MenuItem onClick={() => setPdfOpen(true)}>{t("bulkTitle")}</MenuItem>
+            <MenuItem onClick={() => setPrismaOpen(true)}>{t("prisma")}</MenuItem>
+            {total > 0 && <MenuItem onClick={newSearchFromFilters}>{t("newSearchOnThese", { n: total })}</MenuItem>}
+          </Menu>
+        </div>
       </div>
 
-      <details className="rounded-lg border border-border bg-surface p-3">
-        <summary className="cursor-pointer text-sm font-medium text-foreground">{t("bulkTitle")}</summary>
-        <div className="mt-3">
-          <BulkPdfUpload projectId={projectId} onDone={() => void load()} />
-        </div>
-      </details>
-
-      <details className="rounded-lg border border-border bg-surface p-3">
-        <summary className="cursor-pointer text-sm font-medium text-foreground">{t("prisma")}</summary>
-        <div className="mt-3 flex flex-col items-start gap-2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={prismaUrl(projectId, locale, searchId)} alt={t("prisma")} className="w-full max-w-3xl rounded border border-border" />
-          <a href={prismaUrl(projectId, locale, searchId)} download="prisma.svg" className="text-xs text-primary hover:underline">
-            ⬇ {t("prismaDownload")}
-          </a>
-          <a href={prismaPdfUrl(projectId, locale, searchId)} download className="text-xs text-primary hover:underline">
-            ⬇ {t("prismaDownloadPdf")}
-          </a>
-        </div>
-      </details>
-
       {!triaged && count("ALL") > 0 && (
-        <div className="rounded-lg border border-primary/40 bg-primary/5 p-3 text-sm">
+        <p className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
           {t("notTriaged")}{" "}
           <Link href={withSearch(`/projects/${projectId}/inference`, searchId)} className="font-medium text-primary hover:underline">
             {t("goTriage")} →
           </Link>
-        </div>
+        </p>
       )}
 
-      <div className="flex items-center justify-end gap-2 text-xs text-muted">
-        {t("sortBy")}
-        <select
-          value={effectiveSort}
-          onChange={(e) => {
-            setSort(e.target.value as Sort);
-            setPage(1);
-          }}
-          className="rounded border border-border bg-surface p-1 text-xs text-foreground"
-        >
-          <option value="added">{t("sortAdded")}</option>
-          <option value="date_desc">{t("sortDateDesc")}</option>
-          <option value="date_asc">{t("sortDateAsc")}</option>
-          {current?.kind !== "blind" && <option value="score_desc">{t("sortScore")}</option>}
-        </select>
-      </div>
-
-      <div className="flex flex-wrap gap-2" role="tablist">
-        {FILTERS.filter((f) => f === "ALL" || count(f) > 0 || f === filter).map((f) => (
+      <div className="relative">
+        <span aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted">
+          ⌕
+        </span>
+        <input
+          type="search"
+          value={textDraft}
+          onChange={(e) => setTextDraft(e.target.value)}
+          placeholder={t("searchPlaceholder")}
+          aria-label={t("searchLabel")}
+          className="w-full rounded-lg border border-border bg-surface py-2 pl-8 pr-9 text-sm text-foreground placeholder:text-muted focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus"
+        />
+        {textDraft && (
           <button
-            key={f}
-            role="tab"
-            aria-selected={filter === f}
+            type="button"
             onClick={() => {
-              setFilter(f);
+              setTextDraft("");
+              setText("");
               setPage(1);
             }}
-            className={`rounded-full border px-3 py-1 text-sm ${
-              filter === f
-                ? "border-primary bg-primary/10 font-medium text-primary"
-                : "border-border text-muted hover:bg-surface-muted"
-            }`}
+            aria-label={t("searchClear")}
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-1.5 text-lg leading-none text-muted hover:text-foreground"
           >
-            {t(`filter_${f}`)} <span className="text-xs">({count(f)})</span>
+            ×
           </button>
-        ))}
+        )}
       </div>
 
-      {fields.length > 0 && (
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap gap-2" role="tablist">
+          {FILTERS.filter((f) => f === "ALL" || count(f) > 0 || f === filter).map((f) => (
+            <button
+              key={f}
+              role="tab"
+              aria-selected={filter === f}
+              onClick={() => {
+                setFilter(f);
+                setPage(1);
+              }}
+              className={`rounded-full border px-3 py-1 text-sm ${
+                filter === f
+                  ? "border-primary bg-primary/10 font-medium text-primary"
+                  : "border-border text-muted hover:bg-surface-muted"
+              }`}
+            >
+              {t(`filter_${f}`)} <span className="text-xs">({count(f)})</span>
+            </button>
+          ))}
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          {fields.length > 0 && (
+            <button
+              type="button"
+              aria-expanded={filtersOpen || hasAnswerFilter}
+              onClick={() => setFiltersOpen((o) => !o)}
+              className={`rounded-lg border px-3 py-1 text-sm ${
+                hasAnswerFilter ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground hover:bg-surface-muted"
+              }`}
+            >
+              {t("filterByAnswer")}
+              {hasAnswerFilter && <span className="ml-1 text-xs">•</span>}
+            </button>
+          )}
+          <select
+            value={fulltext === undefined ? "" : fulltext ? "yes" : "no"}
+            aria-label={t("textFilter")}
+            onChange={(e) => {
+              setFulltext(e.target.value === "" ? undefined : e.target.value === "yes");
+              setPage(1);
+            }}
+            className={`rounded-lg border bg-surface px-2 py-1 text-sm text-foreground ${
+              fulltext === undefined ? "border-border" : "border-primary bg-primary/10"
+            }`}
+          >
+            <option value="">{t("textAll")}</option>
+            <option value="yes">{t("textFull")}</option>
+            <option value="no">{t("textAbstract")}</option>
+          </select>
+          <select
+            value={effectiveSort}
+            aria-label={t("sortBy")}
+            onChange={(e) => {
+              setSort(e.target.value as Sort);
+              setPage(1);
+            }}
+            className="rounded-lg border border-border bg-surface px-2 py-1 text-sm text-foreground"
+          >
+            <option value="added">{t("sortAdded")}</option>
+            <option value="date_desc">{t("sortDateDesc")}</option>
+            <option value="date_asc">{t("sortDateAsc")}</option>
+            {current?.kind !== "blind" && <option value="score_desc">{t("sortScore")}</option>}
+          </select>
+        </div>
+      </div>
+
+      {fields.length > 0 && (filtersOpen || hasAnswerFilter) && (
         <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-surface p-3">
-          <span className="text-xs font-medium text-foreground">{t("filterByAnswer")}</span>
           <AnswerFilters
             fields={fields}
             values={draft}
@@ -247,73 +314,42 @@ function ResultsContent() {
         </div>
       )}
 
-      {total > 0 && (
-        <div className="flex justify-end">
-          <Button variant="secondary" size="sm" onClick={newSearchFromFilters}>
-            {t("newSearchOnThese", { n: total })}
-          </Button>
-        </div>
+      {pdfOpen && (
+        <Modal title={t("bulkTitle")} onClose={() => setPdfOpen(false)}>
+          <BulkPdfUpload projectId={projectId} onDone={() => void load()} />
+        </Modal>
+      )}
+      {prismaOpen && (
+        <Modal title={t("prisma")} onClose={() => setPrismaOpen(false)} wide>
+          <div className="flex flex-col items-start gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={prismaUrl(projectId, locale, searchId)} alt={t("prisma")} className="w-full rounded border border-border" />
+            <div className="flex gap-4 text-sm">
+              <a href={prismaUrl(projectId, locale, searchId)} download="prisma.svg" className="text-primary hover:underline">
+                ⬇ {t("prismaDownload")}
+              </a>
+              <a href={prismaPdfUrl(projectId, locale, searchId)} download className="text-primary hover:underline">
+                ⬇ {t("prismaDownloadPdf")}
+              </a>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {articles.length === 0 ? (
-        <EmptyState title={t("empty")} hint={t("emptyHint")} />
+        <EmptyState
+          title={t("empty")}
+          hint={filter !== "ALL" || text || hasAnswerFilter || fulltext !== undefined ? t("emptyFiltered") : t("emptyHint")}
+        />
       ) : (
-        <Card>
-          <ul className="divide-y divide-border">
+        <Card className="p-1 sm:p-2">
+          <ul className="divide-y divide-border/60">
             {articles.map((a) => (
-              <li key={a.id} className="py-1">
-                <Link
-                  href={withSearch(`/projects/${projectId}/annotate?article=${a.id}&queue=${queue}`, searchId)}
-                  className="flex items-center justify-between gap-3 py-2 hover:bg-surface-muted"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">{a.title ?? t("untitled")}</p>
-                    {biblioLine(a) && <p className="truncate text-xs text-foreground/80">{biblioLine(a)}</p>}
-                    <p className="text-xs text-muted">
-                      {a.pmid ? `PMID ${a.pmid}` : a.id}
-                      {a.has_fulltext
-                        ? ` · ${t("fulltext")}${a.fulltext_source && a.fulltext_source !== "pmc" ? ` (${a.fulltext_source})` : ""}`
-                        : ` · ${t("abstractOnly")}`}
-                    </p>
-                    {(a.answers?.length ?? 0) > 0 && (
-                      <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
-                        {a.answers!.map((r) => (
-                          <span key={r.key} className="inline-flex items-center gap-1">
-                            {r.label} :{" "}
-                            <strong className="text-foreground">
-                              {typeof r.value === "boolean" ? (r.value ? t("yes") : t("no")) : String(r.value)}
-                            </strong>
-                            {r.source === "human" ? (
-                              <span title={t("humanAnswer")} className="text-primary">
-                                ✎
-                              </span>
-                            ) : (
-                              <Certainty value={r.confidence} />
-                            )}
-                          </span>
-                        ))}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {a.confidence != null && (
-                      <span className="text-xs text-muted" title={t("relevanceHelp")}>
-                        {t("relevance")} {Math.round(a.confidence * 100)} %
-                      </span>
-                    )}
-                    {a.annotated && (
-                      <Badge color={a.review?.status === "CORRECTED" ? "yellow" : "green"}>
-                        ✓ {a.review?.status ? t(`review_${a.review.status}`) : t("reviewed")}
-                        {a.review?.by ? ` · ${t("reviewedBy", { name: a.review.by })}` : ""}
-                      </Badge>
-                    )}
-                    {a.prediction_status && (
-                      <Badge color={statusColor(a.prediction_status)}>{t(`status_${a.prediction_status}`)}</Badge>
-                    )}
-                  </div>
-                </Link>
-                <ArticleLinks article={a} className="pb-1" />
-              </li>
+              <ResultRow
+                key={a.id}
+                a={a}
+                href={withSearch(`/projects/${projectId}/annotate?article=${a.id}&queue=${queue}`, searchId)}
+              />
             ))}
           </ul>
         </Card>
