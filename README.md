@@ -514,10 +514,16 @@ python -m app.seip_reference_ledger ../docs/examples/seip-pilot-manifest-draft-v
 python -m app.portable_replay ../docs/examples/seip-portable-replay-v1.json
 python -m app.evidence_crate <dossier evidence/ d'un RO-Crate exporté>
 python scripts/benchmark_quote_matcher.py   # latence/mémoire du matcher (docs/benchmarks/)
+
+# Garde-fous PostgreSQL (job CI backend-postgres) : serveur jetable, chaque test crée sa base
+docker run --rm -d -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16
+SEIP_TEST_POSTGRES_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/postgres \
+    pytest -q tests/test_provenance_migration.py tests/test_review_binding_postgres.py \
+    tests/test_finding_curation_postgres.py tests/test_connector_grants_postgres.py
 ```
 
-Les tests de migration PostgreSQL (`test_provenance_migration.py`, `test_review_binding_postgres.py`)
-ne s'exécutent que si `SEIP_TEST_POSTGRES_URL` est défini ; la CI ne les lance pas encore.
+Les tests de migration PostgreSQL (`test_provenance_migration.py`, `test_*_postgres.py`)
+ne s'exécutent que si `SEIP_TEST_POSTGRES_URL` est défini ; la CI les lance dans `backend-postgres`.
 Sous Windows, `app/tasks/benchmark.py` importe le module Unix `resource` : la collecte de
 quatre modules de test échoue tant que ce point n'est pas corrigé (voir l'audit de fusion, F-0).
 
