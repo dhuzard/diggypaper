@@ -12,13 +12,17 @@ from app.core.config import get_settings
 from app.db.models import (
     Article,
     ArticleFile,
+    ArticlePrediction,
     ImportJob,
     Project,
     ProjectMember,
     ProjectMemberRole,
+    SourceSnapshot,
     User,
     UserRole,
 )
+from app.provenance import SourceSnapshotV1, source_record
+from app.provenance_capture import capture_article_source
 
 
 class FakeMailer:
@@ -168,3 +172,46 @@ async def test_admin_storage_and_keep_endpoints(
         session, FakeMailer(), datetime.now(UTC) + timedelta(days=20)
     )
     assert out == {"warned": 0, "deleted": 0}  # « Conserver » vaut activité
+
+
+async def test_unreferenced_snapshots_deleted_after_a_day(session, exports):
+    _, project = await _lead_project(session)
+    art = (
+        await session.execute(select(Article).where(Article.project_id == project.id))
+    ).scalar_one()
+    young, _ = await capture_article_source(
+        session, project_id=project.id, article_id=art.id, text_sections=None
+    )
+    await session.commit()
+    now = datetime.now(UTC)
+
+    def aged(hours: int) -> SourceSnapshotV1:
+        return SourceSnapshotV1.model_validate(
+            {
+                **young.model_dump(mode="json"),
+                "id": str(uuid.uuid4()),
+                "captured_at": (now - timedelta(hours=hours)).isoformat(),
+            }
+        )
+
+    stale, referenced, recent = aged(25), aged(25), aged(23)
+    session.add_all(source_record(s) for s in (stale, referenced, recent))
+    await session.flush()
+    session.add(
+        ArticlePrediction(
+            article_id=art.id,
+            model_used="m",
+            provenance_project_id=project.id,
+            source_snapshot_id=referenced.id,
+        )
+    )
+    await session.commit()
+
+    out = await maintenance.run(session, FakeMailer())
+    assert out["snapshots_deleted"] == 1
+    left = set((await session.execute(select(SourceSnapshot.id))).scalars())
+    assert left == {young.id, referenced.id, recent.id}
+    assert await maintenance.unreferenced_snapshot_sweep(session, now + timedelta(hours=2)) == 1
+    assert await maintenance.unreferenced_snapshot_sweep(session, now + timedelta(days=9)) == 1
+    left = set((await session.execute(select(SourceSnapshot.id))).scalars())
+    assert left == {referenced.id}

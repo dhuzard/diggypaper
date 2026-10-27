@@ -1,4 +1,5 @@
-"""Entretien du serveur : alerte d'espace disque (admins) et projets inactifs (responsables).
+"""Entretien du serveur : alerte d'espace disque (admins), projets inactifs (responsables) et
+captures de source que rien ne référence.
 
 Lancé périodiquement par le worker (celery beat). Rien n'est supprimé tant que
 ``PROJECT_RETENTION_DAYS`` vaut 0 (défaut) ; sinon : avertissement des responsables à N jours
@@ -34,6 +35,7 @@ from app.db.models import (
     UserRole,
 )
 from app.i18n import t
+from app.provenance_capture import unreferenced_snapshot_sweep
 
 logger = logging.getLogger(__name__)
 
@@ -268,5 +270,8 @@ async def disk_alert(db: AsyncSession, mailer, now: float | None = None) -> bool
 
 
 async def run(db: AsyncSession, mailer) -> dict:
-    """Un passage d'entretien : alerte disque puis rétention des projets."""
-    return {"disk_alert": await disk_alert(db, mailer), **await retention_sweep(db, mailer)}
+    """Un passage d'entretien : alerte disque, rétention des projets, captures orphelines."""
+    out = {"disk_alert": await disk_alert(db, mailer), **await retention_sweep(db, mailer)}
+    out["snapshots_deleted"] = await unreferenced_snapshot_sweep(db)
+    await db.commit()
+    return out

@@ -15,12 +15,21 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import delete, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Article, ArticleFile, SourceSnapshot
+from app.db.models import (
+    Article,
+    ArticleFile,
+    ArticlePrediction,
+    BenchmarkPrediction,
+    GoldRevision,
+    HumanAnnotation,
+    Invocation,
+    SourceSnapshot,
+)
 from app.provenance import (
     Components,
     RawArtifact,
@@ -37,6 +46,16 @@ from app.review_source import TOKEN_LIFETIME
 # capture reuses a snapshot only while a token issued now expires before that.
 UNREFERENCED_RETENTION = timedelta(hours=24)
 REUSE_WINDOW = UNREFERENCED_RETENTION - TOKEN_LIFETIME
+
+# Every column that may name a snapshot. Finding evidence and support assessments
+# reference predictions, which reference their snapshot here.
+_REFERENCES = (
+    Invocation.source_snapshot_id,
+    ArticlePrediction.source_snapshot_id,
+    BenchmarkPrediction.source_snapshot_id,
+    HumanAnnotation.source_snapshot_id,
+    GoldRevision.source_snapshot_ref,
+)
 
 
 def _revision_key(payload: dict) -> bytes:
@@ -142,3 +161,20 @@ async def capture_article_source(
     session.add(source_record(snapshot))
     await session.flush()
     return snapshot, selected.id
+
+
+async def unreferenced_snapshot_sweep(session: AsyncSession, now: datetime | None = None) -> int:
+    """Delete snapshots nothing references once older than ``UNREFERENCED_RETENTION``.
+
+    A snapshot named by any invocation, prediction, review or gold revision is kept
+    forever: results keep their exact source. Returns the number deleted; the
+    caller commits.
+    """
+    now = now or datetime.now(UTC)
+    referenced = or_(*(exists().where(column == SourceSnapshot.id) for column in _REFERENCES))
+    result = await session.execute(
+        delete(SourceSnapshot).where(
+            SourceSnapshot.captured_at < now - UNREFERENCED_RETENTION, ~referenced
+        )
+    )
+    return result.rowcount or 0
