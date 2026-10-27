@@ -1,0 +1,85 @@
+From 41acbe4f8c6c2d1ae0b69d754e83618ac183ab11 Mon Sep 17 00:00:00 2001
+From: damien huzard <damien.huzard@gmail.com>
+Date: Tue, 27 Oct 2026 10:39:52 +0000
+Subject: [PATCH] Guard Unix-only resource import so the benchmark task loads
+ on Windows
+
+---
+ backend/app/tasks/benchmark.py  | 15 +++++++++++++--
+ backend/tests/test_benchmark.py | 19 +++++++++++++++++++
+ 2 files changed, 32 insertions(+), 2 deletions(-)
+
+diff --git a/backend/app/tasks/benchmark.py b/backend/app/tasks/benchmark.py
+index 19e31de..7989392 100644
+--- a/backend/app/tasks/benchmark.py
++++ b/backend/app/tasks/benchmark.py
+@@ -11,11 +11,15 @@ sinon on mesure leur accord. Les variantes de prompt ne concernent que les modè
+ 
+ import asyncio
+ import logging
+-import resource
+ import threading
+ import time
+ import uuid
+ 
++try:
++    import resource  # Unix seulement : absent sous Windows
++except ImportError:  # pragma: no cover - dépend de la plateforme
++    resource = None
++
+ from sqlalchemy import select
+ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+ 
+@@ -55,6 +59,13 @@ _session_factory_override: async_sessionmaker[AsyncSession] | None = None
+ DEFAULT_USER_PROMPT = "Article text:\n{article_text}"
+ 
+ 
++def _peak_ram_mb() -> float | None:
++    """RAM max du processus (Mo) via ``resource`` ; ``None`` sans ce module (Windows)."""
++    if resource is None:
++        return None
++    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
++
++
+ def _make_session_factory():
+     import os
+ 
+@@ -265,7 +276,7 @@ async def _do_benchmark(
+                     "variant": vname,
+                 }
+                 await session.commit()
+-                ram_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
++                ram_mb = _peak_ram_mb()
+             by_variant[vname] = preds
+             res = BenchmarkResult(
+                 benchmark_run_id=run.id,
+diff --git a/backend/tests/test_benchmark.py b/backend/tests/test_benchmark.py
+index ae3797e..cd49c7c 100644
+--- a/backend/tests/test_benchmark.py
++++ b/backend/tests/test_benchmark.py
+@@ -231,3 +231,22 @@ async def test_benchmark_gold_examples_in_prompt_and_excluded_from_scoring(engin
+ 
+     (r,) = (await session.execute(select(BenchmarkResult))).scalars().all()
+     assert r.n_scored == 2 and res["results"][0]["f1_score"] == 1.0  # 4 gold − 2 exemples
++
++
++def test_benchmark_imports_without_resource(monkeypatch):
++    """Le module Unix ``resource`` est absent sous Windows : la task doit s'importer quand même
++    et renvoyer ``None`` pour la RAM."""
++    import importlib
++    import sys
++
++    import app.tasks.benchmark as benchmark
++
++    # ``None`` dans sys.modules fait lever ImportError à ``import resource``.
++    monkeypatch.setitem(sys.modules, "resource", None)
++    try:
++        importlib.reload(benchmark)
++        assert benchmark.resource is None
++        assert benchmark._peak_ram_mb() is None
++    finally:
++        monkeypatch.undo()
++        importlib.reload(benchmark)  # restaure le comportement natif de la plateforme
+-- 
+2.43.0
+
