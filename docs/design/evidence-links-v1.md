@@ -1,10 +1,10 @@
 # Evidence and answer links v1: pure contract
 
-> Status update 2026-10-17: the module is now wired: persistence in `app/evidence_prediction.py` and migration `0025`, API in `app/api/v1/support_assessments.py`, UI in `SupportAssessmentPanel.tsx`. Benchmark predictions and human annotations still carry no graph. See the [merge audit](../audits/2026-10-17-seip-merge-audit.md).
+> Status update 2026-10-17: the module is now wired: persistence in `app/evidence_prediction.py` and migration `f0025`, API in `app/api/v1/support_assessments.py`, UI in `SupportAssessmentPanel.tsx`. Benchmark predictions and human annotations still carry no graph. See the [merge audit](../audits/2026-10-17-seip-merge-audit.md).
 
 Draft implementation slice for [SEIP issue #4](https://github.com/dhuzard/diggypaper/issues/4),
 based on `origin/main` at `9e5859c1d00921fb19f5c61146deeb39977b2df9`.
-The new `app.evidence_links` module has no database, API, task or frontend wiring.
+Status 2026-10-27: the module is wired through `app/evidence_prediction.py` (migration `f0025`), `app/api/v1/support_assessments.py`, `app/api/v1/findings.py` and `app/evidence_crate.py`; the pure contract below is unchanged.
 It does not complete issue #4 or establish scientific support.
 
 ## JSON contract
@@ -192,6 +192,7 @@ persistence and receipt resolution; raw invalid model-output retention; generate
 prompt/schema instructions; inference/benchmark resume wiring; standard/custom
 annotation parsing; legacy-client API conflict handling; reserved-metadata review
 status comparison; blind/project authorization; export and frontend round trips;
-and independent review plus integration checks. No migration, API, existing
-schema.py behavior, worker, export, frontend or assessment implementation changes
-are included in this branch.
+and independent review plus integration checks. Status 2026-10-27: of that list, revision storage, input and match receipts, prompt
+instructions, inference wiring, blind authorization, export and the frontend panel exist
+(see the [index](../seip/README.md)); benchmark predictions and human annotations still
+carry no graph.

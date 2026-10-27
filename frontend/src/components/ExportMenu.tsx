@@ -7,10 +7,13 @@ import {
   CrateExport,
   exportUrl,
   getCrateExport,
+  getProject,
   referencesUrl,
   startCrateExport,
 } from "@/lib/api";
-import { Button } from "@/components/ui/Button";
+import { Menu, MenuItem, MenuNote, MenuSeparator } from "@/components/ui/Menu";
+import { useAuth } from "@/lib/auth";
+import { isProjectLead } from "@/lib/role";
 import { useSearchId } from "@/lib/useSearch";
 
 /**
@@ -21,17 +24,26 @@ export function ExportMenu({
   projectId,
   status,
   answers,
+  text,
+  fulltext,
 }: {
   projectId: string;
   status?: string;
   answers?: Record<string, string>;
+  text?: string;
+  fulltext?: boolean;
 }) {
   const t = useTranslations("articles");
   const searchId = useSearchId(projectId);
+  const { user } = useAuth();
+  const [lead, setLead] = useState(false);
+  useEffect(() => {
+    getProject(projectId).then((p) => setLead(isProjectLead(p, user))).catch(() => setLead(false));
+  }, [projectId, user]);
   const [job, setJob] = useState<CrateExport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
-  const filtered = Boolean(status) || Object.values(answers ?? {}).some((v) => v !== "");
+  const filtered = Boolean(status) || fulltext != null || Boolean(text?.trim()) || Object.values(answers ?? {}).some((v) => v !== "");
 
   const poll = useCallback(async () => {
     try {
@@ -64,34 +76,40 @@ export function ExportMenu({
   const mb = r.size ? (r.size / 1048576).toFixed(1) : "?";
 
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex flex-wrap items-center gap-2">
-        <a href={exportUrl(projectId, searchId)} download>
-          <Button variant="secondary">⬇ {t("exportXlsx")}</Button>
-        </a>
-        <a href={referencesUrl(projectId, "ris", status, answers, searchId)} download>
-          <Button variant="secondary" title={t("exportRefsHelp")}>⬇ {t("exportRis")}</Button>
-        </a>
-        <a href={referencesUrl(projectId, "bib", status, answers, searchId)} download>
-          <Button variant="secondary">⬇ BibTeX</Button>
-        </a>
-        <Button variant="secondary" onClick={start} disabled={busy} title={t("exportZipHelp")}>
+    <Menu label={t("exportMenu")} busy={busy} closeOnClick={false}>
+      <MenuItem href={exportUrl(projectId, searchId)} download>
+        ⬇ {t("exportXlsx")}
+      </MenuItem>
+      <MenuItem href={referencesUrl(projectId, "ris", status, answers, searchId, text, fulltext)} download>
+        ⬇ {t("exportRis")}
+      </MenuItem>
+      <MenuItem href={referencesUrl(projectId, "bib", status, answers, searchId, text, fulltext)} download>
+        ⬇ BibTeX
+      </MenuItem>
+      {filtered && <MenuNote>{t("exportRefsFiltered")}</MenuNote>}
+      {lead && (
+        <>
+        <MenuSeparator />
+        <MenuItem onClick={() => void start()} disabled={busy}>
           📦 {t("exportZip")}
-        </Button>
-      </div>
-      {filtered && <p className="text-xs text-muted">{t("exportRefsFiltered")}</p>}
-      {busy && (
-        <p className="text-xs text-muted" role="status">
-          {t("exportZipRunning", { done: r.done ?? 0, total: r.total ?? 0 })} {t("exportZipMail")}
-        </p>
+        </MenuItem>
+        <MenuNote>{t("exportZipHelp")}</MenuNote>
+        {busy && (
+          <MenuNote>
+            <span role="status">
+              {t("exportZipRunning", { done: r.done ?? 0, total: r.total ?? 0 })} {t("exportZipMail")}
+            </span>
+          </MenuNote>
+        )}
+        {job?.status === "COMPLETED" && job.download && (
+          <MenuItem href={crateDownloadUrl(projectId, job.id)} download>
+            <span className="text-primary">⬇ {t("exportZipReady", { mb, articles: r.articles ?? 0, pdf: r.pdf ?? 0 })}</span>
+          </MenuItem>
+        )}
+        {job?.status === "FAILED" && <MenuNote><span className="text-danger">{t("exportZipFailed")}</span></MenuNote>}
+        </>
       )}
-      {job?.status === "COMPLETED" && job.download && (
-        <a href={crateDownloadUrl(projectId, job.id)} download className="text-xs text-primary hover:underline">
-          ⬇ {t("exportZipReady", { mb, articles: r.articles ?? 0, pdf: r.pdf ?? 0 })}
-        </a>
-      )}
-      {job?.status === "FAILED" && <p className="text-xs text-danger">{t("exportZipFailed")}</p>}
-      {error && <p className="text-xs text-danger">{error}</p>}
-    </div>
+      {error && <MenuNote><span className="text-danger">{error}</span></MenuNote>}
+    </Menu>
   );
 }

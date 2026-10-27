@@ -1,6 +1,6 @@
 # Persisted quotation checks v1
 
-> Status update 2026-10-17: the API payload and UI wording are now on `main`; benchmark matching, UTF-16 conversion and the `not_produced` producer state in the API remain open. See the [merge audit](../audits/2026-10-17-seip-merge-audit.md).
+> Status update 2026-10-17, revised 2026-10-27: the API payload (`quote_checks`, `quotation_producer` in the article GET) and UI wording (`QuoteOccurrencePanel.tsx`) are on `main`; benchmark predictions are still not matched and no UTF-16 conversion exists. See the [merge audit](../audits/2026-10-17-seip-merge-audit.md).
 
 This draft slice stores occurrence checks on normal chat `article_predictions` in
 `quote_checks_json`. It depends on a retained `SourceSnapshotV1` and the final
@@ -25,7 +25,7 @@ retains all raw model values in `decision_json` but checks only the first 100;
 the remainder is explicitly counted as unassessed. Per-quote `invalid` and
 `incomplete` results stay visible inside a `checked` list. In particular, an
 empty list from a chat model is different from the scorer's intentional
-`not_produced` state, which is not yet captured here.
+`not_produced` state, which is carried by the bound invocation's `quotation_producer`, not by this record.
 
 The matcher receives only validated `origin="target"` spans from the final
 producing request. System instructions, few-shot examples, synthetic headings,
@@ -33,7 +33,7 @@ and other articles are excluded. Repeated occurrences can prove a quotation
 exists without proving a unique passage. A source match never implies the
 passage supports an answer, human acceptance or scientific adjudication.
 
-Alembic 0023 leaves all existing rows null. For new checked records, PostgreSQL
+Alembic `f0023` leaves all existing rows null. For new checked records, PostgreSQL
 and SQLite require the check's input/source IDs to match the prediction's bound
 invocation/snapshot and require a completed producing call. They prevent later
 mutation of the check and checked model output. They cannot independently
@@ -41,7 +41,7 @@ recompute Unicode matching inside SQL; independent replay uses the retained
 canonical invocation and algorithm version. Downgrade refuses to discard any
 persisted check until an explicit retention decision removes those rows.
 
-This is backend persistence only. Benchmark and human-review matching, the API
-payload, UTF-16 display conversion, UI wording and answer-level links are still
-separate integration work. Until those are implemented, do not display this as
-"verified evidence" or a support decision.
+Status 2026-10-27: the API payload, UI wording and answer-level links are implemented
+(`app/api/v1/annotations.py`, `QuoteOccurrencePanel.tsx`, `app/evidence_prediction.py`);
+benchmark and human-review matching and UTF-16 display conversion are not. A displayed
+check is never "verified evidence" or a support decision.

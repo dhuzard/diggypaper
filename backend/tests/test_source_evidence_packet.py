@@ -11,12 +11,15 @@ from pathlib import Path
 
 import pytest
 
+from tests import contract_fixtures
+
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "docs" / "contracts" / "source-evidence-packet" / "v0.1.0"
 VALIDATOR_PATH = CONTRACT / "validator" / "sep_validate.py"
 CANONICAL = CONTRACT / "fixtures" / "valid" / "canonical"
-INVALID_DIR = CONTRACT / "fixtures" / "invalid"
-INVALID_CASES = sorted(p.name for p in INVALID_DIR.iterdir() if p.is_dir())
+# Negative fixtures are not committed: build_fixtures.py regenerates them (contract_fixtures.py).
+INVALID_DIR = contract_fixtures.invalid_dir("source-evidence-packet")
+INVALID_CASES = contract_fixtures.invalid_cases("source-evidence-packet")
 JSONL_FILES = ["papers.jsonl", "findings.jsonl", "passages.jsonl", "assessments.jsonl"]
 
 
@@ -66,6 +69,15 @@ def test_invalid_fixture_reports_expected_codes(case):
 def test_every_invalid_fixture_is_unique_and_has_expected_json():
     for case in INVALID_CASES:
         assert (INVALID_DIR / case / "expected.json").is_file(), case
+
+
+def test_fixtures_are_reproducible(tmp_path):
+    # The committed canonical packet is byte-identical to a fresh build, and two independent
+    # builds (this one and the session's) agree on every negative fixture.
+    rebuilt = contract_fixtures.build(tmp_path)
+    contract_fixtures.assert_rebuild_matches(
+        "source-evidence-packet", rebuilt / "source-evidence-packet" / "v0.1.0" / "fixtures"
+    )
 
 
 def test_determinism_two_runs_byte_identical():

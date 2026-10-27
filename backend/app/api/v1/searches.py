@@ -31,8 +31,17 @@ from app.db.models import (
     SearchArticle,
     User,
 )
+from app.model_access import usable_models
+from app.scheduler import selection_dict, start_ready
 from app.schema import DEFAULT_QUESTION, check_fields, project_fields
-from app.searches import default_search, definition_hash, get_search, in_search, lot_condition
+from app.searches import (
+    default_search,
+    definition_hash,
+    get_search,
+    in_search,
+    lot_condition,
+    next_search_name,
+)
 
 router = APIRouter(prefix="/projects", tags=["searches"])
 
@@ -51,6 +60,9 @@ class Selection(BaseModel):
     answers: dict[str, str | bool] | None = None  # {item: valeur}
     reviewed: bool | None = None  # relu par un humain (dans from_search)
     has_fulltext: bool | None = None
+    q: str | None = Field(
+        default=None, max_length=200
+    )  # recherche rapide titre / auteurs / PMID / DOI
     confidence_min: float | None = Field(default=None, ge=0, le=1)
     confidence_max: float | None = Field(default=None, ge=0, le=1)
     ids: list[uuid.UUID] | None = Field(default=None, max_length=20000)
@@ -58,8 +70,17 @@ class Selection(BaseModel):
     seed: int | None = None  # tirage reproductible
 
 
+class ScheduleIn(BaseModel):
+    """Analyse programmée : démarre quand la recherche d'origine (``selection.from_search_id``) a
+    fini ; le lot = ses résultats filtrés par ``selection``, ou son lot si aucun critère."""
+
+    model: str = Field(min_length=1)
+    prefilter_model: str | None = None
+    instructions: str | None = Field(default=None, max_length=2000)
+
+
 class SearchCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
+    name: str | None = Field(default=None, max_length=200)  # vide : AAMMJJ-n
     question: str | None = Field(default=None, max_length=2000)
     fields: list[dict] | None = None
     text_sections: list[str] | None = None
@@ -67,6 +88,7 @@ class SearchCreate(BaseModel):
     # standard ; tuning (mise au point : compare variantes) ; blind (échantillon relu à l'aveugle)
     kind: Literal["standard", "tuning", "blind"] = "standard"
     selection: Selection = Selection()
+    schedule: ScheduleIn | None = None  # programmer l'analyse après la recherche d'origine
 
     @field_validator("fields")
     @classmethod
@@ -75,11 +97,8 @@ class SearchCreate(BaseModel):
 
     @field_validator("name")
     @classmethod
-    def _strip(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("name must not be blank")
-        return v
+    def _strip(cls, v: str | None) -> str | None:
+        return (v or "").strip() or None
 
 
 class SearchUpdate(BaseModel):
@@ -101,10 +120,17 @@ async def select_articles(db: AsyncSession, project: Project, sel: Selection) ->
     ):  # sinon ces critères serviraient d'oracle sur les réponses masquées
         raise HTTPException(status_code=422, detail="criteria unavailable on a blind search")
     answers = json.dumps(sel.answers) if sel.answers else None
-    where, _ps, pconf, _pd, annotated = article_filter(src, sel.status, answers)
+    where, _ps, pconf, _pd, annotated = article_filter(src, sel.status, answers, sel.q)
     on_results = any(
         v is not None
-        for v in (sel.status, sel.answers, sel.reviewed, sel.confidence_min, sel.confidence_max)
+        for v in (
+            sel.status,
+            sel.answers,
+            sel.reviewed,
+            sel.confidence_min,
+            sel.confidence_max,
+            sel.q,
+        )
     )
     if on_results:  # critères sur les résultats (et le lot) de la recherche d'origine
         cond = list(where)
@@ -150,6 +176,24 @@ async def _stats(db: AsyncSession, s: Search) -> dict:
             .where(Article.project_id == s.project_id, in_search(HumanAnnotation.search_id, s))
         )
     ).scalar_one()
+    breakdown: dict = {}
+    to_review = 0
+    if s.kind != "blind":  # aveugle : pas de répartition des réponses de l'IA
+        _where, pstatus, _c, _d, annotated = article_filter(s, None, None)
+        rows = await db.execute(
+            select(pstatus, func.count())
+            .select_from(Article)
+            .where(lot_condition(s))
+            .group_by(pstatus)
+        )
+        breakdown = {(k or "NONE"): n for k, n in rows}
+        to_review = (
+            await db.execute(
+                select(func.count())
+                .select_from(Article)
+                .where(lot_condition(s), pstatus == "NEEDS_HUMAN_REVIEW", ~annotated)
+            )
+        ).scalar_one()
     job = (
         (
             await db.execute(
@@ -168,6 +212,8 @@ async def _stats(db: AsyncSession, s: Search) -> dict:
         "lot_size": lot,
         "predicted": predicted,
         "reviewed": reviewed,
+        "breakdown": breakdown,  # {AUTO_ACCEPTED, AUTO_REJECTED, NEEDS_HUMAN_REVIEW, NONE}
+        "to_review": to_review,  # incertains pas encore relus
         "last_job": {"status": job.status, "model": job.model_used} if job else None,
     }
 
@@ -183,6 +229,12 @@ def _payload(s: Search, stats: dict, parent: Search | None, author: User | None)
         "text_sections": s.text_sections,
         "parent": {"id": str(parent.id), "name": parent.name} if parent else None,
         "parent_spec": s.parent_spec,
+        "schedule_state": s.schedule_state,
+        "schedule": (
+            {k: v for k, v in (s.schedule or {}).items() if k != "selection"}
+            if s.schedule
+            else None
+        ),
         "created_at": s.created_at.isoformat() if s.created_at else None,
         "created_by": (author.full_name or author.email) if author else None,
         **stats,
@@ -214,6 +266,60 @@ async def list_searches(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict
     return {"items": [await _full_payload(db, s) for s in rows]}
 
 
+@router.get("/{project_id}/overview")
+async def project_overview(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
+    """Vue d'ensemble : chiffres globaux du corpus (articles distincts, toutes recherches
+    confondues) et état de chaque recherche."""
+    project = await _require_project_member(db, project_id, user)
+    await default_search(db, project)
+    await db.commit()
+    in_project = Article.project_id == project.id
+
+    async def count(stmt) -> int:
+        return (await db.execute(stmt)).scalar_one()
+
+    articles = await count(select(func.count()).select_from(Article).where(in_project))
+    fulltext = await count(
+        select(func.count())
+        .select_from(Article)
+        .where(in_project, Article.fulltext_source.is_not(None))
+    )
+    analysed = await count(
+        select(func.count(func.distinct(ArticlePrediction.article_id)))
+        .join(Article, Article.id == ArticlePrediction.article_id)
+        .where(in_project)
+    )
+    reviewed = await count(
+        select(func.count(func.distinct(HumanAnnotation.article_id)))
+        .join(Article, Article.id == HumanAnnotation.article_id)
+        .where(in_project)
+    )
+    gold = await count(
+        select(func.count(func.distinct(GoldArticle.article_id))).where(
+            GoldArticle.project_id == project.id
+        )
+    )
+    rows = (
+        (
+            await db.execute(
+                select(Search)
+                .where(Search.project_id == project.id)
+                .order_by(Search.is_default.desc(), Search.created_at, Search.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        "articles": articles,
+        "fulltext": fulltext,
+        "analysed": analysed,
+        "reviewed": reviewed,
+        "gold": gold,
+        "searches": [await _full_payload(db, s) for s in rows],
+    }
+
+
 @router.post("/{project_id}/searches/preview")
 async def preview_selection(
     project_id: uuid.UUID, sel: Selection, db: DbDep, user: UserDep
@@ -233,23 +339,36 @@ async def create_search(
     await _require_lead_or_admin(db, project_id, user)
     sel = payload.selection
     origin = await get_search(db, project, sel.from_search_id)
-    ids = await select_articles(db, project, sel)
-    if not ids:
-        raise HTTPException(status_code=422, detail="selection is empty")
+    sched = payload.schedule
+    if sched is not None:
+        if origin.kind == "blind" or payload.kind == "blind":
+            raise HTTPException(status_code=422, detail="cannot schedule on a blind search")
+        names = [n for n in (sched.model, sched.prefilter_model) if n]
+        if len(await usable_models(db, user, names, project_id)) != len(set(names)):
+            raise HTTPException(status_code=422, detail="unknown model")
+        ids: list = []  # le lot sera calculé quand l'origine aura fini
+    else:
+        ids = await select_articles(db, project, sel)
+        if not ids:
+            raise HTTPException(status_code=422, detail="selection is empty")
     question = payload.question if payload.question is not None else origin.question
     fields = payload.fields if payload.fields is not None else origin.fields
     sections = payload.text_sections if payload.text_sections is not None else origin.text_sections
     s = Search(
         project_id=project.id,
-        name=payload.name,
+        name=payload.name or await next_search_name(db, project.id),
         question=(question or "").strip() or None,
         fields=fields,
         text_sections=sections,
         read_windows=payload.read_windows or origin.read_windows,
         kind=payload.kind,
         lot_all=False,
-        parent_id=origin.id if not _is_all(sel) else None,
+        parent_id=origin.id if (sched or not _is_all(sel)) else None,
         parent_spec=None if _is_all(sel) else sel.model_dump(mode="json", exclude_none=True),
+        schedule=(
+            {**sched.model_dump(), "selection": selection_dict(sel, origin.id)} if sched else None
+        ),
+        schedule_state="waiting" if sched else None,
         created_by=user.id,
     )
     s.definition_hash = definition_hash(s.question, s.fields)
@@ -257,6 +376,8 @@ async def create_search(
     await db.flush()
     db.add_all(SearchArticle(search_id=s.id, article_id=i) for i in ids)
     await db.commit()
+    if sched:
+        await start_ready(db, project)  # l'origine a peut-être déjà fini
     await db.refresh(s)
     return await _full_payload(db, s)
 

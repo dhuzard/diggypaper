@@ -4,7 +4,7 @@
 Diggypaper is a research-oriented corpus screening, extraction, human review and evidence-export application. This fork has substantial project-owned changes in scientific evidence integrity (SEIP). Do not treat it as a thin wrapper of the upstream repository or as ORAtlas itself.
 
 ## Read first
-`README.md`, `docs/seip-portable-replay.md`, current `docs/protocols/`, `docs/audits/`, `backend/app/evidence_links.py`, and the relevant backend API/test modules. Scientific data and reviewer permissions are more important than UI convenience.
+`README.md`, `docs/seip/README.md` (per-document status index of the SEIP, finding, NTS and connector docs), `docs/seip-portable-replay.md`, current `docs/protocols/`, `docs/audits/`, `backend/app/evidence_links.py`, and the relevant backend API/test modules. Scientific data and reviewer permissions are more important than UI convenience.
 
 ## Invariants
 - Keep article *source revision*, exact captured input, model invocation, model result, question/field definition, quoted passage, human assessment, and export as distinct, versioned records. Source text and hashes are immutable once referenced by a result.

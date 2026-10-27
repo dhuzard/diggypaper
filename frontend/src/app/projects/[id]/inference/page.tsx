@@ -16,20 +16,23 @@ import {
   InferenceJob,
   ModelInfo,
   SchemaField,
-  isScorer,
   Validation,
+  createSearch,
+  Selection,
 } from "@/lib/api";
 import { MAX_GOLD_EXAMPLES } from "@/lib/benchmark";
 import { ExportMenu } from "@/components/ExportMenu";
 import { RequireAuth } from "@/components/RequireAuth";
 import { QuestionEditor } from "@/components/QuestionEditor";
 import { Button } from "@/components/ui/Button";
-import { Checkbox, Field, Select } from "@/components/ui/Field";
+import { Checkbox, Field, Input, Select } from "@/components/ui/Field";
 import { ValidationView } from "@/components/ValidationView";
-import { withSearch } from "@/lib/search";
-import { useSearchId, useSearches, useSelectSearch } from "@/lib/useSearch";
+import { cleanSelection, isUntouched, withSearch } from "@/lib/search";
+import { notifySearchesChanged, storeSearchId, useSearchId, useSearches, useSelectSearch } from "@/lib/useSearch";
+import { ArticleSelector } from "@/components/ArticleSelector";
 import { Card, Badge, statusColor } from "@/components/ui/Card";
-import { ErrorBanner, ProgressBar } from "@/components/ui/Feedback";
+import { ErrorBanner } from "@/components/ui/Feedback";
+import { JobProgress } from "@/components/JobProgress";
 
 const num = (v: unknown): number => (typeof v === "number" ? v : 0);
 
@@ -48,25 +51,34 @@ function InferenceContent() {
   const searchId = useSearchId(projectId);
   const { searches, current } = useSearches(projectId, searchId);
   const selectSearch = useSelectSearch(projectId);
+  // Sur quels articles : une recherche existante, ou une nouvelle sélection créée au lancement.
+  const [scopeMode, setScopeMode] = useState<"existing" | "new">("existing");
+  const [newSel, setNewSel] = useState<Selection>({});
+  const [newName, setNewName] = useState("");
+  const [newCount, setNewCount] = useState<number | null>(null);
   // Préremplissage depuis un benchmark : ?model=<nom>&prompt=<id du prompt enregistré>.
   const sp = useSearchParams();
   const wantedModel = sp.get("model");
   const wantedPrompt = sp.get("prompt");
 
   const [job, setJob] = useState<InferenceJob | null>(null);
+  const [busy, setBusy] = useState<InferenceJob | null>(null); // l'analyse en cours du projet (toutes recherches)
+  const [notice, setNotice] = useState<string | null>(null);
+  const [saved0, setSaved0] = useState("");
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState<{
     question: string;
     fields: SchemaField[];
     sections: string[];
-    readWindows: number;
   } | null>(null);
   const [stage1, setStage1] = useState("");
   const [stage2, setStage2] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [launched, setLaunched] = useState(false);
   const [promptId, setPromptId] = useState<string | null>(wantedPrompt);
+  const [instructions, setInstructions] = useState("");
+  const [sentPrompt, setSentPrompt] = useState<string | null>(null);
   const [promptTitle, setPromptTitle] = useState<string | null>(null);
   const [goldCount, setGoldCount] = useState<number | null>(null);
   const [examplesOn, setExamplesOn] = useState(false);
@@ -76,13 +88,16 @@ function InferenceContent() {
 
   const active = job?.status === "PENDING" || job?.status === "RUNNING";
   const label = (m: ModelInfo) =>
-    `${m.name} — ${isScorer(m) ? t("kindDecision") : t("kindGenerative")}${
-      m.ram_usage_mb ? ` · ~${m.ram_usage_mb} MB` : ""
-    }`;
+    `${m.name}${m.ram_usage_mb ? ` · ~${m.ram_usage_mb} MB` : ""}`;
 
   const load = useCallback(async () => {
     try {
-      setJob(await getInference(projectId, searchId));
+      const [j, b] = await Promise.all([
+        getInference(projectId, searchId),
+        getInference(projectId, undefined, true),
+      ]);
+      setJob(j);
+      setBusy(b);
       setError(null);
     } catch (e) {
       if (e instanceof Error && /404/.test(e.message)) setJob(null);
@@ -94,16 +109,18 @@ function InferenceContent() {
   useEffect(() => {
     setJob(null);
     setQ(null);
+    setNotice(null);
     setLaunched(false);
     void load();
     getProject(projectId, searchId)
       .then((p) => {
+        const set = p.question_set !== false; // sinon : pas de question, seulement une suggestion
         setQ({
-          question: p.question ?? "",
-          fields: p.fields ?? [],
+          question: set ? (p.question ?? "") : "",
+          fields: set ? (p.fields ?? []) : [],
           sections: p.text_sections ?? ["methods"],
-          readWindows: p.read_windows ?? 4,
         });
+        setSaved0(JSON.stringify([set ? (p.question ?? "") : "", set ? (p.fields ?? []) : []]));
       })
       .catch(() => {});
   }, [load, projectId, searchId]);
@@ -121,6 +138,15 @@ function InferenceContent() {
       .catch(() => setPromptId(null)); // prompt introuvable : retour au prompt généré
   }, [projectId, promptId]);
 
+  // Prompt exact de la dernière analyse (consultable sous la progression).
+  useEffect(() => {
+    setSentPrompt(null);
+    if (!job?.prompt_template_id) return;
+    getPrompt(projectId, job.prompt_template_id)
+      .then((p) => setSentPrompt(`${p.system_prompt ?? ""}\n\n${p.user_prompt_schema ?? ""}`.trim()))
+      .catch(() => setSentPrompt(null));
+  }, [projectId, job?.prompt_template_id]);
+
   // Références du gold de la recherche : sans elles, ni exemples ni validation.
   useEffect(() => {
     setGoldCount(null);
@@ -137,10 +163,10 @@ function InferenceContent() {
   }, [noGold]);
 
   useEffect(() => {
-    if (!active) return;
+    if (!active && !busy) return;
     const id = setInterval(() => void load(), 3000);
     return () => clearInterval(id);
-  }, [active, load]);
+  }, [active, busy, load]);
 
   // Sélection par défaut : pas d'étage 1 ; étage 2 = modèle le plus léger dont la RAM est connue.
   useEffect(() => {
@@ -201,23 +227,61 @@ function InferenceContent() {
     setSubmitting(true);
     setError(null);
     try {
-      // La question est enregistrée au lancement (une seule étape pour l'utilisateur).
-      await updateProject(projectId, {
-        question: q.question,
-        fields: q.fields.map((f) => ({
-          ...f,
-          options: f.type === "choice" ? (f.options ?? []).filter(Boolean) : undefined,
-        })),
-        text_sections: q.sections,
-        read_windows: q.readWindows,
-      }, searchId);
+      const cleanFields = q.fields.map((f) => ({
+        ...f,
+        options: f.type === "choice" ? (f.options ?? []).filter(Boolean) : undefined,
+      }));
+      let runSearchId = searchId;
+      if (scopeMode === "new") {
+        // Nouvelle sélection : on crée la recherche (avec la question affichée) puis on l'analyse.
+        const created = await createSearch(projectId, {
+          name: newName.trim() || undefined,
+          question: q.question,
+          fields: cleanFields,
+          text_sections: q.sections,
+          kind: "standard",
+          selection: { from_search_id: searchId, ...cleanSelection(newSel) },
+        });
+        runSearchId = created.id;
+        storeSearchId(projectId, created.id);
+        notifySearchesChanged();
+        setScopeMode("existing");
+        setNewSel({});
+        setNewName("");
+        selectSearch(created.id);
+      } else if (
+        (current?.predicted ?? 0) + (current?.reviewed ?? 0) > 0 &&
+        JSON.stringify([q.question, cleanFields]) !== saved0
+      ) {
+        // La question d'une recherche déjà analysée ou relue ne change plus : nouvelle recherche, même lot.
+        const created = await createSearch(projectId, {
+          question: q.question,
+          fields: cleanFields,
+          text_sections: q.sections,
+          kind: "standard",
+          selection: { from_search_id: searchId },
+        });
+        runSearchId = created.id;
+        storeSearchId(projectId, created.id);
+        notifySearchesChanged();
+        selectSearch(created.id);
+        setNotice(t("questionLocked", { name: created.name }));
+      } else {
+        // La question est enregistrée au lancement (une seule étape pour l'utilisateur).
+        await updateProject(projectId, {
+          question: q.question,
+          fields: cleanFields,
+          text_sections: q.sections,
+        }, searchId);
+      }
       // Étage 2 vide : l'étage 1 décide seul.
       await triggerInference(projectId, {
         model: stage2 || stage1,
         ...(stage2 && stage1 && stage2 !== stage1 ? { prefilter_model: stage1 } : {}),
         ...(promptId ? { prompt_template_id: promptId } : {}),
+        ...(!promptId && instructions.trim() ? { instructions: instructions.trim() } : {}),
         ...goldOptions(),
-        ...(searchId ? { search_id: searchId } : {}),
+        ...(runSearchId ? { search_id: runSearchId } : {}),
       });
       await load();
       setLaunched(true);
@@ -232,6 +296,7 @@ function InferenceContent() {
 
   const r = job?.result ?? {};
   const total = num(r.total);
+  const busyElsewhere = !!busy && busy.id !== job?.id;
 
   return (
     <div className="flex flex-col gap-4">
@@ -241,24 +306,55 @@ function InferenceContent() {
       </div>
 
       {error && <ErrorBanner message={error} />}
+      {notice && <p className="rounded-lg border border-primary/40 bg-primary/5 p-3 text-sm text-foreground">{notice}</p>}
+      {busyElsewhere && (
+        <p className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm text-foreground">
+          {t("busyElsewhere", { name: searches?.find((s) => s.id === busy?.search_id)?.name ?? "…" })}
+        </p>
+      )}
 
       {searches && searches.length > 0 && (
-        <Card>
-          <Field label={t("searchTitle")} hint={t("searchHint")}>
-            <Select value={current?.id ?? ""} onChange={(e) => selectSearch(e.target.value)} disabled={active}>
-              {searches.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} — {t("lotSize", { n: s.lot_size })}
-                </option>
-              ))}
-            </Select>
-          </Field>
+        <Card title={t("scopeTitle")}>
+          <div className="mb-3 flex flex-wrap gap-4 text-sm">
+            <label className="flex items-center gap-2">
+              <input type="radio" checked={scopeMode === "existing"} onChange={() => setScopeMode("existing")} disabled={active} />
+              {searches.every(isUntouched) ? t("scopeCorpus") : t("scopeExisting")}
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="radio" checked={scopeMode === "new"} onChange={() => setScopeMode("new")} disabled={active} />
+              {searches.every(isUntouched) ? t("scopeCorpusSelection") : t("scopeNew")}
+            </label>
+          </div>
+          {scopeMode === "existing" && searches.every(isUntouched) ? (
+            <p className="text-sm font-medium text-foreground">{t("scopeCount", { n: current?.lot_size ?? 0 })}</p>
+          ) : scopeMode === "existing" ? (
+            <Field label={t("searchTitle")} hint={t("searchHint")}>
+              <Select value={current?.id ?? ""} onChange={(e) => selectSearch(e.target.value)} disabled={active}>
+                {searches.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} — {t("lotSize", { n: s.lot_size })}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <p className="text-xs text-muted">{t("scopeNewHint")}</p>
+              <Field label={t("scopeNewName")}>
+                <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={t("scopeDefaultName")} />
+              </Field>
+              <ArticleSelector projectId={projectId} searches={searches} value={{ from_search_id: searchId, ...newSel }} onChange={(s) => setNewSel(s)} onCount={setNewCount} />
+              <p className="text-sm font-medium text-foreground">
+                {newCount === null ? "…" : t("scopeCount", { n: newCount })}
+              </p>
+            </div>
+          )}
         </Card>
       )}
 
       <Card title={`1. ${t("questionTitle")}`}>
         {q ? (
-          <QuestionEditor {...q} articleCount={current?.lot_size ?? 0} onChange={setQ} />
+          <QuestionEditor {...q} onChange={setQ} />
         ) : (
           <p className="text-sm text-muted">…</p>
         )}
@@ -314,6 +410,21 @@ function InferenceContent() {
                 </Button>
               </div>
             )}
+            {!promptId && (
+              <details className="rounded-lg border border-border p-3" open={instructions.length > 0}>
+                <summary className="cursor-pointer text-sm font-semibold text-foreground">{t("instructionsTitle")}</summary>
+                <p className="mb-2 mt-1 text-xs text-muted">{t("instructionsHint")}</p>
+                <textarea
+                  value={instructions}
+                  onChange={(e) => setInstructions(e.target.value)}
+                  maxLength={2000}
+                  rows={3}
+                  disabled={active}
+                  placeholder={t("instructionsPlaceholder")}
+                  className="w-full rounded border border-border bg-surface p-2 text-sm text-foreground"
+                />
+              </details>
+            )}
             <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
               <p className="text-sm font-semibold text-foreground">{t("goldTitle")}</p>
               <p className="text-xs text-muted">{noGold ? t("goldNone") : t("goldHint")}</p>
@@ -351,7 +462,7 @@ function InferenceContent() {
               {goldCount !== null && !noGold && <p className="text-xs text-muted">{t("goldCount", { n: goldCount })}</p>}
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <Button type="submit" loading={submitting} disabled={active || (!stage2 && !stage1) || !q || q.sections.length === 0}>
+              <Button type="submit" loading={submitting} disabled={active || busyElsewhere || (!stage2 && !stage1) || !q || !q.question.trim() || q.fields.length === 0 || q.sections.length === 0 || (scopeMode === "new" && !newCount)}>
                 {job ? t("rerun") : t("run")}
               </Button>
               {launched && active && <span className="text-sm text-success">✓ {t("launched")}</span>}
@@ -363,26 +474,38 @@ function InferenceContent() {
       {job && (
         <div ref={progressRef}>
         <Card title={`3. ${t("progressTitle")}`}>
-          <div className="mb-3 flex items-center justify-between gap-3 text-sm text-muted">
-            <span className="font-mono">{job.model_used}</span>
-            <Badge color={statusColor(job.status)}>{job.status}</Badge>
-          </div>
-          {active && (
-            <ProgressBar
-              value={total > 0 ? (num(r.done) / total) * 100 : null}
-              label={total > 0 ? t("progress", { done: num(r.done), total }) : t("starting")}
+          {active ? (
+            <JobProgress
+              title={<span className="font-mono text-xs text-muted">{job.model_used}</span>}
+              done={num(r.done)}
+              total={total}
+              segments={{
+                accepted: num(r.auto_accepted),
+                rejected: num(r.auto_rejected),
+                review: num(r.needs_review),
+              }}
+              action={
+                <Button size="sm" variant="danger" loading={submitting} onClick={handleStop} title={t("stopHint")}>
+                  ■ {t("stop")}
+                </Button>
+              }
+              hint={num(r.done) === 0 ? t("firstRunNote") : t("stopHint")}
             />
-          )}
-          {active && num(r.done) === 0 && <p className="mt-2 text-xs text-muted">{t("firstRunNote")}</p>}
-          {active && (
-            <div className="mt-3 flex flex-col items-start gap-1">
-              <Button variant="danger" loading={submitting} onClick={handleStop}>
-                ■ {t("stop")}
-              </Button>
-              <span className="text-xs text-muted">{t("stopHint")}</span>
+          ) : (
+            <div className="mb-3 flex items-center justify-between gap-3 text-sm text-muted">
+              <span className="font-mono">{job.model_used}</span>
+              <Badge color={statusColor(job.status)}>{job.status}</Badge>
             </div>
           )}
-          {(active ? total > 0 : job.status === "COMPLETED") && (
+          {sentPrompt && (
+            <details className="mb-3 text-sm">
+              <summary className="cursor-pointer text-xs font-medium text-muted">{t("promptSent")}</summary>
+              <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded bg-surface-muted p-3 text-xs text-foreground">
+                {sentPrompt}
+              </pre>
+            </details>
+          )}
+          {!active && job.status === "COMPLETED" && (
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
               <Stat label={t("processed")} value={num(r.processed ?? r.done)} />
               <Stat label={t("autoAccepted")} value={num(r.auto_accepted)} tone="bg-success/10" />

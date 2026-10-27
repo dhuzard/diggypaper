@@ -105,7 +105,7 @@ Error codes:
 
 Every code except `artifact-missing` and `packet-invalid` has a negative fixture in `fixtures/invalid/<case>/`, where `expected.json` names the packet to hold and the codes that must fire. Those two codes are covered by tests. The `schema-invalid` fixtures pin the fail-closed consts: a granted access effect, an `admin` or revoked holder, public visibility, authorized processing, included full text, a member list, a token, and a disclosure without a decision.
 
-To regenerate the fixtures, run `python docs/contracts/research-project-descriptor/v0.1.0/fixtures/build_fixtures.py`; it is idempotent. Tests are in `backend/tests/test_research_project_descriptor.py`, and the builder's output is byte-identical to both valid fixtures. All fixtures are synthetic: the project id is `00000000-0000-4000-8000-000000000053`, and the referenced packet is the frozen SEP `canonical` fixture.
+To regenerate the fixtures, run `python docs/contracts/research-project-descriptor/v0.1.0/fixtures/build_fixtures.py`; it is idempotent and byte-identical on every run. Only `fixtures/valid/` is committed; the script also writes `fixtures/invalid/<case>/` (git-ignored), and the tests rebuild the whole tree in a temporary copy (`backend/tests/contract_fixtures.py`) and check that the committed valid descriptors are byte-identical to a fresh build. Tests are in `backend/tests/test_research_project_descriptor.py`, and the builder's output is byte-identical to both valid fixtures. All fixtures are synthetic: the project id is `00000000-0000-4000-8000-000000000053`, and the referenced packet is the frozen SEP `canonical` fixture.
 
 ## 8. Version and evolution policy
 

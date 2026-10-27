@@ -30,10 +30,14 @@ limite de taille suffit, pas de defusedxml).
 """
 
 import asyncio
+import logging
 import re
 import xml.etree.ElementTree as ET
+from datetime import date, timedelta
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 PMC_OA_URL = "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi"
@@ -43,12 +47,20 @@ _INTERVAL_NO_KEY = 1 / 3
 _INTERVAL_WITH_KEY = 0.1
 
 
-#: M1 : plafond esearch — 10000 est le max réel NCBI (guide NLM E-utilities) ; l'instance le
-#: réduit (IMPORT_MAX_ARTICLES, défaut 5000) pour borner un import.
+#: Plafond d'articles par import (IMPORT_MAX_ARTICLES, défaut 5000 ; 0 = illimité).
+UNLIMITED = 10**9
+
+
 def _esearch_max() -> int:
     from app.core.config import get_settings
 
-    return max(1, min(10000, get_settings().import_max_articles))
+    n = get_settings().import_max_articles
+    return n if n > 0 else UNLIMITED
+
+
+#: Une requête esearch ne renvoie jamais plus de 10 000 identifiants PubMed (limite NCBI, même
+#: avec ``retstart``) : au-delà, on découpe par date de publication (cf. ``fetch_all_pmids``).
+PUBMED_WINDOW = 9999
 
 
 #: m5 : retry sur erreur transitoire (503 / timeout), backoff simple (s).
@@ -132,14 +144,86 @@ async def search_volume(query: str, api_key: str | None, http: httpx.AsyncClient
     return int(resp.json()["esearchresult"]["count"])
 
 
+async def explain_query(query: str, api_key: str | None, http: httpx.AsyncClient) -> dict:
+    """Comment PubMed comprend la requête : {count, translation, not_found}.
+
+    ``translation`` = la requête réécrite par PubMed (termes MeSH, champs) ; ``not_found`` = termes
+    ou champs qu'il ne connaît pas (MeSH inventé, faute de frappe) : signal d'une requête fausse.
+    """
+    await _throttle(api_key)
+    resp = await _get_with_retry(
+        http, f"{EUTILS_BASE}/esearch.fcgi", _esearch_params(query, 0, api_key)
+    )
+    r = resp.json()["esearchresult"]
+    errors = r.get("errorlist") or {}
+    warnings = r.get("warninglist") or {}
+    not_found = [
+        *errors.get("phrasesnotfound", []),
+        *errors.get("fieldsnotfound", []),
+        *warnings.get("phrasesignored", []),
+        *warnings.get("quotedphrasesnotfound", []),
+        *warnings.get("outputmessage", []),
+    ]
+    return {
+        "count": int(r.get("count") or 0),
+        "translation": r.get("querytranslation") or "",
+        "not_found": [str(x) for x in not_found][:20],
+    }
+
+
 async def fetch_pmids(
     query: str, api_key: str | None, http: httpx.AsyncClient, retmax: int | None = None
 ) -> list[str]:
-    """Liste des PMIDs (esearch, ``retmax`` borné à 10000 — max réel NCBI, M1)."""
+    """PMIDs d'une requête (esearch) : au plus ``retmax`` (défaut : le plafond d'import) et jamais
+    plus que la limite de NCBI (``PUBMED_WINDOW`` identifiants par requête)."""
     await _throttle(api_key)
-    params = _esearch_params(query, min(retmax or _esearch_max(), _esearch_max()), api_key)
+    params = _esearch_params(query, min(retmax or _esearch_max(), PUBMED_WINDOW), api_key)
     resp = await _get_with_retry(http, f"{EUTILS_BASE}/esearch.fcgi", params)
     return list(resp.json()["esearchresult"]["idlist"])
+
+
+async def fetch_all_pmids(
+    query: str,
+    api_key: str | None,
+    http: httpx.AsyncClient,
+    count: int,
+    limit: int | None = None,
+) -> list[str]:
+    """Tous les PMIDs d'une requête, même au-delà de 10 000 résultats.
+
+    NCBI ne livre que 9 999 identifiants par requête : une requête plus grosse est découpée en
+    tranches de dates de publication (bissection tant qu'une tranche dépasse la limite), les plus
+    récentes d'abord ; les doublons (dates imprimée / électronique) sont retirés. ``limit`` borne
+    le total (les plus récents sont gardés).
+    """
+    limit = limit or _esearch_max()
+    if count <= PUBMED_WINDOW:
+        return await fetch_pmids(query, api_key, http, min(count, limit))
+    found: dict[str, None] = {}
+
+    async def walk(lo: date, hi: date) -> None:
+        if len(found) >= limit:
+            return
+        term = f'({query}) AND ("{lo:%Y/%m/%d}"[dp] : "{hi:%Y/%m/%d}"[dp])'
+        n = await search_volume(term, api_key, http)
+        if n == 0:
+            return
+        if n <= PUBMED_WINDOW or lo == hi:
+            if n > PUBMED_WINDOW:  # plus de 9 999 articles un même jour : improbable
+                logger.warning("PubMed: %d résultats le %s, tronqués", n, lo)
+            for pmid in await fetch_pmids(term, api_key, http, PUBMED_WINDOW):
+                found.setdefault(pmid)
+            return
+        mid = lo + (hi - lo) // 2
+        await walk(mid + timedelta(days=1), hi)  # les plus récents d'abord
+        await walk(lo, mid)
+
+    await walk(date(1800, 1, 1), date.today() + timedelta(days=366))
+    if len(found) < count:
+        logger.warning(
+            "PubMed: %d identifiants sur %d (articles sans date de publication)", len(found), count
+        )
+    return list(found)[:limit]
 
 
 async def fetch_metadata(
@@ -306,6 +390,25 @@ def _extract_methods(xml_text: str) -> str | None:
     return None
 
 
+def _local(tag) -> str:
+    return tag.rsplit("}", 1)[-1] if isinstance(tag, str) else ""
+
+
+def _plain(el: ET.Element) -> str:
+    """Texte d'un élément JATS sans le bruit des formules : le LaTeX (``tex-math``, préambule
+    ``\\documentclass…`` compris) est ignoré ; une formule hors texte devient « [formula] » ; le
+    MathML en ligne (p < 0,05, x²…) est gardé."""
+    out = [el.text or ""]
+    for child in el:
+        name = _local(child.tag)
+        if name == "disp-formula":
+            out.append(" [formula] ")
+        elif name != "tex-math":
+            out.append(_plain(child))
+        out.append(child.tail or "")
+    return "".join(out)
+
+
 def _extract_sections(xml_text: str) -> list[dict]:
     """Sections de premier niveau du ``body`` JATS : [{title, kind, text}]."""
     from app.article_text import classify_title
@@ -317,8 +420,8 @@ def _extract_sections(xml_text: str) -> list[dict]:
     out: list[dict] = []
     for sec in body.findall("sec"):
         title_el = sec.find("title")
-        title = "".join(title_el.itertext()).strip() if title_el is not None else ""
-        paras = ["".join(p.itertext()).strip() for p in sec.iter("p")]
+        title = _plain(title_el).strip() if title_el is not None else ""
+        paras = [re.sub(r"\s+", " ", _plain(p)).strip() for p in sec.iter("p")]
         text = " ".join(p for p in paras if p)
         if text:
             out.append({"title": title, "kind": classify_title(title), "text": text})

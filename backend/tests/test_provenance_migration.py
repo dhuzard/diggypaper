@@ -114,7 +114,8 @@ async def test_postgres_bound_benchmark_variant_and_decision_immutable(
     postgres_database, monkeypatch
 ):
     url, engine = postgres_database
-    await alembic(url, "upgrade", "0025")
+    await alembic(url, "upgrade", "0028")  # upstream branch first: the ORM expects its columns
+    await alembic(url, "upgrade", "f0025")
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         project = Project(title="Bound benchmark")
@@ -819,12 +820,12 @@ async def test_quote_checks_upgrade_keeps_legacy_null_and_guarded_downgrade(post
                         },
                     )
                 )
-    refused = await alembic(url, "downgrade", "0022", success=False)
+    refused = await alembic(url, "downgrade", "f0022", success=False)
     assert "refusing to discard persisted quotation checks" in refused.stderr
     async with factory() as session:
         await session.execute(delete(ArticlePrediction).where(ArticlePrediction.id == checked.id))
         await session.commit()
-    await alembic(url, "downgrade", "0022")
+    await alembic(url, "downgrade", "f0022")
 
 
 async def test_prediction_evidence_graph_scope_immutability_and_guarded_downgrade(
@@ -913,14 +914,14 @@ async def test_prediction_evidence_graph_scope_immutability_and_guarded_downgrad
                         invocation_group_id=call.group_id,
                     )
                 )
-    refused = await alembic(url, "downgrade", "0024", success=False)
+    refused = await alembic(url, "downgrade", "f0024", success=False)
     assert "refusing to discard persisted answer/evidence graphs" in refused.stderr
     async with factory() as session:
         await session.execute(
             delete(ArticlePrediction).where(ArticlePrediction.id == prediction_id)
         )
         await session.commit()
-    await alembic(url, "downgrade", "0024")
+    await alembic(url, "downgrade", "f0024")
 
 
 async def test_support_assessment_sql_guard_and_guarded_downgrade(postgres_database):
@@ -1042,7 +1043,7 @@ async def test_support_assessment_sql_guard_and_guarded_downgrade(postgres_datab
         await session.refresh(assessment)
         assert assessment.actor_id is None
         assert assessment.actor_ref == anonymized_actor_ref("reviewer@example.org")
-    refused = await alembic(url, "downgrade", "0026", success=False)
+    refused = await alembic(url, "downgrade", "f0026", success=False)
     assert "refusing to discard human support assessments" in refused.stderr
     async with factory() as session:
         await session.execute(
@@ -1050,20 +1051,21 @@ async def test_support_assessment_sql_guard_and_guarded_downgrade(postgres_datab
         )
         await session.commit()
         assert await session.get(EvidenceSupportAssessment, assessment.id) is None
-    await alembic(url, "downgrade", "0026")
+    await alembic(url, "downgrade", "f0026")
 
 
 async def test_empty_support_assessment_migration_downgrades(postgres_database):
     url, _ = postgres_database
     await alembic(url, "upgrade", "head")
-    await alembic(url, "downgrade", "0026")
+    await alembic(url, "downgrade", "f0026")
 
 
 async def test_gold_revision_upgrade_immutability_cascade_and_guarded_downgrade(
     postgres_database,
 ):
     url, engine = postgres_database
-    await alembic(url, "upgrade", "0027")
+    await alembic(url, "upgrade", "0028")
+    await alembic(url, "upgrade", "f0027")
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         project = Project(title="Gold migration")
@@ -1101,9 +1103,9 @@ async def test_gold_revision_upgrade_immutability_cascade_and_guarded_downgrade(
         with pytest.raises(DBAPIError):
             async with session.begin_nested():
                 await session.execute(delete(GoldRevision).where(GoldRevision.id == revision.id))
-    await alembic(url, "downgrade", "0027", success=False)
+    await alembic(url, "downgrade", "f0027", success=False)
     async with factory() as session:
         await session.execute(delete(GoldArticle).where(GoldArticle.id == gold.id))
         await session.commit()
         assert await session.get(GoldRevision, revision.id) is None
-    await alembic(url, "downgrade", "0027")
+    await alembic(url, "downgrade", "f0027")

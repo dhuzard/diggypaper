@@ -27,6 +27,8 @@ The PostgreSQL migration enforces prediction/project/article scope and makes
 stored graphs and their source output immutable. The application validates the
 full envelope and authoritative receipts before insert. SQL constraints cannot
 recompute the Python canonical IDs, digest, or Unicode occurrence algorithm;
-replay verification and independent review remain required. This slice does not
-wire benchmark predictions, human annotations, explicit revision editing, support
-assessment, frontend editing, or the qualification pilot.
+replay verification and independent review remain required. Status 2026-10-27:
+implemented for normal chat predictions (`app/evidence_prediction.py`, migration `f0025`)
+with support assessments on top (`app/api/v1/support_assessments.py`); benchmark
+predictions, human annotations, explicit revision editing and frontend editing are still
+not wired, and the qualification pilot has not run.

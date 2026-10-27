@@ -13,14 +13,16 @@ from pathlib import Path
 
 import pytest
 
+from tests import contract_fixtures
+
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "docs" / "contracts" / "finding-credit-companion" / "v0.1.0"
 VALIDATOR_PATH = CONTRACT / "validator" / "fcc_validate.py"
-BUILDER_PATH = CONTRACT / "fixtures" / "build_fixtures.py"
 PACKETS = CONTRACT / "fixtures" / "packets"
 VALID = CONTRACT / "fixtures" / "valid"
-INVALID_DIR = CONTRACT / "fixtures" / "invalid"
-INVALID_CASES = sorted(p.name for p in INVALID_DIR.iterdir() if p.is_dir())
+# Negative fixtures are not committed: build_fixtures.py regenerates them (contract_fixtures.py).
+INVALID_DIR = contract_fixtures.invalid_dir("finding-credit-companion")
+INVALID_CASES = contract_fixtures.invalid_cases("finding-credit-companion")
 SEP_CANONICAL = ROOT / "docs/contracts/source-evidence-packet/v0.1.0/fixtures/valid/canonical"
 
 
@@ -102,21 +104,12 @@ def test_invalid_fixture_reports_expected_codes(case):
 
 
 def test_fixtures_are_reproducible(tmp_path):
-    copy_dir = tmp_path / "fixtures"
-    copy_dir.mkdir()
-    shutil.copy(BUILDER_PATH, copy_dir / "build_fixtures.py")
-    subprocess.run([sys.executable, "-I", str(copy_dir / "build_fixtures.py")], check=True)
-    for sub in ("packets", "valid", "invalid"):
-        for path in sorted((CONTRACT / "fixtures" / sub).rglob("*")):
-            twin = copy_dir / sub / path.relative_to(CONTRACT / "fixtures" / sub)
-            if path.is_file():
-                assert twin.read_bytes() == path.read_bytes(), path
-        rebuilt = {p.relative_to(copy_dir / sub) for p in (copy_dir / sub).rglob("*")}
-        stored = {
-            p.relative_to(CONTRACT / "fixtures" / sub)
-            for p in (CONTRACT / "fixtures" / sub).rglob("*")
-        }
-        assert rebuilt == stored, sub
+    # The committed packets and valid companions are byte-identical to a fresh build, and two
+    # independent builds (this one and the session's) agree on every negative fixture.
+    rebuilt = contract_fixtures.build(tmp_path)
+    contract_fixtures.assert_rebuild_matches(
+        "finding-credit-companion", rebuilt / "finding-credit-companion" / "v0.1.0" / "fixtures"
+    )
 
 
 def test_determinism_and_sorted_errors():

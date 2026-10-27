@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import HTTPException
 from sqlalchemy import and_, or_, select
@@ -37,20 +38,10 @@ async def default_search(db: AsyncSession, project: Project) -> Search:
         .scalars()
         .first()
     )
-    if s is not None:  # la recherche initiale reflète toujours les réglages du projet
-        if (s.question, s.fields, s.text_sections, s.read_windows) != (
-            project.question,
-            project.fields,
-            project.text_sections,
-            project.read_windows,
-        ):
-            s.question, s.fields = project.question, project.fields
-            s.text_sections, s.read_windows = project.text_sections, project.read_windows
-            s.definition_hash = definition_hash(project.question, project.fields)
-    else:
+    if s is None:  # créée à la première lecture, à partir des réglages du projet à cet instant
         s = Search(
             project_id=project.id,
-            name="Recherche initiale",
+            name=await next_search_name(db, project.id, project.created_at),
             question=project.question,
             fields=project.fields,
             text_sections=project.text_sections,
@@ -62,6 +53,22 @@ async def default_search(db: AsyncSession, project: Project) -> Search:
         db.add(s)
         await db.flush()
     return s
+
+
+async def next_search_name(
+    db: AsyncSession, project_id: uuid.UUID, day: datetime | None = None
+) -> str:
+    """Nom par défaut d'une recherche : ``AAMMJJ-n`` (jour de création, n = rang dans le projet)."""
+    prefix = (day or datetime.now(UTC)).strftime("%y%m%d")
+    taken = set(
+        (await db.execute(select(Search.name).where(Search.project_id == project_id)))
+        .scalars()
+        .all()
+    )
+    n = 1
+    while f"{prefix}-{n}" in taken:
+        n += 1
+    return f"{prefix}-{n}"
 
 
 async def get_search(

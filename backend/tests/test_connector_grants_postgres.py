@@ -37,7 +37,8 @@ async def _refused(session, stmt):
 
 async def test_0034_upgrade_guards_and_downgrade(postgres_database):  # noqa: F811
     url, engine = postgres_database
-    await alembic(url, "upgrade", "0033")
+    await alembic(url, "upgrade", "0028")  # upstream branch first: the ORM expects its columns
+    await alembic(url, "upgrade", "f0033")
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         user = User(email="lead@lab.fr", hashed_password="x", role=UserRole.RESEARCHER)
@@ -51,7 +52,7 @@ async def test_0034_upgrade_guards_and_downgrade(postgres_database):  # noqa: F8
         )
         await session.commit()
         ids = (user.id, project.id)
-    await alembic(url, "upgrade", "0034")
+    await alembic(url, "upgrade", "f0034")
     async with factory() as session:
         user, project = await session.get(User, ids[0]), await session.get(Project, ids[1])
         assert project.title == "Existing before 0034"  # additive: existing rows untouched
@@ -118,7 +119,7 @@ async def test_0034_upgrade_guards_and_downgrade(postgres_database):  # noqa: F8
         assert events == ["grant-created", "access-granted", "grant-revoked"]
 
     # The audit trail is never discarded silently, so downgrade refuses while it has rows.
-    await alembic(url, "downgrade", "0033", success=False)
+    await alembic(url, "downgrade", "f0033", success=False)
     async with engine.begin() as connection:
         # An operator's explicit, deliberate purge: the guard is disabled for it, then restored.
         trigger = "connector_audit_events_append_only"
@@ -129,7 +130,7 @@ async def test_0034_upgrade_guards_and_downgrade(postgres_database):  # noqa: F8
         await connection.exec_driver_sql(
             f"ALTER TABLE connector_audit_events ENABLE TRIGGER {trigger}"
         )
-    await alembic(url, "downgrade", "0033")
+    await alembic(url, "downgrade", "f0033")
     async with engine.connect() as connection:
         tables = (
             await connection.execute(
@@ -139,4 +140,4 @@ async def test_0034_upgrade_guards_and_downgrade(postgres_database):  # noqa: F8
             )
         ).one()
     assert tables == (None, None)
-    await alembic(url, "upgrade", "0034")
+    await alembic(url, "upgrade", "f0034")

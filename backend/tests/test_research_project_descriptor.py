@@ -17,14 +17,15 @@ import pytest
 
 from app.db.models import ProjectMemberRole
 from app.project_descriptor import build_project_descriptor, packet_artifact
+from tests import contract_fixtures
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "docs" / "contracts" / "research-project-descriptor" / "v0.1.0"
 VALIDATOR_PATH = CONTRACT / "validator" / "rpd_validate.py"
-BUILDER_PATH = CONTRACT / "fixtures" / "build_fixtures.py"
 VALID = CONTRACT / "fixtures" / "valid"
-INVALID_DIR = CONTRACT / "fixtures" / "invalid"
-INVALID_CASES = sorted(p.name for p in INVALID_DIR.iterdir() if p.is_dir())
+# Negative fixtures are not committed: build_fixtures.py regenerates them (contract_fixtures.py).
+INVALID_DIR = contract_fixtures.invalid_dir("research-project-descriptor")
+INVALID_CASES = contract_fixtures.invalid_cases("research-project-descriptor")
 SEP_VALID = ROOT / "docs/contracts/source-evidence-packet/v0.1.0/fixtures/valid"
 SEP_CANONICAL = SEP_VALID / "canonical"
 PROJECT_ID = uuid.UUID("00000000-0000-4000-8000-000000000053")
@@ -153,15 +154,14 @@ def test_cli_exit_codes():
 
 
 def test_fixture_builder_is_idempotent(tmp_path):
-    copy = tmp_path / "research-project-descriptor" / "v0.1.0"
-    shutil.copytree(CONTRACT, copy)
-    # The generator reads the frozen SEP packet relative to its own location.
-    sep_copy = tmp_path / "source-evidence-packet" / "v0.1.0" / "fixtures" / "valid"
-    shutil.copytree(SEP_CANONICAL, sep_copy / "canonical")
-    subprocess.run([sys.executable, str(copy / "fixtures" / "build_fixtures.py")], check=True)
-    for path in sorted((copy / "fixtures").rglob("*.json")):
-        original = CONTRACT / path.relative_to(copy)
-        assert path.read_bytes() == original.read_bytes(), path
+    # The generator reads the frozen SEP packet relative to its own location; the rebuilt tree
+    # keeps the committed layout. The committed valid descriptors are byte-identical to a fresh
+    # build, and two independent builds agree on every negative fixture.
+    rebuilt = contract_fixtures.build(tmp_path)
+    contract_fixtures.assert_rebuild_matches(
+        "research-project-descriptor",
+        rebuilt / "research-project-descriptor" / "v0.1.0" / "fixtures",
+    )
 
 
 # --- builder ---------------------------------------------------------------------------------

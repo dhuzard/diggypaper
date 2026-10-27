@@ -1,0 +1,210 @@
+From 5bd16e72a901cea327d69f156215775187a5d8ef Mon Sep 17 00:00:00 2001
+From: damien huzard <damien.huzard@gmail.com>
+Date: Tue, 27 Oct 2026 10:39:24 +0000
+Subject: [PATCH] Preserve human evidence in RO-Crate article exports
+
+---
+ backend/app/api/v1/export.py       | 16 +++++--
+ backend/app/crate.py               | 21 +++++++++
+ backend/tests/test_crate_import.py | 75 ++++++++++++++++++++++++++++++
+ 3 files changed, 109 insertions(+), 3 deletions(-)
+
+diff --git a/backend/app/api/v1/export.py b/backend/app/api/v1/export.py
+index 3cbc6f3..570f612 100644
+--- a/backend/app/api/v1/export.py
++++ b/backend/app/api/v1/export.py
+@@ -1,6 +1,7 @@
+ """Export XLSX d'un projet : corpus + résultats d'analyse + relecture humaine + paramètres."""
+ 
+ import asyncio
++import hashlib
+ import io
+ import json
+ import os
+@@ -28,6 +29,7 @@ from app.api.v1.projects import (
+     _require_project_member,
+     article_filter,
+ )
++from app.core.config import get_settings
+ from app.db.models import (
+     Article,
+     ArticleFile,
+@@ -232,8 +234,8 @@ async def _load(db: AsyncSession, project, where=None, search=None):
+             )
+         ).scalars():
+             annos.setdefault(h.article_id, []).append(h)
+-        names = {
+-            u.id: u.full_name or u.email
++        reviewers = {
++            u.id: u
+             for u in (
+                 await db.execute(
+                     select(User).where(
+@@ -242,9 +244,17 @@ async def _load(db: AsyncSession, project, where=None, search=None):
+                 )
+             ).scalars()
+         }
++        salt = get_settings().anon_salt
+         for hs in annos.values():
+             for h in hs:
+-                h.reviewer = names.get(h.user_id)  # nom du relecteur pour l'export
++                u = reviewers.get(h.user_id)
++                h.reviewer = (u.full_name or u.email) if u else None  # nom pour results.xlsx
++                # metadata.json : pseudonyme propre au projet, dérivé de la même empreinte
++                # salée que celle conservée à la suppression du compte (``annotator_hash``).
++                digest = h.annotator_hash or (
++                    hashlib.sha256((salt + u.email).encode("utf-8")).hexdigest() if u else None
++                )
++                h.reviewer_ref = crate.reviewer_reference(project.id, digest)
+     import_jobs = (
+         (
+             await db.execute(
+diff --git a/backend/app/crate.py b/backend/app/crate.py
+index 81c2afe..01d2728 100644
+--- a/backend/app/crate.py
++++ b/backend/app/crate.py
+@@ -55,6 +55,15 @@ def sha256_json(obj) -> str:
+     return hashlib.sha256(json.dumps(obj, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+ 
+ 
++def reviewer_reference(project_id, annotator_hash: str | None) -> str | None:
++    """Pseudonyme de relecteur propre au projet, dérivé de l'empreinte salée conservée à la
++    suppression du compte : même personne → même référence dans un projet, sans lien entre deux
++    projets. ``None`` quand l'identité n'est plus disponible."""
++    if not annotator_hash:
++        return None
++    return "reviewer-" + sha256_json(["diggypaper-reviewer", str(project_id), annotator_hash])
++
++
+ def fulltext_markdown(a) -> str:
+     """Titre + abstract + sections du texte intégral, en Markdown."""
+     out = [f"# {a.title or a.pmid or a.id}", ""]
+@@ -100,7 +109,11 @@ def article_record(a, key: str, pred, annos: list, fields: list[dict]) -> dict:
+         },
+         "human": [
+             {
++                "annotation_id": str(h.id),
++                "created_at": h.created_at.isoformat() if h.created_at else None,
++                "reviewer_ref": getattr(h, "reviewer_ref", None),
+                 "answers": {f["key"]: (h.decision_json or {}).get(f["key"]) for f in fields},
++                "evidence_quotes": (h.decision_json or {}).get("evidence_quotes"),
+                 "notes": h.notes,
+             }
+             for h in annos
+@@ -364,4 +377,12 @@ Export RO-Crate (Diggypaper) — {datetime.now(UTC):%Y-%m-%d}.
+   les textes intégraux et PDF conservent la licence de leurs ayants droit.
+ - `articles/<clé>/` : un dossier par article ({n_articles}) — `metadata.json`, `fulltext.md`
+   ({n_text} avec texte intégral, sinon `abstract.md`) et `fulltext.pdf` ({n_pdf} conservés)
++
++Dans `metadata.json`, chaque entrée `human` conserve l'identifiant et la date de l'annotation,
++les réponses, les notes et les `evidence_quotes` enregistrés (null si absents).
++`reviewer_ref` est un pseudonyme propre au projet, dérivé de l'empreinte salée utilisée lors
++de la suppression du compte ; il reste stable après cette suppression si l'e-mail et le sel
++n'ont pas changé, et il est null si l'identité n'est plus disponible. Aucun nom ou e-mail n'est
++ajouté à ces entrées (`results.xlsx` contient, lui, les noms des relecteurs). Ces citations ne
++constituent ni une vérification de source ni une évaluation de leur soutien aux réponses.
+ """
+diff --git a/backend/tests/test_crate_import.py b/backend/tests/test_crate_import.py
+index 1d66c07..c99a7bb 100644
+--- a/backend/tests/test_crate_import.py
++++ b/backend/tests/test_crate_import.py
+@@ -1,7 +1,9 @@
+ """Import d'un RO-Crate : aller-retour avec l'export réel, et refus des zips douteux."""
+ 
++import io
+ import json
+ import zipfile
++from datetime import UTC, datetime, timedelta
+ 
+ import pytest
+ from sqlalchemy import select
+@@ -9,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+ 
+ from app import crate_import as ci
+ from app.api.v1.export import write_crate
++from app.cleanup import delete_user
+ from app.db.models import (
+     Article,
+     ArticleFile,
+@@ -89,6 +92,78 @@ async def _exported_crate(session, tmp_path) -> tuple[str, Project]:
+     return str(out), project
+ 
+ 
++async def _human_entries(session, project) -> tuple[list[dict], dict[str, bytes]]:
++    """Entrées ``human`` de l'article 222 et fichiers texte de l'archive (hors results.xlsx)."""
++    buf = io.BytesIO()
++    await write_crate(session, project, "exporter@lab.fr", buf)
++    with zipfile.ZipFile(buf) as z:
++        files = {n: z.read(n) for n in z.namelist() if not n.endswith((".xlsx", ".pdf"))}
++    return json.loads(files["articles/pmid-222/metadata.json"])["human"], files
++
++
++async def test_crate_keeps_human_evidence_under_a_project_scoped_pseudonym(session, tmp_path):
++    """Chaque relecture exportée garde son identifiant, sa date, ses citations et un pseudonyme
++    propre au projet ; ni e-mail ni identifiant de compte n'apparaissent dans les JSON/Markdown."""
++    _, project = await _exported_crate(session, tmp_path)
++    user = (await session.execute(select(User).where(User.email == "lead@lab.fr"))).scalar_one()
++    art = (await session.execute(select(Article).where(Article.pmid == "222"))).scalar_one()
++    quotes = ['"Sleep" improved 🐁\nN = 12', "  exact spacing  ", "dup", "dup"]
++    later = datetime.now(UTC) + timedelta(seconds=1)
++    second = HumanAnnotation(
++        article_id=art.id,
++        user_id=user.id,
++        decision_json={"ai": True, "evidence_quotes": quotes},
++        notes="revu",
++        created_at=later,
++    )
++    legacy = HumanAnnotation(  # relecteur inconnu (ni compte, ni empreinte)
++        article_id=art.id, decision_json={"ai": True}, created_at=later + timedelta(seconds=1)
++    )
++    session.add_all([second, legacy])
++    await session.commit()
++    anns = (
++        (
++            await session.execute(
++                select(HumanAnnotation)
++                .where(HumanAnnotation.article_id == art.id)
++                .order_by(HumanAnnotation.created_at, HumanAnnotation.id)
++            )
++        )
++        .scalars()
++        .all()
++    )
++
++    human, files = await _human_entries(session, project)
++    assert [h["annotation_id"] for h in human] == [str(a.id) for a in anns]
++    assert [h["created_at"] for h in human] == [a.created_at.isoformat() for a in anns]
++    assert [h["evidence_quotes"] for h in human] == [None, quotes, None]
++    assert [h["answers"] for h in human] == [{"ai": False}, {"ai": True}, {"ai": True}]
++    assert [h["notes"] for h in human] == ["vu", "revu", None]
++    ref = human[0]["reviewer_ref"]
++    assert ref and ref.startswith("reviewer-") and human[1]["reviewer_ref"] == ref
++    assert human[2]["reviewer_ref"] is None  # identité indisponible : pas d'attribution inventée
++    for name, data in files.items():
++        assert b"lead@lab.fr" not in data and str(user.id).encode() not in data, name
++    assert b"reviewer_ref" in files["README.md"]
++
++    # Le même relecteur reçoit un pseudonyme sans lien dans un autre projet…
++    other = Project(title="Autre", fields=FIELDS)
++    session.add(other)
++    await session.flush()
++    other_art = Article(project_id=other.id, pmid="222")
++    session.add(other_art)
++    await session.flush()
++    session.add(HumanAnnotation(article_id=other_art.id, user_id=user.id))
++    await session.commit()
++    assert (await _human_entries(session, other))[0][0]["reviewer_ref"] != ref
++    # … et le pseudonyme survit à la suppression du compte (empreinte conservée).
++    await delete_user(session, user)
++    await session.commit()
++    after, _ = await _human_entries(session, project)
++    assert [h["reviewer_ref"] for h in after] == [ref, ref, None]
++    assert after[1]["evidence_quotes"] == quotes
++
++
+ async def test_round_trip_restores_corpus_results_and_pdf(engine, session, tmp_path):
+     path, source = await _exported_crate(session, tmp_path)
+     new = Project(title="Sommeil", status=ProjectStatus.PROCESSING, created_by=source.created_by)
+-- 
+2.43.0
+

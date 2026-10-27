@@ -23,10 +23,45 @@ jobs:
           cache: pip
           cache-dependency-path: backend/constraints.txt
       # constraints.txt : versions testées (même fichier que l'image Docker)
-      - run: pip install -c constraints.txt -e ".[dev,onnx]"
+      - run: pip install -c constraints.txt -e ".[dev]"
       - run: ruff check .
       - run: ruff format --check .
       - run: python -m pytest -q
+
+  # Garde-fous PostgreSQL (provenance, constats, connecteur) ignorés sous SQLite : chaque test
+  # crée et supprime sa propre base à partir de SEIP_TEST_POSTGRES_URL (serveur jetable).
+  backend-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/constraints.txt
+      - run: pip install -c constraints.txt -e ".[dev]"
+      # Chemin frais : 0021 -> tête (deux chaînes jointes par f0035) puis retour à 0021
+      - run: python -m alembic upgrade head && python -m alembic downgrade 0021
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/postgres
+      - run: python -m pytest -q tests/test_provenance_migration.py tests/test_review_binding_postgres.py tests/test_finding_curation_postgres.py tests/test_connector_grants_postgres.py
+        env:
+          SEIP_TEST_POSTGRES_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/postgres
 
   frontend:
     runs-on: ubuntu-latest

@@ -34,7 +34,6 @@ from app.db.base import make_engine
 from app.db.models import (
     Article,
     ArticlePrediction,
-    BackendType,
     GoldArticle,
     InferenceJob,
     InferenceJobStatus,
@@ -53,13 +52,11 @@ from app.inference import (
     infer_with,
     make_inference_service,
 )
-from app.inference.scoring import is_scorer, score_prediction
 from app.nts import backend as nts_backend
 from app.provenance import invocation_from_record
 from app.provenance_capture import capture_article_source
 from app.provenance_chat import PersistedChatTrace
 from app.provenance_render import render_chat
-from app.provenance_scorer import PersistedScorerTrace
 from app.quote_checks import check_prediction_quotes
 from app.schema import project_fields
 from app.searches import ScopedProject, get_search, gold_condition, in_search, lot_condition
@@ -195,10 +192,23 @@ async def _run_inference(
                 session_factory=factory,
                 mailer=mailer,
             )
+            await _start_scheduled(session, job.project_id)
             return stats
     finally:
         if engine is not None:
             await engine.dispose()
+
+
+async def _start_scheduled(session: AsyncSession, project_id) -> None:
+    """Lance l'analyse programmée suivante, s'il y en a une prête (best-effort)."""
+    from app.scheduler import start_ready
+
+    try:
+        project = await session.get(Project, project_id)
+        if project is not None:
+            await start_ready(session, project)
+    except Exception:  # noqa: BLE001 - ne doit pas faire échouer l'analyse qui vient de finir
+        logger.exception("scheduler: démarrage de l'analyse programmée en échec")
 
 
 async def _do_inference(
@@ -285,7 +295,7 @@ async def _do_inference(
             "needs_review": needs_review,
         }
 
-    # Modèles du registre : étage 1 (scoreur rapide, optionnel) et modèle principal.
+    # Modèles du registre : étage 1 (petit modèle rapide, optionnel) et modèle principal.
     names = [n for n in (job.model_used, job.prefilter_model) if n]
     registry = {
         m.name: m
@@ -304,7 +314,7 @@ async def _do_inference(
     invocation_sequences: dict = {}
 
     async def predict(model, article, *, light: bool):
-        """Scoreur (Laya…) ou LLM génératif ; ``light`` = étage 1 (abstract seulement)."""
+        """Appel du modèle ; ``light`` = étage 1 (titre + abstract seulement)."""
         if article.id not in frozen:
             snapshot, main_view_id = await capture_article_source(
                 session,
@@ -315,36 +325,6 @@ async def _do_inference(
             await session.commit()  # No source row lock crosses the model request.
             frozen[article.id] = (snapshot, main_view_id)
         snapshot, main_view_id = frozen[article.id]
-        if is_scorer(model):
-            view_id = (
-                next(v.id for v in snapshot.views if v.kind == "title_abstract")
-                if light or model.backend_type == BackendType.ONNX_LOCAL
-                else main_view_id
-            )
-            view = next(v for v in snapshot.views if v.id == view_id)
-            trace = PersistedScorerTrace(
-                session,
-                snapshot=snapshot,
-                view_id=view_id,
-                job=job,
-                prompt=prompt,
-                model=model,
-                field_schema=(
-                    project_fields(project)
-                    if not light and model.backend_type == BackendType.SYSTEMONE
-                    else []
-                ),
-                group_id=invocation_groups.setdefault(article.id, uuid.uuid4()),
-                stage="prefilter" if light else "main",
-                sequence=invocation_sequences.get(article.id, 0),
-            )
-            out = await score_prediction(
-                model, project, article, light=light, trace=trace, text=view.text
-            )
-            if trace.producing_invocation is None:
-                raise InferenceError("scorer_call_not_captured")
-            invocation_sequences[article.id] = trace.sequence
-            return out, trace
         view_id = (
             next(
                 view.id
@@ -424,9 +404,10 @@ async def _do_inference(
             if prediction is None:
                 prediction, producing = await predict(main, article, light=False)
         except InferenceError as exc:
-            # Petits modèles : une sortie non-JSON ne doit pas tuer tout le job ;
-            # timeout / connexion / HTTP restent fatals.
-            if str(exc) != "invalid_json":
+            # Petits modèles : une sortie non-JSON ne doit pas tuer tout le job ; idem une
+            # réponse trop grosse pour la provenance (l'appel est déjà enregistré « failed »).
+            # Timeout / connexion / HTTP restent fatals.
+            if str(exc) not in ("invalid_json", "response_too_large_for_provenance"):
                 raise
             invalid += 1
             await _progress(session, job, processed, len(articles), invalid, counts())
@@ -446,9 +427,7 @@ async def _do_inference(
         bound = producing.producing_invocation if producing else None
         prediction_id = uuid.uuid4()
         quote_checks = (
-            check_prediction_quotes(invocation_from_record(bound), prediction)
-            if bound and not is_scorer(registry.get(model_name))
-            else None
+            check_prediction_quotes(invocation_from_record(bound), prediction) if bound else None
         )
         evidence_graph = (
             prediction_envelope(

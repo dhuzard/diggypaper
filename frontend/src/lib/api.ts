@@ -35,6 +35,7 @@ export interface SchemaField {
 }
 
 export interface Project {
+  retention_delete_on?: string | null; // suppression programmée pour inactivité
   id: string;
   title: string;
   description: string | null;
@@ -43,7 +44,6 @@ export interface Project {
   default_language: string;
   text_sections?: string[];
   question?: string;
-  read_windows?: number;
   fields?: SchemaField[];
   custom_schema?: boolean;
   question_set?: boolean;
@@ -64,6 +64,8 @@ export interface Article {
   methods_text: string | null;
   text?: string;
   has_fulltext?: boolean;
+  origin?: string | null; // pubmed | references | citation
+  origin_seeds?: number | null;
   fulltext_source?: string | null;
   fulltext_note?: string | null;
   doi_url?: string | null;
@@ -195,7 +197,7 @@ export type AnnotationPayload = Record<string, unknown>;
 export interface ImportJob {
   id: string;
   task: string;
-  kind?: "import" | "fulltext";
+  kind?: "import" | "fulltext" | "references" | "citations" | "crate";
   status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
   query: string | null;
   result: Record<string, unknown> | null;
@@ -230,6 +232,9 @@ export type SearchKind = "standard" | "tuning" | "blind";
 
 /** Une recherche : une question (ses items) posée à un lot d'articles. */
 export interface SearchInfo {
+  /** Analyse programmée : en attente de la fin de la recherche d'origine, démarrée, ou échouée. */
+  schedule_state?: "waiting" | "started" | "failed" | null;
+  schedule?: { model: string; prefilter_model?: string | null; instructions?: string | null; error?: string } | null;
   id: string;
   name: string;
   kind: SearchKind;
@@ -244,8 +249,24 @@ export interface SearchInfo {
   lot_size: number;
   predicted: number;
   reviewed: number;
+  /** Répartition des résultats de l'IA dans le lot ({} pour une recherche à l'aveugle). */
+  breakdown: Partial<Record<"AUTO_ACCEPTED" | "AUTO_REJECTED" | "NEEDS_HUMAN_REVIEW" | "NONE", number>>;
+  /** Incertains pas encore relus. */
+  to_review: number;
   last_job: { status: InferenceJob["status"]; model: string } | null;
 }
+
+/** Vue d'ensemble d'un projet : chiffres globaux (articles distincts) + état de chaque recherche. */
+export interface ProjectOverview {
+  articles: number;
+  fulltext: number;
+  analysed: number;
+  reviewed: number;
+  gold: number;
+  searches: SearchInfo[];
+}
+export const getOverview = (projectId: string): Promise<ProjectOverview> =>
+  request(`/projects/${projectId}/overview`);
 
 /** Quels articles : critères cumulés sur les résultats d'une recherche (aucun = tout le corpus). */
 export interface Selection {
@@ -254,6 +275,7 @@ export interface Selection {
   answers?: Record<string, string | boolean>;
   reviewed?: boolean;
   has_fulltext?: boolean;
+  q?: string;
   confidence_min?: number;
   confidence_max?: number;
   ids?: string[];
@@ -382,6 +404,7 @@ export interface InferenceJob {
   project_id: string | null;
   prompt_template_id: string | null;
   model_used: string;
+  search_id?: string | null;
   prefilter_model?: string | null;
   status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
   result: Record<string, unknown> | null;
@@ -528,8 +551,8 @@ export async function deleteProject(projectId: string): Promise<void> {
 export async function queryVolume(
   projectId: string,
   query: string
-): Promise<{ count: number }> {
-  return request<{ count: number }>(`/projects/${projectId}/query-volume`, {
+): Promise<{ count: number; max: number }> {
+  return request<{ count: number; max: number }>(`/projects/${projectId}/query-volume`, {
     method: "POST",
     body: JSON.stringify({ query }),
   });
@@ -543,6 +566,79 @@ export async function triggerImport(
     `/projects/${projectId}/import`,
     { method: "POST", body: JSON.stringify({ query }) }
   );
+}
+
+export interface ReferencesPreview {
+  format: "list" | "bibtex" | "ris" | "csl" | "csv";
+  count: number;
+  with_doi: number;
+  with_pmid: number;
+  title_only: number;
+  max: number;
+}
+
+/** Liste de références (DOI/PMID, BibTeX, RIS, CSL JSON, CSV) : aperçu (dryRun) ou import. */
+export async function importReferences(
+  projectId: string,
+  content: string,
+  dryRun: boolean
+): Promise<ReferencesPreview> {
+  return request<ReferencesPreview>(`/projects/${projectId}/import-references`, {
+    method: "POST",
+    body: JSON.stringify({ content, dry_run: dryRun }),
+  });
+}
+
+export interface CitationPreview {
+  selected: number;
+  seeds: number;
+  candidates: number;
+  by_overlap: Record<string, number>;
+  max: number;
+}
+export interface CitationRequest {
+  selection: Selection;
+  direction: "backward" | "forward" | "both";
+  min_overlap: number;
+  max_candidates: number;
+}
+
+/** Chaînage de citations : estimation (dryRun) ou import des candidats les plus liés aux graines. */
+export async function expandByCitations(
+  projectId: string,
+  body: CitationRequest,
+  dryRun: boolean
+): Promise<CitationPreview> {
+  return request<CitationPreview>(`/projects/${projectId}/citations`, {
+    method: "POST",
+    body: JSON.stringify({ ...body, dry_run: dryRun }),
+  });
+}
+
+export interface QueryCheck {
+  count?: number;
+  translation?: string;
+  not_found?: string[];
+  too_long?: boolean;
+  recall?: { total: number; found: number; missing: string[] };
+  error?: string;
+}
+export interface QueryAssist {
+  reply: string;
+  query: string | null;
+  refused: boolean;
+  check: QueryCheck | null;
+}
+
+/** Assistant de requête PubMed : un modèle propose une requête, PubMed la vérifie. */
+export async function assistQuery(
+  projectId: string,
+  body: { model: string; messages: { role: "user" | "assistant"; content: string }[]; seeds: string }
+): Promise<QueryAssist> {
+  return request<QueryAssist>(`/projects/${projectId}/query-assistant`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 export async function completeFulltext(projectId: string): Promise<void> {
@@ -560,7 +656,6 @@ export async function updateProject(
     text_sections?: string[];
     question?: string;
     fields?: SchemaField[];
-    read_windows?: number;
   },
   searchId?: string
 ): Promise<Project> {
@@ -587,7 +682,9 @@ export async function listArticles(
   status?: PredictionFilter,
   sort: "added" | "date_desc" | "date_asc" | "score_desc" = "added",
   answers: Record<string, string | boolean> = {},
-  searchId?: string
+  searchId?: string,
+  text?: string,
+  fulltext?: boolean
 ): Promise<{
   items: Article[];
   total: number;
@@ -599,6 +696,8 @@ export async function listArticles(
   const q =
     (status ? `&status=${status}` : "") +
     (searchId ? `&search=${searchId}` : "") +
+    (text?.trim() ? `&q=${encodeURIComponent(text.trim())}` : "") +
+    (fulltext != null ? `&fulltext=${fulltext}` : "") +
     `&sort=${sort}` +
     (Object.keys(active).length ? `&answers=${encodeURIComponent(JSON.stringify(active))}` : "");
   return request(`/projects/${projectId}/articles?page=${page}&per_page=${perPage}${q}`);
@@ -685,6 +784,15 @@ export async function matchArticlePdf(
   return request(`/projects/${projectId}/fulltext/match`, {
     method: "POST",
     headers: { "Content-Type": "application/pdf" },
+    body: file,
+  });
+}
+
+/** Importe un RO-Crate (zip exporté par Diggypaper) : crée un projet et restaure son contenu. */
+export function importCrate(file: File): Promise<{ project_id: string; job_id: string }> {
+  return request("/projects/import-crate", {
+    method: "POST",
+    headers: { "Content-Type": "application/zip" },
     body: file,
   });
 }
@@ -858,7 +966,7 @@ export interface HfModel {
   id: string;
   downloads: number;
   likes: number;
-  decision?: boolean; // modèle de décision (Kev…) : ne s'installe pas via Ollama
+  decision?: boolean; // modèle de décision (sans chat) : ne s'installe pas via Ollama
 }
 export interface HfFile {
   file: string;
@@ -867,27 +975,15 @@ export interface HfFile {
   recommended?: boolean;
 }
 
-export async function searchHf(q: string, kind: "chat" | "encoder"): Promise<HfModel[]> {
-  return (
-    await request<{ items: HfModel[] }>(
-      `/models/search?q=${encodeURIComponent(q)}&kind=${kind}`
-    )
-  ).items;
+export async function searchHf(q: string): Promise<HfModel[]> {
+  return (await request<{ items: HfModel[] }>(`/models/search?q=${encodeURIComponent(q)}`)).items;
 }
 
-export async function hfFiles(
-  repo: string,
-  kind: "chat" | "encoder"
-): Promise<{ items: HfFile[]; tokenizer?: boolean }> {
-  return request(`/models/hf/files?repo=${encodeURIComponent(repo)}&kind=${kind}`);
+export async function hfFiles(repo: string): Promise<{ items: HfFile[] }> {
+  return request(`/models/hf/files?repo=${encodeURIComponent(repo)}`);
 }
 
-export async function installHf(payload: {
-  repo: string;
-  kind: "chat" | "encoder";
-  quant?: string;
-  file?: string;
-}): Promise<void> {
+export async function installHf(payload: { repo: string; quant?: string }): Promise<void> {
   await request("/models/hf/install", { method: "POST", body: JSON.stringify(payload) });
 }
 
@@ -981,6 +1077,7 @@ export async function triggerInference(
     resume?: boolean;
     search_id?: string;
     gold_examples?: number;
+    instructions?: string;
     validate_with_gold?: boolean;
   }
 ): Promise<{ job_id: string; status: string }> {
@@ -996,14 +1093,58 @@ export const cancelInference = (projectId: string): Promise<unknown> =>
 export const cancelBenchmark = (projectId: string, runId: string): Promise<unknown> =>
   request(`/projects/${projectId}/benchmarks/${runId}/cancel`, { method: "POST" });
 
-export async function getInference(projectId: string, searchId?: string): Promise<InferenceJob | null> {
-  const r = await request<{ job: InferenceJob | null }>(`/projects/${projectId}/inference${qs({ search: searchId })}`);
+/** Dernier job de la recherche ; avec ``active``, le job en cours du projet (toutes recherches). */
+export async function getInference(
+  projectId: string,
+  searchId?: string,
+  active = false
+): Promise<InferenceJob | null> {
+  const r = await request<{ job: InferenceJob | null }>(
+    `/projects/${projectId}/inference${qs({ search: searchId, active: active ? "true" : undefined })}`
+  );
   return r.job;
 }
 
 // --- Settings (MODULE 7, admin) --------------------------------------------
 
 export type SettingsScope = "GLOBAL" | "PROJECT" | "USER";
+
+/** Valeurs venant de l'environnement du serveur (.env) : elles s'appliquent tant que la base est vide. */
+export type EnvSettings = Record<string, { set: boolean; value: string | null }>;
+export const getEnvSettings = (): Promise<EnvSettings> => request("/admin/settings/env");
+
+export interface DiskStatus {
+  total: number;
+  used: number;
+  free: number;
+  percent: number;
+  low: boolean;
+  alert_percent: number;
+  alert_free_gb: number;
+}
+export interface StorageProject {
+  id: string;
+  title: string;
+  articles: number;
+  pdf_bytes: number;
+  last_activity: string;
+  idle_days: number;
+  warned_at: string | null;
+  delete_on: string | null;
+}
+export interface Storage {
+  disk: DiskStatus;
+  db_bytes: number | null;
+  pdf_bytes: number;
+  retention_days: number;
+  grace_days: number;
+  projects: StorageProject[];
+}
+export const getStorageStatus = (): Promise<DiskStatus> => request("/admin/storage/status");
+export const getStorage = (): Promise<Storage> => request("/admin/storage");
+/** « Conserver ce projet » : annule la suppression programmée pour inactivité. */
+export const keepProject = (projectId: string): Promise<{ kept_at: string }> =>
+  request(`/projects/${projectId}/keep`, { method: "POST" });
 
 export async function getSettings(params?: {
   scope?: SettingsScope;
@@ -1055,12 +1196,17 @@ export interface Capability {
   configured: boolean;
   reachable: boolean;
 }
-export type ModelCapabilities = Record<"ollama" | "laya" | "kev", Capability>;
-export const getModelCapabilities = (): Promise<ModelCapabilities> => request("/models/capabilities");
-
-export function isScorer(m: Pick<ModelInfo, "backend_type">): boolean {
-  return m.backend_type === "SYSTEMONE" || m.backend_type === "ONNX_LOCAL";
+export interface ModelRecommendation {
+  profile: "small" | "medium" | "large" | "gpu";
+  slow_cpu: boolean; // CPU sans AVX2 : inférence 2 à 3 fois plus lente
+  models: { tag: string; ram_gb: number; kind: "tiny" | "small" | "moe" | "gpu"; fits: boolean }[];
 }
+export interface ModelCapabilities {
+  ollama: Capability;
+  hardware: { cores: number; ram_gb: number; avx: boolean; avx2: boolean; avx512: boolean; gpu: boolean };
+  recommendation: ModelRecommendation;
+}
+export const getModelCapabilities = (): Promise<ModelCapabilities> => request("/models/capabilities");
 
 // --- Équipe + export ---------------------------------------------------------
 
@@ -1098,11 +1244,15 @@ export function referencesUrl(
   fmt: "ris" | "bib",
   status?: string,
   answers: Record<string, string> = {},
-  searchId?: string
+  searchId?: string,
+  text?: string,
+  fulltext?: boolean
 ): string {
   const active = Object.fromEntries(Object.entries(answers).filter(([, v]) => v !== ""));
   const q = new URLSearchParams();
   if (searchId) q.set("search", searchId);
+  if (fulltext != null) q.set("fulltext", String(fulltext));
+  if (text?.trim()) q.set("q", text.trim());
   if (status) q.set("status", status);
   if (Object.keys(active).length) q.set("answers", JSON.stringify(active));
   const qs = q.toString();
@@ -1223,13 +1373,14 @@ export const previewSelection = async (projectId: string, selection: Selection):
   ).count;
 
 export interface SearchCreate {
-  name: string;
+  name?: string; // vide : AAMMJJ-n
   question?: string;
   fields?: SchemaField[];
   text_sections?: string[];
-  read_windows?: number;
   kind?: SearchKind;
   selection: Selection;
+  /** Analyse programmée : démarre quand la recherche d'origine (selection.from_search_id) a fini. */
+  schedule?: { model: string; prefilter_model?: string; instructions?: string };
 }
 
 export const createSearch = (projectId: string, payload: SearchCreate): Promise<SearchInfo> =>

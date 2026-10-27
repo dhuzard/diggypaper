@@ -80,12 +80,13 @@ async def _seed(engine):
 
 async def test_finding_curation_and_rights_migrations(postgres_database):  # noqa: F811
     url, engine = postgres_database
-    await alembic(url, "upgrade", "0028")
+    await alembic(url, "upgrade", "0028")  # upstream branch first: the ORM expects its columns
+    await alembic(url, "upgrade", "f0028")
     tables, _ = await _tables_and_triggers(engine)
     assert "findings" not in tables
 
     # 0029: tables and append-only triggers; an empty downgrade is reversible.
-    await alembic(url, "upgrade", "0029")
+    await alembic(url, "upgrade", "f0029")
     tables, triggers = await _tables_and_triggers(engine)
     assert {"findings", "finding_revisions", "finding_evidence", "finding_reviews"} <= tables
     assert {
@@ -94,7 +95,7 @@ async def test_finding_curation_and_rights_migrations(postgres_database):  # noq
         "finding_evidence_append_only",
     } <= triggers
     assert "article_rights_declarations" not in tables
-    await alembic(url, "downgrade", "0028")
+    await alembic(url, "downgrade", "f0028")
     tables, triggers = await _tables_and_triggers(engine)
     assert "findings" not in tables and "finding_revisions_append_only" not in triggers
 
@@ -254,14 +255,14 @@ async def test_finding_curation_and_rights_migrations(postgres_database):  # noq
     assert tuple(actors) == (1, 2)
 
     # Downgrades refuse while curated data exists, and succeed once it is gone.
-    result = await alembic(url, "downgrade", "0029", success=False)
+    result = await alembic(url, "downgrade", "f0029", success=False)
     assert "refusing to discard article rights declarations" in result.stderr
     await _exec(engine, "DELETE FROM article_rights_declarations")
-    await alembic(url, "downgrade", "0029")
-    result = await alembic(url, "downgrade", "0028", success=False)
+    await alembic(url, "downgrade", "f0029")
+    result = await alembic(url, "downgrade", "f0028", success=False)
     assert "refusing to discard curated findings" in result.stderr
     await _exec(engine, "DELETE FROM findings")
-    await alembic(url, "downgrade", "0028")
+    await alembic(url, "downgrade", "f0028")
     tables, _ = await _tables_and_triggers(engine)
     assert "findings" not in tables and "article_rights_declarations" not in tables
     await alembic(url, "upgrade", "head")

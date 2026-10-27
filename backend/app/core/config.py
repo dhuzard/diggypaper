@@ -32,17 +32,13 @@ class Settings(BaseSettings):
     cors_origins: list[str] = []
     # Bootstrap du premier admin (idempotent) : si définis et qu'aucun admin n'existe,
     # le compte est créé au démarrage. Vide = pas de bootstrap.
-    # Dossier des modèles ONNX (identifiants relatifs, ex. models/laya-400m-v1.onnx).
     # Langue par défaut (fr/en/de/es) : e-mails, nouveaux comptes, Accept-Language absent.
     default_language: str = "en"
-    models_dir: str = "models"
-    # Serveurs de modèles de décision (protocole /v1/systemone) pré-enregistrés au démarrage.
-    laya_url: str = ""  # ex. http://laya:8000 (service du compose)
     nts_data_dir: str = "./data/nts"  # exports ALURES téléchargés (par projet, par sha256)
-    kev_url: str = ""  # ex. http://kev:8080 (llama.cpp : llama serve -hf ggml-org/Kev-4B-GGUF)
     admin_email: str = ""
     admin_password: str = ""
-    # Plafond d'articles ramenés par un import (NCBI esearch : 10 000 max par requête).
+    # Plafond d'articles ramenés par un import ; 0 = illimité (les requêtes de plus de 10 000
+    # résultats sont découpées par date).
     import_max_articles: int = 5000
     # Licence des métadonnées et résultats de l'export RO-Crate (les PDF/textes intégraux
     # gardent la licence de leurs éditeurs). URL + nom affiché ; adaptez-la à votre politique.
@@ -50,6 +46,14 @@ class Settings(BaseSettings):
     crate_license_name: str = "CC BY 4.0"
     # Lien « politique de confidentialité' (page de l'établissement) ; vide = non affiché.
     privacy_url: str = ""
+    # Alerte disque (e-mail aux admins, bandeau) : au-delà de ce taux d'occupation ou sous cet
+    # espace libre.
+    disk_alert_percent: int = 85
+    disk_alert_free_gb: int = 5
+    # Projets inactifs : après N jours sans activité, les responsables sont prévenus ; sans
+    # activité (ou « Conserver ») pendant le délai de grâce, le projet est supprimé. 0 = jamais.
+    project_retention_days: int = 0
+    project_retention_grace_days: int = 14
 
 
 # Valeurs de dev par défaut : refusées en production (fail-fast, F5).

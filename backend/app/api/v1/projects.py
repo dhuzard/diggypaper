@@ -11,13 +11,14 @@ reproductibilité). Pas de dict in-memory, pas d'appel ``AsyncResult`` bloquant.
 import json
 import logging
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import String, cast, false, func, select
+from sqlalchemy import String, Text, cast, false, func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
@@ -25,6 +26,7 @@ from app.api.v1.auth import _rate_limit_dependency
 from app.article_text import DEFAULT_KINDS, KINDS
 from app.celery_app import celery_app
 from app.cleanup import delete_projects
+from app.core.config import get_settings
 from app.db.models import (
     Article,
     ArticlePrediction,
@@ -40,8 +42,8 @@ from app.db.models import (
     User,
     UserRole,
 )
-from app.inference.scoring import DEFAULT_WINDOWS
-from app.pubmed import NCBIError, search_volume
+from app.pubmed import NCBIError, _esearch_max, search_volume
+from app.refimport import dedupe, parse_references
 from app.schema import DEFAULT_QUESTION, check_fields, project_fields
 from app.searches import default_search, definition_hash, get_search, in_search, lot_condition
 from app.settings.service import get_setting
@@ -228,12 +230,21 @@ def _project_payload(
         "default_language": project.default_language,
         "text_sections": src.text_sections or DEFAULT_KINDS,
         "question": src.question or DEFAULT_QUESTION,
-        "read_windows": src.read_windows or DEFAULT_WINDOWS,
+        "read_windows": src.read_windows,
         "fields": project_fields(src),
         "custom_schema": src.fields is not None,
         "question_set": src.question is not None or src.fields is not None,
         "search_id": str(search.id) if search else None,
         "created_at": project.created_at.isoformat() if project.created_at else None,
+        # Suppression programmée pour inactivité (None : aucune)
+        "retention_delete_on": (
+            (
+                project.retention_warned_at
+                + timedelta(days=get_settings().project_retention_grace_days)
+            ).isoformat()
+            if project.retention_warned_at
+            else None
+        ),
     }
     if article_count is not None:
         payload["article_count"] = article_count
@@ -344,6 +355,17 @@ async def get_project(
     )
 
 
+async def _has_results(db: AsyncSession, scope: Search) -> bool:
+    """La recherche a-t-elle des prédictions ou des relectures ?"""
+    for model in (ArticlePrediction, HumanAnnotation):
+        found = (
+            await db.execute(select(model.id).where(in_search(model.search_id, scope)).limit(1))
+        ).first()
+        if found is not None:
+            return True
+    return False
+
+
 @router.patch("/{project_id}")
 async def update_project(
     project_id: uuid.UUID,
@@ -360,6 +382,13 @@ async def update_project(
         member = await db.get(ProjectMember, (project_id, user.id))
         if member is None or member.role_in_project != ProjectMemberRole.LEAD:
             raise HTTPException(status_code=403, detail="lead required")
+    new_hash = definition_hash(
+        payload.question.strip() or None if payload.question is not None else scope.question,
+        payload.fields if payload.fields is not None else scope.fields,
+    )
+    if new_hash != scope.definition_hash and await _has_results(db, scope):
+        # la question d'une recherche déjà analysée ou relue ne change plus : on en crée une autre
+        raise HTTPException(status_code=409, detail="question_locked")
     targets = (
         [scope, project] if scope.is_default else [scope]
     )  # le projet suit sa recherche initiale
@@ -406,6 +435,22 @@ async def _require_lead_or_admin(db: AsyncSession, project_id: uuid.UUID, user: 
         raise HTTPException(status_code=403, detail="project LEAD required")
 
 
+async def _require_no_active_job(db: AsyncSession, project_id: uuid.UUID) -> None:
+    """M-2 : un import / une recherche de textes à la fois par projet (409 sinon)."""
+    active = (
+        await db.execute(
+            select(ImportJob.id)
+            .where(
+                ImportJob.project_id == project_id,
+                ImportJob.status.in_([ImportJobStatus.PENDING, ImportJobStatus.RUNNING]),
+            )
+            .limit(1)
+        )
+    ).first()
+    if active is not None:
+        raise HTTPException(status_code=409, detail="a job is already in progress")
+
+
 @router.post(
     "/{project_id}/import",
     status_code=202,
@@ -429,20 +474,7 @@ async def trigger_import(
         raise HTTPException(status_code=422, detail="query must not be empty")
     if project.status == ProjectStatus.PROCESSING:
         raise HTTPException(status_code=409, detail="import already in progress")
-    # M-2 : garde « un import par projet à la fois » (non-eager : le job reste
-    # PENDING/RUNNING en base).
-    active = (
-        await db.execute(
-            select(ImportJob.id)
-            .where(
-                ImportJob.project_id == project.id,
-                ImportJob.status.in_([ImportJobStatus.PENDING, ImportJobStatus.RUNNING]),
-            )
-            .limit(1)
-        )
-    ).first()
-    if active is not None:
-        raise HTTPException(status_code=409, detail="import already in progress")
+    await _require_no_active_job(db, project.id)
     job = import_pubmed_task.delay(str(project.id), payload.query)
     if celery_app.conf.task_always_eager:
         status = job.state  # SUCCESS / FAILURE (le job est déjà terminé)
@@ -451,25 +483,73 @@ async def trigger_import(
     return {"job_id": job.id, "status": status}
 
 
+class ReferencesRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=5_000_000)  # fichier ou saisie collée
+    dry_run: bool = False  # analyse seulement : combien d'entrées, quels identifiants
+
+
+@router.post(
+    "/{project_id}/import-references",
+    status_code=202,
+    dependencies=[Depends(_rate_limit_dependency("import", IMPORT_RATE_LIMIT))],
+)
+async def import_references(
+    project_id: uuid.UUID, payload: ReferencesRequest, db: DbDep, user: UserDep
+) -> dict:
+    """Importe une liste de références (DOI/PMID, BibTeX, RIS, CSL JSON, CSV Zotero) comme corpus.
+
+    ``dry_run`` : renvoie le format reconnu et les comptes, sans rien importer. Sinon tâche de
+    fond (progression via GET /jobs) ; le texte intégral est cherché ensuite automatiquement.
+    """
+    project = await _require_project_member(db, project_id, user)
+    await _require_lead_or_admin(db, project_id, user)
+    try:
+        fmt, entries = parse_references(payload.content)
+    except ValueError as exc:  # JSON mal formé
+        raise HTTPException(status_code=422, detail="unreadable references file") from exc
+    entries = dedupe(entries)
+    if not entries:
+        raise HTTPException(status_code=422, detail="no reference found")
+    if payload.dry_run:
+        return {
+            "format": fmt,
+            "count": len(entries),
+            "with_doi": sum(1 for e in entries if e["doi"]),
+            "with_pmid": sum(1 for e in entries if e["pmid"]),
+            "title_only": sum(1 for e in entries if not (e["doi"] or e["pmid"])),
+            "max": _esearch_max(),
+        }
+    if project.status == ProjectStatus.PROCESSING:
+        raise HTTPException(status_code=409, detail="import already in progress")
+    await _require_no_active_job(db, project.id)
+    job = import_pubmed_task.delay(str(project.id), f"references ({fmt}, {len(entries)})", entries)
+    return {
+        "job_id": job.id,
+        "status": job.state if celery_app.conf.task_always_eager else "PENDING",
+    }
+
+
+@router.post("/{project_id}/keep")
+async def keep_project(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
+    """« Conserver ce projet » : compte comme une activité et annule l'avertissement de
+    suppression pour inactivité."""
+    project = await _require_project_member(db, project_id, user)
+    await _require_lead_or_admin(db, project_id, user)
+    project.kept_at = datetime.now(UTC)
+    project.retention_warned_at = None
+    await db.commit()
+    return {"kept_at": project.kept_at.isoformat()}
+
+
 @router.post("/{project_id}/fulltext", status_code=202)
 async def complete_fulltext(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
     """Cherche le texte intégral manquant dans les sources ouvertes (Europe PMC, Unpaywall,
     OpenAlex, préprints). Tâche de fond ; progression via GET /jobs (kind=fulltext)."""
     project = await _require_project_member(db, project_id, user)
+    await _require_lead_or_admin(db, project_id, user)
     if project.status not in (ProjectStatus.FROZEN, ProjectStatus.COMPLETED):
         raise HTTPException(status_code=409, detail="import not finished")
-    active = (
-        await db.execute(
-            select(ImportJob.id)
-            .where(
-                ImportJob.project_id == project.id,
-                ImportJob.status.in_([ImportJobStatus.PENDING, ImportJobStatus.RUNNING]),
-            )
-            .limit(1)
-        )
-    ).first()
-    if active is not None:
-        raise HTTPException(status_code=409, detail="a job is already in progress")
+    await _require_no_active_job(db, project.id)
     job = complete_fulltext_task.delay(str(project.id))
     return {"job_id": job.id, "status": "PENDING"}
 
@@ -498,7 +578,7 @@ async def query_volume(
         # m-1 : le message NCBIError est propre (sans l'URL ni la clé) → loggé tel quel.
         logger.error("query-volume NCBI error: %s", exc)
         return JSONResponse(status_code=502, content={"error": "ncbi_unavailable"})
-    return {"count": count}
+    return {"count": count, "max": _esearch_max()}
 
 
 def _answer_filters(search: Search, raw: str | None, pdec, hdec) -> list:
@@ -531,10 +611,53 @@ def _answer_filters(search: Search, raw: str | None, pdec, hdec) -> list:
     return conds
 
 
+def search_blob():
+    """Titre, journal, PMID, DOI et auteurs en un seul texte sans accents ni majuscules.
+
+    Même expression que l'index trigramme ``ix_articles_search_trgm`` (migration 0028) : PostgreSQL
+    s'en sert pour la recherche rapide, quel que soit le nombre d'articles. Les ``''`` sont inlinés
+    (``literal_column``), pas des paramètres, sinon l'expression ne correspond plus à l'index.
+    """
+    empty, space = literal_column("''"), literal_column("' '")
+    parts = [
+        func.coalesce(Article.title, empty),
+        func.coalesce(Article.journal, empty),
+        func.coalesce(Article.pmid, empty),
+        func.coalesce(Article.doi, empty),
+        func.coalesce(cast(Article.authors, Text), empty),
+    ]
+    joined = parts[0]
+    for p in parts[1:]:
+        joined = joined.op("||")(space).op("||")(p)
+    return func.lower(func.immutable_unaccent(joined))
+
+
+def text_conditions(q: str | None) -> list:
+    """Recherche rapide : chaque mot saisi doit figurer dans le titre, les auteurs, le journal,
+    le PMID ou le DOI, sans tenir compte de la casse ni des accents ; les mots se cumulent (ET)."""
+    conds = []
+    blob = search_blob()
+    for word in (q or "").split()[:8]:
+        norm = func.lower(func.immutable_unaccent(word))  # même normalisation des deux côtés
+        esc = func.replace(func.replace(func.replace(norm, "\\", "\\\\"), "%", "\\%"), "_", "\\_")
+        conds.append(
+            blob.like(
+                literal_column("'%'").op("||")(esc).op("||")(literal_column("'%'")), escape="\\"
+            )
+        )
+    return conds
+
+
 STATUS_PATTERN = "^(AUTO_ACCEPTED|AUTO_REJECTED|NEEDS_HUMAN_REVIEW|NONE|TO_REVIEW)$"
 
 
-def article_filter(search: Search, status: str | None, answers: str | None):
+def article_filter(
+    search: Search,
+    status: str | None,
+    answers: str | None,
+    q: str | None = None,
+    fulltext: bool | None = None,
+):
     """Conditions de la liste des articles d'une recherche (statut IA + réponses) et
     sous-requêtes associées : seuls comptent les résultats et relectures de CETTE recherche.
 
@@ -573,7 +696,11 @@ def article_filter(search: Search, status: str | None, answers: str | None):
         )
         .exists()
     )
-    where = [lot_condition(search)]
+    where = [lot_condition(search), *text_conditions(q)]
+    if fulltext is not None:  # texte intégral / résumé seul (même critère que les comptages)
+        where.append(
+            Article.fulltext_source.is_not(None) if fulltext else Article.fulltext_source.is_(None)
+        )
     if search.kind == "blind":
         # Échantillon à l'aveugle : aucun critère ne doit révéler les réponses de l'IA ni celles
         # des autres relecteurs (sinon le filtre sert d'oracle article par article).
@@ -605,6 +732,8 @@ async def list_articles(
     sort: Annotated[str, Query(pattern="^(added|date_desc|date_asc|score_desc)$")] = "added",
     answers: Annotated[str | None, Query(max_length=4000)] = None,
     search: uuid.UUID | None = None,
+    q: Annotated[str | None, Query(max_length=200)] = None,
+    fulltext: bool | None = None,
 ) -> dict:
     """Articles du lot d'une recherche (par défaut la recherche initiale = tout le corpus) avec
     le statut de leur dernière prédiction dans cette recherche.
@@ -633,7 +762,9 @@ async def list_articles(
     # A blind reviewer must see their own remaining queue, independent of any
     # other reviewer's progress. The shared filter otherwise uses all reviews.
     filter_status = None if scope.kind == "blind" and status == "TO_REVIEW" else status
-    where, pstatus, pconf, pdec, annotated = article_filter(scope, filter_status, answers)
+    where, pstatus, pconf, pdec, annotated = article_filter(
+        scope, filter_status, answers, q, fulltext
+    )
     if scope.kind == "blind":
         annotated = own_annotated
         if status == "TO_REVIEW":
@@ -713,6 +844,8 @@ async def list_articles(
                 "title": a.title,
                 "abstract": a.abstract,
                 "original_language": a.original_language,
+                "origin": a.origin,
+                "origin_seeds": a.origin_seeds,
                 "has_fulltext": bool(a.sections),
                 "fulltext_source": a.fulltext_source,
                 **biblio_payload(a),

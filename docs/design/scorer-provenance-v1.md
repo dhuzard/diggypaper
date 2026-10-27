@@ -1,5 +1,11 @@
 # SEIP scorer call capture
 
+> **Retired on 2026-10-27.** Upstream removed the decision models (Laya, Kev, ONNX, SystemOne)
+> and the fork followed: `app/provenance_scorer.py` and the scorer branches of the inference and
+> benchmark tasks are gone. The trace format below stays readable by `app.provenance` and the
+> portable replay validator so historical `systemone_*` / `onnx` invocations remain verifiable;
+> no new scorer call is captured. Kept as the record of what those rows mean.
+
 Normal inference freezes the article once before the scorer cascade; benchmarks
 freeze it once per article and reuse that snapshot across models and variants. Each
 SystemOne HTTP request is persisted from the actual driver body before dispatch,
