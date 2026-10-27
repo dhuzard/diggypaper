@@ -224,3 +224,20 @@ I1 and the module split reduce it a lot.
 3. Pilot Phase 0–1 on the rebased fork; archive the evidence table.
 4. I3, I4, I6 as backlog; I7, I8 only when their trigger condition is met.
 5. Decide the NTS home and the pruning list from the pilot's results, not before.
+
+## 9. Executed on 2026-10-27 (same day, branch `ccr-ec7fc4cd-h2l2tn`)
+
+| Item | Commit(s) | Outcome |
+|---|---|---|
+| U1–U5 (+ U6, a calendar-dependent upstream test) | `16e6e9a` | Patches, PR bodies and verification record in `docs/upstream-patches/`; each applies with `git am` on upstream `5557435`; the stacked checkout passes upstream's suite. PRs still have to be opened from a clone (see that README). |
+| I1 merge upstream | `3e13113` | Upstream `5557435` merged; scorer provenance removed with the decision models; fork migrations renamed `f0022`…`f0034` plus merge revision `f0035`; four upgrade/downgrade paths verified on PostgreSQL 16; README documents the one-off `alembic stamp --purge` for databases migrated by the fork. |
+| I2 PostgreSQL CI lane (#62) | `d58382d` | `backend-postgres` job: `alembic upgrade head` / `downgrade 0021` on a `postgres:16` service, then the four PostgreSQL-only modules. Not yet observed on GitHub Actions. |
+| I3 snapshot dedup and retention (F-11) | `39950ef`, `056f05d` | Identical revision reused within 12 h; unreferenced snapshots deleted after 24 h by the existing 6-hourly maintenance task. No migration. |
+| I4 oversized response (F-14) | `381d3b5` | One failed invocation for that article; the job and the benchmark run continue. |
+| I5 hygiene | `38aa282`, `f261e43` | Draft-contract negative fixtures and regenerable NTS run outputs no longer committed (−20 800 lines); the frozen `source-evidence-packet/0.1.0` keeps its fixtures; `runs/` keeps the report, manifest, frozen inputs and logs. |
+| I6 docs index (F-20) | `7ca5c9a` | `docs/seip/README.md` with per-document status; stale "not wired" notes replaced. |
+
+Final checks on the combined tree: ruff check and format; backend `pytest` with `SEIP_TEST_POSTGRES_URL` set,
+1 407 passed, 2 skipped (local PostgreSQL 16); frontend `tsc`, `lint`, `jest` 79 passed.
+Not done: the pilot (Phase 0–1 needs papers, reviewers and a deployment), I7 and I8 (their trigger
+conditions are not met), and the NTS home decision (§7.3), which is the owner's call.
