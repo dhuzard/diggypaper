@@ -1,5 +1,21 @@
 # nts-publication-traceability-poc-v1 - research report
 
+> **Where the full outputs are.** This directory keeps the human-readable record of the run
+> (this report, `case-summary.md`, `discovery-log.md`, `review-queue.md`,
+> `crt-interoperability-report.md`), its inputs (`study-config.json`, `sources/`,
+> `gate0-acquisition.json`) and its manifest and logs (`run-manifest.json`, `logs/`). The machine
+> outputs the pipeline writes (`publication-nts-links.csv/.json`, `animal-count-observations.csv`,
+> `finding-extraction-report.json`, `comparisons.json`, `review-queue.json`,
+> `packet-validation-report.json`, `crt-import-report.json`, `crt-interoperability-report.json`,
+> `nts-companion.json`, `source-evidence-packet/`, `source-evidence-packet-exploratory/`) are no
+> longer committed: the last commit that contains them is `3e13113` (`git show 3e13113:runs/nts-publication-traceability-poc-v1/<path>`),
+> and `run-manifest.json` still records their SHA-256. Regenerate them with
+> `cd runs/nts-publication-traceability-poc-v1 && OFFLINE=1 ./reproduce.sh` (or
+> `python -m app.nts run --run-dir runs/nts-publication-traceability-poc-v1 --offline` from `backend/`);
+> the private `cache/pmc11731260.json` (case A) and the ALURES CSVs are not in git, so a re-run
+> without them reports case A as skipped. This note was added after the run; the hash of this
+> file in `run-manifest.json` refers to the version at `3e13113`.
+
 Diggypaper #11 (publication -> ALURES NTS traceability), built on Finding Curation (#46) and the frozen
 `source-evidence-packet/0.1.0` (#47). Executed 2026-10-18 on code commit
 `61a4829e66fc45ccfc46951a03ffd74af8c546ef`; CRT checkout `ce8f29cf251aadfc4c44d109db65d15dd0f629c0`.
