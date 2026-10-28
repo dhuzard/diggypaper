@@ -3,7 +3,7 @@
 The scientific-evidence invariants are in [`AGENTS.md`](../../AGENTS.md); every document listed here is subordinate to them.
 A status in these tables is an engineering statement (which code exists on the fork, verified against `backend/app` and `frontend/src`), not a scientific validation: an implemented quotation check or support assessment never establishes that an answer is supported, and no document here reports a pilot result.
 Statuses: `implemented` (the slice is wired end to end), `partial` (what is missing is named), `retired` (kept as the record of historical rows), `plan/record` (dated audits, plans and protocols; never updated in place).
-Fork migrations are `f0022`…`f0035` in `backend/alembic/versions/`; upstream's `0022`…`0028` share the parent `0021` and the empty revision `f0035` joins the two chains. Last verified 2026-10-27 at commit `3e13113`.
+Fork migrations are `f0022`…`f0036` in `backend/alembic/versions/`; upstream's `0022`…`0028` share the parent `0021` and the empty revision `f0035` joins the two chains (`f0036`, finding withdrawals, follows it). Last verified 2026-10-27 at commit `3e13113`.
 
 ## Contract and design documents
 
@@ -63,7 +63,7 @@ Fork migrations are `f0022`…`f0035` in `backend/alembic/versions/`; upstream's
 | Human assessment and gold | `api/v1/support_assessments.py`, `api/v1/gold.py` | `f0027`, `f0028` | `test_support_assessments_api.py`, `test_gold_api.py` |
 | Export and replay | `evidence_crate.py`, `crate.py`, `portable_replay.py` | — | `test_crate_human_evidence.py`, `test_team_export.py` |
 | Qualification pilot | `seip_scoring.py`, `seip_pilot_manifest.py`, `seip_reference_ledger.py` | — | `test_seip_scoring.py` |
-| Finding curation | `api/v1/findings.py`, `finding_packet.py`, `finding_schema.py`, `rights.py`, `finding_credit.py` | `f0029`, `f0030` | `test_findings_api.py`, `test_finding_packet.py`, `test_article_rights_api.py`, `test_finding_curation_postgres.py`, `test_source_evidence_packet.py`, `test_finding_credit*.py` |
+| Finding curation | `api/v1/findings.py`, `finding_packet.py`, `finding_schema.py`, `rights.py`, `finding_credit.py` | `f0029`, `f0030`, `f0036` | `test_findings_api.py`, `test_finding_withdrawals.py`, `test_finding_packet.py`, `test_article_rights_api.py`, `test_finding_curation_postgres.py`, `test_source_evidence_packet.py`, `test_finding_credit*.py` |
 | NTS | `nts/`, `api/v1/nts.py`, `tasks/nts.py` | `f0031`–`f0033` | `test_nts_*.py` |
 | ORAtlas connector | `project_descriptor.py`, `connector_grants.py`, `connector_policy.py`, `api/v1/connector*.py` | `f0034` | `test_connector_*.py`, `test_research_project_descriptor.py` |
 

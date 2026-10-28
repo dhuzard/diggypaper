@@ -346,6 +346,10 @@ def _evaluate_chain(
     latest = revs[-1]
     if not latest.get("is_latest") or any(r.get("is_latest") for r in revs[:-1]):
         return "not-latest", {}
+    # A LEAD withdrew the latest revision in favour of another finding: the whole chain is
+    # withheld and, not being exportable, no longer conflicts with that finding's snapshot.
+    if latest.get("withdrawn"):
+        return "withdrawn", {}
     paper = papers.get(latest.get("article_id"))
     snaps = _paper_snapshots(paper)
     latest_sids = {str(e.get("snapshot_id") or "") for e in latest.get("evidence", [])}

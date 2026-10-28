@@ -1623,7 +1623,7 @@ export const reviseFinding = (
 export interface FindingRevisionView {
   revision: number;
   is_latest: boolean;
-  state: "proposed" | "approved" | "rejected" | "superseded";
+  state: "proposed" | "approved" | "rejected" | "superseded" | "withdrawn";
   content: { statement: string } & Record<string, unknown>;
   proposer_ref: string;
   created_at: string | null;
@@ -1635,7 +1635,48 @@ export interface FindingRevisionView {
     match: { status: string } | null;
   }[];
   reviews: { id: string; reviewer_ref: string; decision: "approve" | "reject"; created_at: string | null }[];
+  withdrawal: FindingWithdrawalView | null;
 }
+
+export interface FindingWithdrawalView {
+  id: string;
+  reason: "superseded-extraction" | "duplicate";
+  superseded_by: string;
+  rationale: string;
+  withdrawn_by_ref: string;
+  created_at: string | null;
+}
+
+/** LEAD: retire the latest revision in favour of another finding of the same article. */
+export const withdrawFinding = (
+  projectId: string,
+  articleId: string,
+  findingId: string,
+  revision: number,
+  input: { reason: FindingWithdrawalView["reason"]; superseded_by: string; rationale: string }
+): Promise<FindingWithdrawalView> =>
+  request(`/projects/${projectId}/articles/${articleId}/findings/${findingId}/revisions/${revision}/withdrawal`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+export interface SupersededFinding {
+  finding_id: string;
+  article_id: string;
+  revision: number;
+  statement: string | null;
+  superseded_by?: string;
+}
+
+/** LEAD (NTS): plan, or with apply, withdraw approved findings of a superseded extraction run. */
+export const retireSupersededNtsFindings = (
+  projectId: string,
+  apply = false
+): Promise<{ applied: boolean; candidates: SupersededFinding[]; unmatched: SupersededFinding[] }> =>
+  request(`/projects/${projectId}/nts/retire-superseded`, {
+    method: "POST",
+    body: JSON.stringify({ apply }),
+  });
 
 export interface FindingView {
   finding_id: string;

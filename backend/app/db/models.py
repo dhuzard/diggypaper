@@ -1641,6 +1641,7 @@ class FindingRevision(Base):
     __tablename__ = "finding_revisions"
     __table_args__ = (
         UniqueConstraint("finding_id", "revision", name="uq_finding_revisions_number"),
+        UniqueConstraint("id", "finding_id", name="uq_finding_revisions_scope"),
         CheckConstraint("revision >= 1", name="ck_finding_revisions_number"),
         CheckConstraint("length(proposer_ref) = 64", name="ck_finding_revisions_proposer_ref"),
         Index("ix_finding_revisions_finding", "finding_id", "revision"),
@@ -1711,6 +1712,69 @@ class FindingReview(Base):
     )
 
 
+FINDING_WITHDRAWAL_REASONS: tuple[str, ...] = ("superseded-extraction", "duplicate")
+
+
+class FindingWithdrawal(Base):
+    """Append-only LEAD decision taking one finding revision out of curation and export.
+
+    It names the finding that replaces it (same project and article, enforced by the composite
+    foreign keys). It is not a support judgment: reviews stay as they are, and a later revision
+    of the finding is live again because a withdrawal belongs to one revision only.
+    """
+
+    __tablename__ = "finding_withdrawals"
+    __table_args__ = (
+        UniqueConstraint("revision_id", name="uq_finding_withdrawals_revision"),
+        ForeignKeyConstraint(
+            ["finding_id", "project_id", "article_id"],
+            ["findings.id", "findings.project_id", "findings.article_id"],
+            ondelete="CASCADE",
+            name="fk_finding_withdrawals_finding_scope",
+        ),
+        ForeignKeyConstraint(
+            ["superseded_by_finding_id", "project_id", "article_id"],
+            ["findings.id", "findings.project_id", "findings.article_id"],
+            ondelete="CASCADE",
+            name="fk_finding_withdrawals_successor_scope",
+        ),
+        ForeignKeyConstraint(
+            ["revision_id", "finding_id"],
+            ["finding_revisions.id", "finding_revisions.finding_id"],
+            ondelete="CASCADE",
+            name="fk_finding_withdrawals_revision_scope",
+        ),
+        CheckConstraint(
+            f"reason IN ({sql_in(FINDING_WITHDRAWAL_REASONS)})",
+            name="ck_finding_withdrawals_reason",
+        ),
+        CheckConstraint(
+            "superseded_by_finding_id <> finding_id", name="ck_finding_withdrawals_not_self"
+        ),
+        CheckConstraint("length(trim(rationale)) > 0", name="ck_finding_withdrawals_rationale"),
+        CheckConstraint(
+            "length(withdrawn_by_ref) = 64", name="ck_finding_withdrawals_withdrawn_by_ref"
+        ),
+        Index("ix_finding_withdrawals_finding", "project_id", "finding_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, **_uuid_pk())
+    project_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    article_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    finding_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    revision_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    superseded_by_finding_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    reason: Mapped[str] = mapped_column(String(32), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    withdrawn_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    withdrawn_by_ref: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class ArticleRightsDeclaration(Base):
     """Append-only, attributable redistribution decision for one article (app.rights).
 
@@ -1766,6 +1830,7 @@ for _table, _actor, _others in (
     ("finding_reviews", "reviewer_id", None),
     ("finding_evidence", None, None),
     ("article_rights_declarations", "declared_by_id", None),
+    ("finding_withdrawals", "withdrawn_by_id", None),
 ):
     _allow = f"NOT (OLD.{_actor} IS NOT NULL AND NEW.{_actor} IS NULL)" if _actor else "1"
     event.listen(

@@ -78,6 +78,7 @@ EXPECTED_TABLES = {
     "finding_revisions",
     "finding_evidence",
     "finding_reviews",
+    "finding_withdrawals",
     "article_rights_declarations",  # append-only quotation redistribution decisions
     "nts_datasets",  # ALURES export receipts (issue #11)
     "nts_links",  # publication-NTS exact joins, recomputed per prediction
