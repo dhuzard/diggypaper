@@ -10,10 +10,11 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import select
-from test_connector_grants import BOTH, LEAD, LEAD_B, _create, _world
+from test_connector_grants import ANNOTATOR, BOTH, LEAD, LEAD_B, _create, _world
+from test_findings_api import _content, _prediction, _rev_url, _review, _unzip
 
 from app.connector_grants import create_grant
-from app.db.models import ConnectorAuditEvent, ConnectorGrant
+from app.db.models import Article, ConnectorAuditEvent, ConnectorGrant
 from app.pseudonym import anonymized_actor_ref
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -247,3 +248,84 @@ async def test_other_lead_cannot_use_a_grant_on_their_project(
     assert (await _get(client, b.id, credential_b)).status_code == 200
     grants = (await session.execute(select(ConnectorGrant))).scalars().all()
     assert len(grants) == 1
+
+
+# --- artifact references (list_artifacts) -------------------------------------------------
+
+
+async def _approved_finding(client, do_login, session, project):
+    """One reviewed, approved finding in ``project``: the restricted packet exports it."""
+    article = Article(project_id=project.id, title="Mice study", doi="10.1000/mice")
+    session.add(article)
+    await session.commit()
+    _, links = await _prediction(session, project, article, snapshot=True)
+    base = f"/api/v1/projects/{project.id}/articles/{article.id}/findings"
+    assert (await do_login(*LEAD, consent=True)).status_code == 200
+    res = await client.post(base, json={"content": _content(), "evidence": links[:1]})
+    assert res.status_code == 201, res.text
+    finding_id = res.json()["finding_id"]
+    assert (await do_login(*ANNOTATOR, consent=True)).status_code == 200
+    res = await client.post(_rev_url(project, article, finding_id, 1), json=_review(links[:1]))
+    assert res.status_code == 201, res.text
+    return finding_id
+
+
+async def test_listed_digest_is_the_lead_export_manifest(
+    client, do_login, session, researcher_user, admin_user, tmp_path
+):
+    a, _, _ = await _world(session, researcher_user, admin_user)
+    await _approved_finding(client, do_login, session, a)
+    credential = (await _grant(client, do_login, a.id))["credential"]
+    res = await _get(client, a.id, credential)
+    assert res.status_code == 200, res.text
+    doc = json.loads(res.content)
+    [artifact] = doc["artifacts"]
+    assert artifact["access_level"] == "restricted"
+    assert artifact["retrieval"] == "authorized-export-required"
+    assert artifact["deep_link"] == f"/projects/{a.id}/findings"
+    # Same bytes as the LEAD export of that moment: the digest binds its manifest.
+    assert (await do_login(*LEAD)).status_code == 200
+    export = await client.get(f"/api/v1/projects/{a.id}/findings/export")
+    files = _unzip(export.content)
+    manifest = files["manifest.json"]
+    assert artifact["digest"] == "sha256:" + hashlib.sha256(manifest).hexdigest()
+    assert artifact["packet_id"] == json.loads(manifest)["packet_id"]
+    packet = tmp_path / "packet"
+    packet.mkdir()
+    for name, data in files.items():
+        (packet / name).write_bytes(data)
+    path = tmp_path / "descriptor.json"
+    path.write_bytes(res.content)
+    result = _validator().validate_descriptor(path, [packet], as_of=doc["issued_at"])
+    assert result["errors"] == []
+    assert result["counts"]["artifacts_verified"] == 1
+    granted = await session.execute(
+        select(ConnectorAuditEvent.scope).where(ConnectorAuditEvent.event == "access-granted")
+    )
+    assert sorted(granted.scalars()) == ["list_artifacts", "list_project"]
+
+
+async def test_no_artifacts_without_the_scope(
+    client, do_login, session, researcher_user, admin_user
+):
+    a, _, _ = await _world(session, researcher_user, admin_user)
+    await _approved_finding(client, do_login, session, a)
+    credential = (await _grant(client, do_login, a.id, scopes=["list_project"]))["credential"]
+    res = await _get(client, a.id, credential)
+    assert res.status_code == 200, res.text
+    assert json.loads(res.content)["artifacts"] == []
+    # Not holding a scope is not a refused access: nothing is logged as one.
+    assert await _reasons(session) == []
+
+
+async def test_artifacts_stay_in_their_project(
+    client, do_login, session, researcher_user, admin_user
+):
+    a, b, _ = await _world(session, researcher_user, admin_user)
+    await _approved_finding(client, do_login, session, a)
+    # BOTH leads A and B: a grant on B never lists A's packet, and B has none of its own.
+    credential = (await _grant(client, do_login, b.id, who=BOTH))["credential"]
+    res = await _get(client, b.id, credential)
+    assert res.status_code == 200, res.text
+    assert json.loads(res.content)["artifacts"] == []
+    assert str(a.id) not in res.text

@@ -10,6 +10,11 @@ scope, so a caller learns nothing about any other project.
 Responses are ``Cache-Control: no-store``: revocation acts on the next request, and nothing
 here asks a client or proxy to keep a copy. The descriptor is returned as its exact canonical
 bytes, so its digest is the SHA-256 of the response body.
+
+Under the ``list_artifacts`` scope a descriptor lists the project's restricted
+source-evidence packet, built by the same code as the LEAD export, so its digest names the
+packet that export returns at that moment. A public packet stays an explicit LEAD export
+decision and is never listed through a grant.
 """
 
 import os
@@ -22,9 +27,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
+from app.api.v1.findings import packet_input
 from app.connector_grants import authorize, decision_ref, disclosed_fields, grant_ref
 from app.db.models import Project
-from app.project_descriptor import MAX_TTL, build_project_descriptor
+from app.finding_packet import build_packet
+from app.project_descriptor import MAX_TTL, build_project_descriptor, packet_artifact
 
 router = APIRouter(prefix="/connector", tags=["connector"])
 
@@ -62,6 +69,18 @@ async def descriptor(project_id: uuid.UUID, request: Request, db: DbDep) -> Resp
             headers=NO_STORE,
         )
     grant = auth.grant
+    artifacts = []
+    if grant.scope_list_artifacts:
+        # Audited as its own access; re-checked like any other scope.
+        listed = await authorize(
+            db, credential=match.group(1), project_id=project_id, scope="list_artifacts", now=now
+        )
+        await db.commit()
+        if listed is None:  # revoked or membership ended since the first check
+            raise _refuse()
+        packet = build_packet(await packet_input(db, project_id, producer_commit=commit))
+        if packet.report["exported"]:  # an empty export state is not an artifact
+            artifacts.append(packet_artifact(project.id, packet.files))
     expires = grant.expires_at if grant.expires_at.tzinfo else grant.expires_at.replace(tzinfo=UTC)
     disclosed = {}
     if grant.scope_read_selected_metadata:
@@ -80,8 +99,7 @@ async def descriptor(project_id: uuid.UUID, request: Request, db: DbDep) -> Resp
             producer_commit=commit,
             grant_ref=grant_ref(grant),
             disclosed=disclosed,
-            # Artifact references (packet digests, list_artifacts) are the next #53 slice.
-            artifacts=[],
+            artifacts=artifacts,
         )
     except ValueError as exc:
         # e.g. a disclosed title carrying an email: nothing is issued, the lead must fix it.

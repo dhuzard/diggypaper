@@ -13,8 +13,7 @@ reference. The project is always ``private`` and every processing and publicatio
 descriptor: a platform role is not project membership. No member list, email, user id, count,
 full text, evidence or prompt appears in a descriptor.
 
-It is not exposed through any route yet. Grants are app.connector_grants; the connector
-endpoints that issue a descriptor through a grant are a later #53 slice.
+Grants are app.connector_grants; app.api.v1.connector issues a descriptor through a grant.
 """
 
 from __future__ import annotations

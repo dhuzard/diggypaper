@@ -646,38 +646,19 @@ async def _latest_rights(
     return {d.article_id: d for d in rows}  # ordered by revision: the last one wins
 
 
-@router.get("/{project_id}/findings/export")
-async def export_findings(
+async def packet_input(
+    db: AsyncSession,
     project_id: uuid.UUID,
-    db: DbDep,
-    user: UserDep,
-    access_level: Literal["restricted", "public"] = "restricted",
+    *,
+    producer_commit: str,
+    access_level: str = "restricted",
     metadata_license: str | None = None,
-) -> Response:
-    """LEAD-only deterministic source-evidence packet of complete reviewed revision chains.
+) -> dict:
+    """Input of build_packet for a project's complete reviewed revision chains.
 
-    Restricted by default. ``public`` is an explicit choice and needs a packet-metadata
-    licence. Quotations are included only for articles whose latest rights declaration
-    allows redistribution under an allowlisted licence; every other quotation stays withheld.
+    Shared by the LEAD export below and the connector (#53), so a digest a descriptor lists
+    is the digest of the packet the export returns. Callers check access first.
     """
-    from app.finding_packet import build_packet  # lazy: built concurrently
-
-    if await db.get(Project, project_id) is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    await _require_lead(db, project_id, user)
-    if metadata_license is not None and metadata_license not in PACKET_METADATA_LICENSES:
-        raise HTTPException(
-            status_code=422,
-            detail="metadata_license must be one of " + ", ".join(PACKET_METADATA_LICENSES),
-        )
-    if access_level == "public" and metadata_license is None:
-        raise HTTPException(status_code=422, detail="a public export requires metadata_license")
-    commit = os.environ.get("GIT_COMMIT", "")
-    if not re.fullmatch(r"[0-9a-f]{40}", commit):
-        # A packet must name the producer code that built it (frozen 0.1.0 contract).
-        raise HTTPException(
-            status_code=409, detail="packet export requires the server's GIT_COMMIT (40 hex)"
-        )
     findings = await _load(db, project_id)
     article_ids = sorted({uuid.UUID(f["article_id"]) for f in findings}, key=str)
     articles = {
@@ -777,14 +758,55 @@ async def export_findings(
                     ],
                 }
             )
+    return {
+        "producer_commit": producer_commit,
+        "access_level": access_level,
+        "metadata_license": metadata_license,
+        "papers": papers,
+        "findings": records,
+    }
+
+
+@router.get("/{project_id}/findings/export")
+async def export_findings(
+    project_id: uuid.UUID,
+    db: DbDep,
+    user: UserDep,
+    access_level: Literal["restricted", "public"] = "restricted",
+    metadata_license: str | None = None,
+) -> Response:
+    """LEAD-only deterministic source-evidence packet of complete reviewed revision chains.
+
+    Restricted by default. ``public`` is an explicit choice and needs a packet-metadata
+    licence. Quotations are included only for articles whose latest rights declaration
+    allows redistribution under an allowlisted licence; every other quotation stays withheld.
+    """
+    from app.finding_packet import build_packet  # lazy: built concurrently
+
+    if await db.get(Project, project_id) is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    await _require_lead(db, project_id, user)
+    if metadata_license is not None and metadata_license not in PACKET_METADATA_LICENSES:
+        raise HTTPException(
+            status_code=422,
+            detail="metadata_license must be one of " + ", ".join(PACKET_METADATA_LICENSES),
+        )
+    if access_level == "public" and metadata_license is None:
+        raise HTTPException(status_code=422, detail="a public export requires metadata_license")
+    commit = os.environ.get("GIT_COMMIT", "")
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        # A packet must name the producer code that built it (frozen 0.1.0 contract).
+        raise HTTPException(
+            status_code=409, detail="packet export requires the server's GIT_COMMIT (40 hex)"
+        )
     packet = build_packet(
-        {
-            "producer_commit": commit,
-            "access_level": access_level,
-            "metadata_license": metadata_license,
-            "papers": papers,
-            "findings": records,
-        }
+        await packet_input(
+            db,
+            project_id,
+            producer_commit=commit,
+            access_level=access_level,
+            metadata_license=metadata_license,
+        )
     )
     return Response(
         content=_zip_bytes(dict(packet.files)),
