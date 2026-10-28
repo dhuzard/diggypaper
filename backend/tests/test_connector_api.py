@@ -329,3 +329,103 @@ async def test_artifacts_stay_in_their_project(
     assert res.status_code == 200, res.text
     assert json.loads(res.content)["artifacts"] == []
     assert str(a.id) not in res.text
+
+
+# --- authorized export (obtain_authorized_export) -----------------------------------------
+
+EXPORT = ["list_project", "list_artifacts", "obtain_authorized_export"]
+
+
+async def _packet(client, project_id, digest, credential):
+    client.cookies.clear()
+    return await client.get(
+        f"/api/v1/connector/projects/{project_id}/packets/{digest}",
+        headers={"Authorization": f"Bearer {credential}"},
+    )
+
+
+async def _listed(client, project_id, credential):
+    res = await _get(client, project_id, credential)
+    assert res.status_code == 200, res.text
+    return res, json.loads(res.content)["artifacts"][0]["digest"]
+
+
+async def test_export_returns_exactly_the_listed_packet(
+    client, do_login, session, researcher_user, admin_user, tmp_path
+):
+    a, _, _ = await _world(session, researcher_user, admin_user)
+    await _approved_finding(client, do_login, session, a)
+    credential = (await _grant(client, do_login, a.id, scopes=EXPORT))["credential"]
+    descriptor, digest = await _listed(client, a.id, credential)
+    res = await _packet(client, a.id, digest, credential)
+    assert res.status_code == 200, res.text
+    assert res.headers["cache-control"] == "no-store, private"
+    assert res.headers["content-type"].startswith("application/zip")
+    # The same bytes as the LEAD's own restricted export: a grant never widens a packet.
+    assert (await do_login(*LEAD)).status_code == 200
+    lead_export = await client.get(f"/api/v1/projects/{a.id}/findings/export")
+    assert res.content == lead_export.content
+    files = _unzip(res.content)
+    assert json.loads(files["manifest.json"])["access_scope"]["level"] == "restricted"
+    packet = tmp_path / "packet"
+    packet.mkdir()
+    for name, data in files.items():
+        (packet / name).write_bytes(data)
+    path = tmp_path / "descriptor.json"
+    path.write_bytes(descriptor.content)
+    issued = json.loads(descriptor.content)["issued_at"]
+    result = _validator().validate_descriptor(path, [packet], as_of=issued)
+    assert result["errors"] == [] and result["counts"]["artifacts_verified"] == 1
+    granted = await session.execute(
+        select(ConnectorAuditEvent.scope).where(ConnectorAuditEvent.event == "access-granted")
+    )
+    assert "obtain_authorized_export" in list(granted.scalars())
+
+
+async def test_export_needs_its_own_scope(client, do_login, session, researcher_user, admin_user):
+    a, _, _ = await _world(session, researcher_user, admin_user)
+    await _approved_finding(client, do_login, session, a)
+    credential = (await _grant(client, do_login, a.id))["credential"]  # list scopes only
+    _, digest = await _listed(client, a.id, credential)
+    reference = await _get(client, uuid.uuid4())
+    _assert_refused(await _packet(client, a.id, digest, credential), reference)
+    assert (await _reasons(session))[-1] == "scope-not-granted"
+
+
+async def test_stale_or_guessed_digest_returns_nothing(
+    client, do_login, session, researcher_user, admin_user
+):
+    a, _, _ = await _world(session, researcher_user, admin_user)
+    await _approved_finding(client, do_login, session, a)
+    credential = (await _grant(client, do_login, a.id, scopes=EXPORT))["credential"]
+    _, digest = await _listed(client, a.id, credential)
+    guessed = await _packet(client, a.id, "sha256:" + "0" * 64, credential)
+    assert guessed.status_code == 409 and guessed.content[:2] != b"PK"
+    # Another approved finding changes the export state: the old digest names nothing now.
+    await _approved_finding(client, do_login, session, a)
+    stale = await _packet(client, a.id, digest, credential)
+    assert stale.status_code == 409 and stale.content[:2] != b"PK"
+    _, fresh = await _listed(client, a.id, credential)
+    assert fresh != digest
+    assert (await _packet(client, a.id, fresh, credential)).status_code == 200
+
+
+async def test_export_refused_after_revocation_and_across_projects(
+    client, do_login, session, researcher_user, admin_user
+):
+    a, b, _ = await _world(session, researcher_user, admin_user)
+    await _approved_finding(client, do_login, session, a)
+    created = await _grant(client, do_login, a.id, scopes=EXPORT)
+    credential = created["credential"]
+    _, digest = await _listed(client, a.id, credential)
+    reference = await _get(client, uuid.uuid4())
+    # A grant on B, even held by a lead of both projects, never fetches A's packet.
+    credential_b = (await _grant(client, do_login, b.id, who=BOTH, scopes=EXPORT))["credential"]
+    _assert_refused(await _packet(client, a.id, digest, credential_b), reference)
+    _assert_refused(await _packet(client, a.id, "not-a-digest", credential_b), reference)
+    assert (await do_login(*LEAD)).status_code == 200
+    grant_id = created["grant"]["id"]
+    revoke = await client.post(f"/api/v1/projects/{a.id}/connector-grants/{grant_id}/revoke")
+    assert revoke.status_code == 200
+    _assert_refused(await _packet(client, a.id, digest, credential), reference)
+    assert (await _reasons(session))[-1] == "revoked"

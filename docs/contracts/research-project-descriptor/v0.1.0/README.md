@@ -86,7 +86,7 @@ Packets are built on demand and deterministically. A digest therefore identifies
 - an artifact whose deep link leaves its project, or a duplicate digest;
 - an invalid recipient or grant reference, or a producer commit that is not 40 hex.
 
-No route imports it, and a test enforces that.
+The connector routes (`app/api/v1/connector.py`) are its only callers.
 
 ## 7. Validator
 
@@ -106,6 +106,18 @@ Error codes:
 Every code except `artifact-missing` and `packet-invalid` has a negative fixture in `fixtures/invalid/<case>/`, where `expected.json` names the packet to hold and the codes that must fire. Those two codes are covered by tests. The `schema-invalid` fixtures pin the fail-closed consts: a granted access effect, an `admin` or revoked holder, public visibility, authorized processing, included full text, a member list, a token, and a disclosure without a decision.
 
 To regenerate the fixtures, run `python docs/contracts/research-project-descriptor/v0.1.0/fixtures/build_fixtures.py`; it is idempotent and byte-identical on every run. Only `fixtures/valid/` is committed; the script also writes `fixtures/invalid/<case>/` (git-ignored), and the tests rebuild the whole tree in a temporary copy (`backend/tests/contract_fixtures.py`) and check that the committed valid descriptors are byte-identical to a fresh build. Tests are in `backend/tests/test_research_project_descriptor.py`, and the builder's output is byte-identical to both valid fixtures. All fixtures are synthetic: the project id is `00000000-0000-4000-8000-000000000053`, and the referenced packet is the frozen SEP `canonical` fixture.
+
+### Captured exchange (`fixtures/captured/connector-e2e/`)
+
+The other fixtures are built offline. This one is the exact HTTP response bytes of a live exchange, captured once by `backend/tests/test_connector_e2e.py` with `CAPTURE_CONNECTOR_FIXTURE=<dir>` and `CAPTURE_PRODUCER_COMMIT=<40 hex>`: a lead grants `list_project`, `list_artifacts` and `obtain_authorized_export`, then the consumer fetches the descriptor and the listed packet by its digest. The descriptor is `descriptor.json`, the packet's zip entries are under `packet/`, and `capture.json` records the producer commit, the requests, the zip body's SHA-256, the SHA-256 of every file, the `valid_as_of` instant and the 404s returned for both reads after revocation.
+
+The data is synthetic (no real article, person or full text), and the quote is withheld because the paper has no rights declaration. Ids and timestamps differ on every run, so the committed set is not rebuilt. A test checks its integrity instead: file hashes, a validator run with `--as-of` set to `valid_as_of`, and one verified artifact. Consumers pin it by `capture.json`'s hashes and validate with the same `--as-of`.
+
+Reproduce the check:
+
+```
+python docs/contracts/research-project-descriptor/v0.1.0/validator/rpd_validate.py     docs/contracts/research-project-descriptor/v0.1.0/fixtures/captured/connector-e2e/descriptor.json     --packet docs/contracts/research-project-descriptor/v0.1.0/fixtures/captured/connector-e2e/packet     --as-of 2026-10-28T10:18:07Z
+```
 
 ## 8. Version and evolution policy
 
@@ -141,9 +153,15 @@ The same rules as SEP section 6 apply. Within `0.1.x`, only additive changes are
 - **Never wider.** A public packet stays an explicit LEAD export choice with a metadata licence; a grant never lists one.
 - **Audit.** The listing is authorized and audited as its own `list_artifacts` access. A grant without that scope gets `artifacts: []` and no refusal is logged.
 
+**Implemented: authorized export** (`obtain_authorized_export`):
+
+- **Endpoint.** `GET /api/v1/connector/projects/{id}/packets/{digest}`, with `digest` as listed (`sha256:<64 hex>`), the same Bearer credential and the `obtain_authorized_export` scope. Refusals are the same uniform, audited 404 as the descriptor's, including a malformed digest.
+- **Exact bytes only.** The restricted packet is rebuilt at request time with the listing's settings. If its manifest digest differs from the requested one (the project changed, or the digest was never listed), the answer is `409 stale-digest` with no packet bytes; the consumer fetches a new descriptor. A match returns the same zip as the LEAD's restricted export, with `no-store`.
+- **Never wider.** Quotes stay withheld unless each paper's own rights allow them, exactly as in the LEAD export; no grant asks for a public packet.
+- **Lead only.** The holder must still be a lead. Holders are leads today and membership only ends by removal, which revokes the grant; the route checks the role anyway.
+
 **Remaining:**
 
-1. **Authorized export.** `obtain_authorized_export` returns the exact packet bytes whose digest was listed, within the packet's own rights and only while the holder is still a lead. It never widens a restricted packet.
-2. **Annotator connections.** Delegated consent from an annotator holder, approved by a lead. Today only a lead can be a holder.
+1. **Annotator connections.** Delegated consent from an annotator holder, approved by a lead. Today only a lead can be a holder.
 
-ORAtlas ingestion stays gated by #202/#206. The ORAtlas `diggypaper.synthetic.*` fixtures can be replaced by these fixtures once ORAtlas pins them.
+ORAtlas ingestion stays gated by #202/#206. The ORAtlas `diggypaper.synthetic.*` fixtures can be replaced by the captured exchange above once ORAtlas pins it.
