@@ -17,8 +17,21 @@ RO-Crate behaviour. Export follows the frozen contract
 - **Independent review** (`finding_reviews`, append-only): any member except the proposer; one
   review per reviewer per revision; each carries `seip-support-v1` judgments for exactly the
   revision's evidence links, and `approve` needs at least one `supports`. State is derived:
-  `superseded | rejected | approved | proposed`. Reviewer references are project-scoped
-  pseudonyms.
+  `superseded | withdrawn | rejected | approved | proposed`. Reviewer references are
+  project-scoped pseudonyms.
+- **Withdrawal** (`finding_withdrawals`, migration `f0036`, append-only): a LEAD retires the
+  latest revision of a finding in favour of another live finding of the **same project and
+  article** (`POST …/findings/{id}/revisions/{n}/withdrawal`, reason `superseded-extraction`
+  or `duplicate`, a non-blank rationale). Composite foreign keys enforce the scope of the
+  finding, its revision and the successor in the database. A withdrawal is not a support
+  judgment: existing reviews stay, a withdrawn revision cannot be reviewed, and a later
+  revision of the finding is live again (the withdrawal belongs to one revision). Its main use:
+  re-running an extractor proposes the same findings on a new source snapshot, and the
+  reviewed copies of the older run would otherwise put the paper on two snapshots
+  (`paper-snapshot-conflict`). For NTS projects, `POST /projects/{id}/nts/retire-superseded`
+  (LEAD) plans, and with `{"apply": true}` records, those withdrawals: an approved finding
+  whose latest revision cites only superseded runs is paired with a live finding of the newest
+  run with the identical statement; findings without such a twin are listed, never withdrawn.
 - **Export** (`GET /projects/{id}/findings/export`, LEAD only): a deterministic zip built by
   the pure `app.finding_packet.build_packet`. A finding is exported as its **complete
   revision chain** (1..n under the stable finding id, never renumbered) when its *latest*
@@ -33,7 +46,8 @@ RO-Crate behaviour. Export follows the frozen contract
   0.1.0 schema has no approve/reject field, so a rejected historical revision is
   indistinguishable from an unapproved one except through the reviewer judgments and
   `producer_ids.support_assessment_ref` that remain. If the latest revision is rejected or
-  unapproved, the whole chain is withheld and counted. Any chain that cannot be written
+  unapproved, the whole chain is withheld and counted; a withdrawn latest revision withholds
+  it as `withdrawn` and takes no part in the paper's snapshot check. Any chain that cannot be written
   faithfully is withheld whole, never trimmed: revision gap or duplicate (`revision-gap`,
   `duplicate-revision`), missing/unknown snapshot (`no-source-snapshot`), a history spanning
   more than one snapshot (`mixed-snapshot`), several chains of one paper on different snapshots
@@ -69,7 +83,8 @@ RO-Crate behaviour. Export follows the frozen contract
     whose quotes are included. `tests/test_article_rights_api.py` runs CRT's importer on a
     real export when `CRT_CHECKOUT` points to a CRT checkout.
 
-Status 2026-10-27: backend, API and export implemented (`app/api/v1/findings.py`,
-`app/finding_packet.py`, migrations `f0029`–`f0030`); the only review UI is the NTS review
+Status 2026-10-28: backend, API and export implemented (`app/api/v1/findings.py`,
+`app/finding_packet.py`, migrations `f0029`–`f0030`, withdrawals `f0036`; withdrawals have
+API and frontend client functions but no screen yet); the only review UI is the NTS review
 queue (`NtsReviewQueue.tsx`); a general findings UI, the LEAD release step and split/merge
 helpers are not built, and the Template importer belongs to CRT.

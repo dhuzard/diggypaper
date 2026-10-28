@@ -25,6 +25,7 @@ from app.db.models import (
     FindingEvidence,
     FindingReview,
     FindingRevision,
+    FindingWithdrawal,
     NtsAdjudication,
     NtsCountObservation,
     NtsDataset,
@@ -704,12 +705,22 @@ async def review_queue(
     if not rows:
         return []
     current = {p.id for p in await latest_nts_predictions(db, project_id)}
+    rev_ids = [rev.id for _, rev, _ in rows]
     reviewed = {
         rid
         for (rid,) in (
             await db.execute(
-                select(FindingReview.revision_id).where(
-                    FindingReview.revision_id.in_([rev.id for _, rev, _ in rows])
+                select(FindingReview.revision_id).where(FindingReview.revision_id.in_(rev_ids))
+            )
+        ).all()
+    }
+    # A withdrawn revision is out of curation: it is never offered for review.
+    reviewed |= {
+        rid
+        for (rid,) in (
+            await db.execute(
+                select(FindingWithdrawal.revision_id).where(
+                    FindingWithdrawal.revision_id.in_(rev_ids)
                 )
             )
         ).all()
@@ -789,3 +800,50 @@ async def review_queue(
             }
         )
     return queue
+
+
+def superseded_withdrawal_plan(
+    findings: list[dict[str, Any]], current_prediction_ids: set[str]
+) -> dict[str, list[dict[str, Any]]]:
+    """Approved findings left over from a superseded extraction run, and what replaces them.
+
+    ``findings`` is the findings API listing of the project. A finding is left over when its
+    latest revision is approved and cites only predictions that are no longer the article's
+    newest extractor run. Its replacement is a live finding of the same article whose latest
+    revision cites the newest run and has the identical statement (lowest id when several).
+    Left-over findings without such a twin are reported as ``unmatched`` and never withdrawn
+    here: a different wording needs a person to decide.
+    """
+
+    def latest(f: dict[str, Any]) -> dict[str, Any]:
+        return f["revisions"][-1]
+
+    def cites(rev: dict[str, Any]) -> set[str]:
+        return {e["prediction_id"] for e in rev["evidence"]}
+
+    live_current: dict[tuple[str, str], list[str]] = {}
+    for f in findings:
+        rev = latest(f)
+        if rev["withdrawal"] is None and cites(rev) and cites(rev) <= current_prediction_ids:
+            key = (f["article_id"], rev["content"].get("statement"))
+            live_current.setdefault(key, []).append(f["id"])
+    candidates, unmatched = [], []
+    for f in findings:
+        rev = latest(f)
+        if rev["state"] != "approved" or not cites(rev) or cites(rev) & current_prediction_ids:
+            continue
+        statement = rev["content"].get("statement")
+        item = {
+            "finding_id": f["id"],
+            "article_id": f["article_id"],
+            "revision": rev["revision"],
+            "statement": statement,
+        }
+        twins = sorted(live_current.get((f["article_id"], statement), []))
+        if twins:
+            candidates.append({**item, "superseded_by": twins[0]})
+        else:
+            unmatched.append(item)
+    candidates.sort(key=lambda x: (x["article_id"], x["finding_id"]))
+    unmatched.sort(key=lambda x: (x["article_id"], x["finding_id"]))
+    return {"candidates": candidates, "unmatched": unmatched}

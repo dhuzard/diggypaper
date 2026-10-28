@@ -551,7 +551,7 @@ diggypaper/
 │   │   ├── tasks/            # tâches Celery (import, benchmark, inférence)
 │   │   ├── emails/           # FastAPI-Mail (DB > env)
 │   │   └── main.py           # app factory (middleware + routers)
-│   ├── alembic/              # migrations (0001 → 0028 amont, f0022 → f0035 fourche)
+│   ├── alembic/              # migrations (0001 → 0028 amont, f0022 → f0036 fourche)
 │   └── tests/                # ~50 modules, offline (SQLite) ; 2 modules PostgreSQL optionnels
 └── frontend/
     ├── src/app/              # routes (login, register, projects/[id]/*)

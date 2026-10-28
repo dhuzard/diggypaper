@@ -25,6 +25,7 @@ from app.api.deps import get_current_user, get_db
 from app.api.v1.annotations import _require_article
 from app.api.v1.gold import _require_lead
 from app.db.models import (
+    FINDING_WITHDRAWAL_REASONS,
     Article,
     ArticlePrediction,
     ArticleRightsDeclaration,
@@ -32,6 +33,7 @@ from app.db.models import (
     FindingEvidence,
     FindingReview,
     FindingRevision,
+    FindingWithdrawal,
     Project,
     Search,
     SourceSnapshot,
@@ -210,9 +212,11 @@ def _quote_info(prediction: ArticlePrediction | None, evidence_ref: uuid.UUID) -
     return quote, {"ref": ref, "status": status, "view_ref": view_ref, "start": start, "end": end}
 
 
-def _state(revision: int, latest: int, reviews: list[dict]) -> str:
+def _state(revision: int, latest: int, reviews: list[dict], withdrawn: bool = False) -> str:
     if revision != latest:
         return "superseded"
+    if withdrawn:
+        return "withdrawn"
     decisions = {r["decision"] for r in reviews}
     if "reject" in decisions:
         return "rejected"
@@ -268,6 +272,16 @@ async def _load(
         .scalars()
         .all()
     )
+    withdrawals = {
+        w.revision_id: w
+        for w in (
+            await db.execute(
+                select(FindingWithdrawal).where(FindingWithdrawal.revision_id.in_(rev_ids))
+            )
+        )
+        .scalars()
+        .all()
+    }
     pred_ids = {link.prediction_id for link in links}
     predictions = {
         p.id: p
@@ -316,17 +330,19 @@ async def _load(
                 }
                 for r in reviews_by.get(rev.id, [])
             ]
+            withdrawal = withdrawals.get(rev.id)
             out.append(
                 {
                     "finding_id": str(finding.id),
                     "revision": rev.revision,
                     "is_latest": rev.revision == latest,
-                    "state": _state(rev.revision, latest, review_rows),
+                    "state": _state(rev.revision, latest, review_rows, withdrawal is not None),
                     "content": rev.content_json,
                     "proposer_ref": reviewer_reference(project_id, rev.proposer_ref),
                     "created_at": _iso(rev.created_at),
                     "evidence": evidence,
                     "reviews": review_rows,
+                    "withdrawal": _withdrawal_out(project_id, withdrawal) if withdrawal else None,
                 }
             )
         result.append(
@@ -460,6 +476,10 @@ async def review_revision(
         raise HTTPException(status_code=404, detail="Revision not found")
     if revision != max(r.revision for r in rows):
         raise HTTPException(status_code=409, detail="Revision is superseded and not reviewable")
+    if await db.scalar(
+        select(FindingWithdrawal.id).where(FindingWithdrawal.revision_id == target.id)
+    ):
+        raise HTTPException(status_code=409, detail="Revision is withdrawn and not reviewable")
     reviewer = anonymized_actor_ref(user.email)
     if reviewer == target.proposer_ref:
         raise HTTPException(status_code=403, detail="reviewer must be independent")
@@ -513,6 +533,130 @@ async def review_revision(
         "protocol_version": review.protocol_version,
         "created_at": _iso(review.created_at),
     }
+
+
+# --- withdrawal --------------------------------------------------------------------------
+
+
+class WithdrawalBody(BaseModel):
+    """LEAD retires one revision in favour of another finding of the same article."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reason: Literal[FINDING_WITHDRAWAL_REASONS]  # type: ignore[valid-type]
+    superseded_by: uuid.UUID
+    rationale: str = Field(min_length=1, max_length=5000)
+
+    @model_validator(mode="after")
+    def valid(self):
+        if not self.rationale.strip():
+            raise ValueError("a rationale is required")
+        return self
+
+
+def _withdrawal_out(project_id: uuid.UUID, w: FindingWithdrawal) -> dict:
+    return {
+        "id": str(w.id),
+        "reason": w.reason,
+        "superseded_by": str(w.superseded_by_finding_id),
+        "rationale": w.rationale,
+        "withdrawn_by_ref": reviewer_reference(project_id, w.withdrawn_by_ref),
+        "created_at": _iso(w.created_at),
+    }
+
+
+async def _latest_revision(db: AsyncSession, finding_id: uuid.UUID) -> FindingRevision | None:
+    return await db.scalar(
+        select(FindingRevision)
+        .where(FindingRevision.finding_id == finding_id)
+        .order_by(FindingRevision.revision.desc())
+        .limit(1)
+    )
+
+
+async def add_withdrawal(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    finding: Finding,
+    revision: int,
+    body: WithdrawalBody,
+    user: User,
+) -> FindingWithdrawal:
+    """Checks and adds (does not commit) the withdrawal of ``finding``'s latest revision.
+
+    The caller holds the finding lock and has checked LEAD rights. The successor must be
+    another, live finding of the same project and article.
+    """
+    target = await _latest_revision(db, finding.id)
+    if target is None or target.revision != revision:
+        raise HTTPException(status_code=409, detail="Only the latest revision can be withdrawn")
+    if body.superseded_by == finding.id:
+        raise HTTPException(status_code=422, detail="A finding cannot supersede itself")
+    successor = await db.get(Finding, body.superseded_by)
+    if (
+        successor is None
+        or successor.project_id != project_id
+        or successor.article_id != finding.article_id
+    ):
+        raise HTTPException(
+            status_code=422, detail="superseded_by must be a finding of the same article"
+        )
+    if await db.scalar(
+        select(FindingWithdrawal.id).where(FindingWithdrawal.revision_id == target.id)
+    ):
+        raise HTTPException(status_code=409, detail="Revision is already withdrawn")
+    successor_latest = await _latest_revision(db, successor.id)
+    if successor_latest is None or await db.scalar(
+        select(FindingWithdrawal.id).where(FindingWithdrawal.revision_id == successor_latest.id)
+    ):
+        raise HTTPException(status_code=409, detail="superseded_by is itself withdrawn")
+    withdrawal = FindingWithdrawal(
+        project_id=project_id,
+        article_id=finding.article_id,
+        finding_id=finding.id,
+        revision_id=target.id,
+        superseded_by_finding_id=successor.id,
+        reason=body.reason,
+        rationale=body.rationale.strip(),
+        withdrawn_by_id=user.id,
+        withdrawn_by_ref=anonymized_actor_ref(user.email),
+    )
+    db.add(withdrawal)
+    await db.flush()
+    return withdrawal
+
+
+@router.post(
+    "/{project_id}/articles/{article_id}/findings/{finding_id}/revisions/{revision}/withdrawal",
+    status_code=201,
+)
+async def withdraw_revision(
+    project_id: uuid.UUID,
+    article_id: uuid.UUID,
+    finding_id: uuid.UUID,
+    revision: int,
+    body: WithdrawalBody,
+    db: DbDep,
+    user: UserDep,
+) -> dict:
+    """LEAD-only, append-only: the revision leaves curation and export; nothing is deleted.
+
+    A withdrawn chain is withheld from packets as ``withdrawn``, so it no longer conflicts
+    with the finding that replaces it. A new revision of the finding is live again.
+    """
+    article = await _require_article(db, project_id, article_id, user)
+    await _require_lead(db, project_id, user)
+    finding = await _locked_finding(db, project_id, article.id, finding_id)
+    withdrawal = await add_withdrawal(db, project_id, finding, revision, body, user)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Revision is already withdrawn") from None
+    await db.refresh(withdrawal)
+    return {"finding_id": str(finding.id), "revision": revision} | _withdrawal_out(
+        project_id, withdrawal
+    )
 
 
 def _zip_bytes(files: dict[str, bytes]) -> bytes:
@@ -732,6 +876,7 @@ async def packet_input(
                     "article_id": f["article_id"],
                     "revision": r["revision"],
                     "is_latest": r["is_latest"],
+                    "withdrawn": r["withdrawal"] is not None,
                     "content": r["content"],
                     "proposer_ref": r["proposer_ref"],
                     "created_at": r["created_at"],

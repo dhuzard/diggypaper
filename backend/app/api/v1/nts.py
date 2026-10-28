@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
+from app.api.v1.findings import WithdrawalBody, _load, _locked_finding, add_withdrawal
 from app.api.v1.gold import _require_lead
 from app.api.v1.projects import _require_project_member
 from app.celery_app import celery_app
@@ -354,3 +355,41 @@ async def adjudicate(
         .all()
     )
     return service.link_payload(link, rows)
+
+
+class RetireBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    apply: bool = False  # false: only report what would be withdrawn
+
+
+@router.post("/{project_id}/nts/retire-superseded")
+async def retire_superseded(
+    project_id: uuid.UUID, body: RetireBody, db: DbDep, user: UserDep
+) -> dict:
+    """LEAD: withdraw approved findings of a superseded extraction run that the newest run
+    proposed again with the identical statement (append-only finding withdrawals).
+
+    Re-running the extractor proposes the findings again on a new source snapshot; the
+    reviewed copies of the older run then put the paper on two snapshots and the packet
+    withholds all of them. ``apply: false`` (default) only returns the plan.
+    """
+    await _require_project_member(db, project_id, user)
+    await _require_lead(db, project_id, user)
+    current = {str(p.id) for p in await service.latest_nts_predictions(db, project_id)}
+    plan = service.superseded_withdrawal_plan(await _load(db, project_id), current)
+    if body.apply:
+        for item in plan["candidates"]:
+            finding = await _locked_finding(
+                db, project_id, uuid.UUID(item["article_id"]), uuid.UUID(item["finding_id"])
+            )
+            reason = WithdrawalBody(
+                reason="superseded-extraction",
+                superseded_by=uuid.UUID(item["superseded_by"]),
+                rationale=(
+                    f"Superseded by finding {item['superseded_by']}: the newest extraction run "
+                    "proposed the identical statement on the article's current source snapshot."
+                ),
+            )
+            await add_withdrawal(db, project_id, finding, item["revision"], reason, user)
+        await db.commit()
+    return {"applied": body.apply, **plan}
