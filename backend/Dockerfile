@@ -11,10 +11,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends gosu \
 
 WORKDIR /app
 
-# Dépendances + package (app/ requis pour le build du wheel)
+# Dépendances + package (app/ requis pour le build du wheel) ; [contracts] : jsonschema pour les
+# validateurs hors ligne de docs/contracts (montés à l'exécution, hors du contexte de build)
 COPY pyproject.toml constraints.txt ./
 COPY app ./app
-RUN pip install --upgrade pip && pip install -c constraints.txt .
+RUN pip install --upgrade pip && pip install -c constraints.txt ".[contracts]"
 
 # Migrations + bootstrap
 COPY alembic ./alembic
