@@ -471,7 +471,7 @@ async def test_sync_is_recorded_as_pending_before_any_worker_runs(
     await _login(do_login, LEAD)
     assert (await client.post(f"{_base(project)}/setup")).status_code == 200
     sent = []
-    monkeypatch.setattr(celery_app.conf, "task_always_eager", False)
+    monkeypatch.setitem(celery_app.conf, "task_always_eager", False)
     monkeypatch.setattr(
         nts_api.nts_alures_sync_task, "delay", lambda *a: sent.append(a) or _Queued()
     )

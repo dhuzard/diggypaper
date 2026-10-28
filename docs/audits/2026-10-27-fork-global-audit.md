@@ -241,3 +241,12 @@ Final checks on the combined tree: ruff check and format; backend `pytest` with 
 1 407 passed, 2 skipped (local PostgreSQL 16); frontend `tsc`, `lint`, `jest` 79 passed.
 Not done: the pilot (Phase 0–1 needs papers, reviewers and a deployment), I7 and I8 (their trigger
 conditions are not met), and the NTS home decision (§7.3), which is the owner's call.
+
+## 10. Follow-up on 2026-10-28
+
+| Item | Outcome |
+|---|---|
+| U1–U6 opened upstream | [BENETNATH#1](https://github.com/BENETNATH/diggypaper/pull/1)–[#6](https://github.com/BENETNATH/diggypaper/pull/6), one per patch, on upstream `main` `5557435` (unchanged, so no rebase). No earlier PR or issue covered them; the repository has no PR template. Upstream Actions may wait for maintainer approval on a first-time contributor. |
+| Fork CI on `main` (`36bc436`, dispatch run 40659185068) | `frontend` and `backend-postgres` green: the I2 lane is now observed on GitHub Actions (Alembic upgrade/downgrade to `0021`, 13 PostgreSQL-only tests passed). `backend` red: 4 failed, 1 error, 1 390 passed, 15 skipped. |
+| Cause of the `backend` failure | `pytest` is not pinned in `constraints.txt`; CI resolved 9.2.0 (local 9.1.1). Under 9.2.0, `monkeypatch.setattr(celery_app.conf, "task_always_eager", False)` in `test_nts_api.py` cannot be undone at teardown (`'Settings' object has no attribute`), so eager mode stays off and the next four tests reach for a Redis result backend that CI does not run. Reproduced locally with pytest 9.2.0. A test-isolation defect, not an application defect. |
+| Fix | `monkeypatch.setitem` on the `conf` mapping, which restores the value under both pytest versions. |
