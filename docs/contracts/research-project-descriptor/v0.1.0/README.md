@@ -141,9 +141,15 @@ The same rules as SEP section 6 apply. Within `0.1.x`, only additive changes are
 - **Never wider.** A public packet stays an explicit LEAD export choice with a metadata licence; a grant never lists one.
 - **Audit.** The listing is authorized and audited as its own `list_artifacts` access. A grant without that scope gets `artifacts: []` and no refusal is logged.
 
+**Implemented: authorized export** (`obtain_authorized_export`):
+
+- **Endpoint.** `GET /api/v1/connector/projects/{id}/packets/{digest}`, with `digest` as listed (`sha256:<64 hex>`), the same Bearer credential and the `obtain_authorized_export` scope. Refusals are the same uniform, audited 404 as the descriptor's, including a malformed digest.
+- **Exact bytes only.** The restricted packet is rebuilt at request time with the listing's settings. If its manifest digest differs from the requested one (the project changed, or the digest was never listed), the answer is `409 stale-digest` with no packet bytes; the consumer fetches a new descriptor. A match returns the same zip as the LEAD's restricted export, with `no-store`.
+- **Never wider.** Quotes stay withheld unless each paper's own rights allow them, exactly as in the LEAD export; no grant asks for a public packet.
+- **Lead only.** The holder must still be a lead. Holders are leads today and membership only ends by removal, which revokes the grant; the route checks the role anyway.
+
 **Remaining:**
 
-1. **Authorized export.** `obtain_authorized_export` returns the exact packet bytes whose digest was listed, within the packet's own rights and only while the holder is still a lead. It never widens a restricted packet.
-2. **Annotator connections.** Delegated consent from an annotator holder, approved by a lead. Today only a lead can be a holder.
+1. **Annotator connections.** Delegated consent from an annotator holder, approved by a lead. Today only a lead can be a holder.
 
 ORAtlas ingestion stays gated by #202/#206. The ORAtlas `diggypaper.synthetic.*` fixtures can be replaced by these fixtures once ORAtlas pins them.
