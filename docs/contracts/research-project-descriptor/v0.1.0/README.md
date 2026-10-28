@@ -135,10 +135,15 @@ The same rules as SEP section 6 apply. Within `0.1.x`, only additive changes are
 - **No caching.** Responses carry `Cache-Control: no-store, private`, and revocation takes effect on the next request. A descriptor a recipient already holds remains a snapshot that consumers MUST drop (section 5); Diggypaper cannot recall it.
 - **Producer commit.** As for packets, issue needs the server's 40-hex `GIT_COMMIT`. Without it the endpoint returns a 409, but only after authorization.
 
+**Implemented: artifact references** (`list_artifacts`):
+
+- **What is listed.** With the `list_artifacts` scope, the descriptor lists the project's *restricted* `source-evidence-packet/0.1.0`, built by the same code as the LEAD export (`packet_input` in `app/api/v1/findings.py`). Its digest is therefore the SHA-256 of the `manifest.json` that export returns at that moment. A packet that exports no finding is not listed.
+- **Never wider.** A public packet stays an explicit LEAD export choice with a metadata licence; a grant never lists one.
+- **Audit.** The listing is authorized and audited as its own `list_artifacts` access. A grant without that scope gets `artifacts: []` and no refusal is logged.
+
 **Remaining:**
 
-1. **Artifact references.** `list_artifacts` lists packet digests. This needs the packet build pulled out of the findings export route, with the frozen packet bytes unchanged.
-2. **Authorized export.** `obtain_authorized_export` returns the exact packet bytes whose digest was listed, within the packet's own rights and only while the holder is still a lead. It never widens a restricted packet.
-3. **Annotator connections.** Delegated consent from an annotator holder, approved by a lead. Today only a lead can be a holder.
+1. **Authorized export.** `obtain_authorized_export` returns the exact packet bytes whose digest was listed, within the packet's own rights and only while the holder is still a lead. It never widens a restricted packet.
+2. **Annotator connections.** Delegated consent from an annotator holder, approved by a lead. Today only a lead can be a holder.
 
 ORAtlas ingestion stays gated by #202/#206. The ORAtlas `diggypaper.synthetic.*` fixtures can be replaced by these fixtures once ORAtlas pins them.
