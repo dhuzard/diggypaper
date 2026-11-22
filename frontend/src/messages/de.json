@@ -240,6 +240,7 @@
     "citDepth2Hint": "Kandidaten werden nach der Anzahl unterschiedlicher Zitationspfade geordnet, nicht nach wissenschaftlicher Relevanz oder Evidenzqualität. Eine Suche für die anschließende Modellprüfung wird erstellt.",
     "citJob": "Erweiterung durch Zitate",
     "phaseLinking": "Zitate werden gesucht: {done} / {total} Ausgangsartikel",
+    "phaseLinkingDepth2": "Zweistufige Zitationssuche läuft (begrenzt)…",
     "citDone": "{found} Kandidat(en) gefunden, {n} zum Korpus hinzugefügt.",
     "citAnalyse": "Die {n} neuen Artikel analysieren",
     "qaTitle": "Abfrage-Assistent (Suche beschreiben, ein Modell schlägt die PubMed-Abfrage vor)",
