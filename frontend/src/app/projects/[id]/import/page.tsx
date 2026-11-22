@@ -46,6 +46,8 @@ function JobProgress({ job, onRetry }: { job: ImportJob; onRetry?: (job: ImportJ
     if (r.phase === "linking" && total > 0) {
       value = (done / total) * 100;
       label = t("phaseLinking", { done, total });
+    } else if (r.phase === "linking" && num(r.depth) === 2) {
+      label = t("phaseLinkingDepth2");
     } else if (r.phase === "importing" && total > 0) {
       value = (done / total) * 100;
       label = t("phaseImporting", { done, total });
