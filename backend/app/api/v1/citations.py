@@ -104,10 +104,12 @@ async def expand_by_citations(
                 "selected": selected,
                 "seeds": len(seeds),
                 "candidates": len(scores),
-                "by_overlap": {str(k): sum(n >= k for n in direct.values())
-                               for k in (1, 2, 3, 5)},
-                "by_score": {str(k): sum(n >= k for n in scores.values())
-                             for k in (1, 2, 3, 5)},
+                "by_overlap": {
+                    str(k): sum(n >= k for n in direct.values()) for k in (1, 2, 3, 5)
+                },
+                "by_score": {
+                    str(k): sum(n >= k for n in scores.values()) for k in (1, 2, 3, 5)
+                },
                 "depth": 2,
                 "ranking": "path_count",
                 "scoring_version": graph.scoring_version,
