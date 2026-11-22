@@ -15,6 +15,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import citations
+from app.citation_graph import (
+    CitationBudgetExceeded,
+    CitationProviderError,
+    discover_citation_paths,
+)
 from app.api.deps import get_current_user, get_db
 from app.api.v1.auth import _rate_limit_dependency
 from app.api.v1.projects import (
@@ -40,7 +45,8 @@ MAX_SEEDS = 2000
 class CitationRequest(BaseModel):
     selection: Selection = Selection()  # articles de départ (déf. : tout le corpus)
     direction: Literal["backward", "forward", "both"] = "both"  # références / citants / les deux
-    min_overlap: int = Field(default=1, ge=1, le=50)  # nombre minimal de graines liées
+    depth: Literal[1, 2] = 1  # 1 = classement historique ; 2 = chemins de citation
+    min_overlap: int = Field(default=1, ge=1, le=50)  # depth 1: graines ; depth 2: chemins
     max_candidates: int = Field(default=300, ge=1, le=10000)
     dry_run: bool = False  # estimation seulement
 
@@ -80,7 +86,35 @@ async def expand_by_citations(
             .all()
         )
         async with httpx.AsyncClient(timeout=30) as http:
-            links = await citations.fetch_links(seeds, http, payload.direction)
+            if payload.depth == 2:
+                try:
+                    graph = await discover_citation_paths(
+                        seeds, http, depth=2, direction=payload.direction
+                    )
+                except CitationBudgetExceeded as exc:
+                    raise HTTPException(status_code=422, detail=str(exc)) from exc
+                except CitationProviderError as exc:
+                    raise HTTPException(status_code=502, detail=str(exc)) from exc
+            else:
+                links = await citations.fetch_links(seeds, http, payload.direction)
+        if payload.depth == 2:
+            scores = {p: n for p, n in graph.path_counts.items() if p not in known}
+            direct = {p: n for p, n in graph.direct_seed_overlap.items() if p not in known}
+            return {
+                "selected": selected,
+                "seeds": len(seeds),
+                "candidates": len(scores),
+                "by_overlap": {str(k): sum(n >= k for n in direct.values())
+                               for k in (1, 2, 3, 5)},
+                "by_score": {str(k): sum(n >= k for n in scores.values())
+                             for k in (1, 2, 3, 5)},
+                "depth": 2,
+                "ranking": "path_count",
+                "scoring_version": graph.scoring_version,
+                "queried_pmids": len(graph.queried_pmids),
+                "edges": len(graph.edges),
+                "max": _esearch_max(),
+            }
         return {
             "selected": selected,
             "seeds": len(seeds),
@@ -101,6 +135,7 @@ async def expand_by_citations(
             "citations": {
                 "seeds": seeds,
                 "direction": payload.direction,
+                "depth": payload.depth,
                 "min_overlap": payload.min_overlap,
                 "max_candidates": min(payload.max_candidates, _esearch_max()),
                 "search_id": str(origin) if origin else None,
