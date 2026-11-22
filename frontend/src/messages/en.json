@@ -240,6 +240,7 @@
     "citDepth2Hint": "Candidates are ranked by distinct citation paths, not by scientific relevance or evidence quality. A search is created for subsequent model screening.",
     "citJob": "Citation enrichment",
     "phaseLinking": "Looking up citations: {done} / {total} starting articles",
+    "phaseLinkingDepth2": "Exploring second-level citations (bounded graph search)…",
     "citDone": "{found} candidate(s) found, {n} added to the corpus.",
     "citAnalyse": "Analyse the {n} new articles",
     "qaTitle": "Query assistant (describe your search, a model proposes the PubMed query)",
