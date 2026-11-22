@@ -1,8 +1,9 @@
 """Bounded deterministic citation-path discovery using NIH iCite.
 
-Isolated opt-in engine for issue #77. This is graph connectivity, NOT evidence
-quality or scientific eligibility; the existing single-hop API is unchanged.
+Opt-in depth-2 engine for issue #77. This measures graph connectivity, NOT
+scientific relevance or evidence quality; depth-1 API behavior is unchanged.
 """
+
 from __future__ import annotations
 
 from collections import Counter
@@ -95,9 +96,7 @@ async def _fetch_edges(
     for i in range(0, len(pmids), BATCH):
         batch = pmids[i:i + BATCH]
         try:
-            response = await http.get(
-                ICITE_URL, params={"pmids": ",".join(batch)}, timeout=30.0
-            )
+            response = await http.get(ICITE_URL, params={"pmids": ",".join(batch)}, timeout=30.0)
             response.raise_for_status()
             payload = response.json()
         except (httpx.HTTPError, ValueError) as exc:
@@ -125,9 +124,7 @@ async def _fetch_edges(
                     if target != source:
                         result[source].add(CitationEdge(source, target, relation))
         if returned != set(batch):
-            raise CitationProviderError(
-                "iCite omitted requested PMIDs; discovery is incomplete"
-            )
+            raise CitationProviderError("iCite omitted requested PMIDs; discovery is incomplete")
     return result
 
 
@@ -159,8 +156,7 @@ async def discover_citation_paths(
     first_edges = await _fetch_edges(original, http, direction)
     seed_set = set(original)
     neighbors = {
-        source: {edge.target_pmid for edge in edges
-                 if edge.target_pmid not in seed_set}
+        source: {edge.target_pmid for edge in edges if edge.target_pmid not in seed_set}
         for source, edges in first_edges.items()
     }
     first_hop = set().union(*neighbors.values())
