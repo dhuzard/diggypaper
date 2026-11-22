@@ -101,8 +101,6 @@ async def test_import_citations_adds_candidates_and_creates_search(engine):
         assert search.parent_spec["citations"]["seeds"] == 2 and not search.lot_all
 
 
-
-
 async def test_import_citations_depth_two_uses_path_rank_not_seed_overlap(engine):
     project = await _make_project(engine)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -140,6 +138,7 @@ async def test_import_citations_depth_two_uses_path_rank_not_seed_overlap(engine
         assert spec["ranking"] == "path_count"
         assert spec["scoring_version"] == "citation-path-count-v1"
         assert spec["ranked_scores"] == {"30": 6}
+
 
 async def test_citations_endpoint(client, researcher_user, do_login, session, monkeypatch):
     from unittest.mock import MagicMock
