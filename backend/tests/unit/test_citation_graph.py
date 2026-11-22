@@ -1,4 +1,5 @@
 """Synthetic citation graph tests: all provider calls use httpx.MockTransport."""
+
 import httpx
 import pytest
 
@@ -20,9 +21,9 @@ RECORDS = {
 def responder(request: httpx.Request) -> httpx.Response:
     assert request.url.host == "icite.od.nih.gov"
     pmids = request.url.params["pmids"].split(",")
-    return httpx.Response(200, json={
-        "data": [{"pmid": int(p), **RECORDS[p]} for p in reversed(pmids)]
-    })
+    return httpx.Response(
+        200, json={"data": [{"pmid": int(p), **RECORDS[p]} for p in reversed(pmids)]}
+    )
 
 
 async def search(**kwargs):
