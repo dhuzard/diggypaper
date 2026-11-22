@@ -240,6 +240,7 @@
     "citDepth2Hint": "Les candidats sont classés par nombre de chemins de citation distincts, et non par pertinence scientifique ou qualité des preuves. Une recherche est créée pour le tri ultérieur par modèle.",
     "citJob": "Enrichissement par citations",
     "phaseLinking": "Recherche des citations : {done} / {total} articles de départ",
+    "phaseLinkingDepth2": "Exploration des citations de deuxième niveau (recherche bornée)…",
     "citDone": "{found} candidat(s) trouvé(s), {n} ajouté(s) au corpus.",
     "citAnalyse": "Analyser les {n} nouveaux articles",
     "qaTitle": "Assistant de requête (décrivez votre recherche, un modèle propose la requête PubMed)",
