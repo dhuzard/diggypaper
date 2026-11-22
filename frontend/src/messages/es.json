@@ -240,6 +240,7 @@
     "citDepth2Hint": "Los candidatos se ordenan por rutas de citas distintas, no por relevancia científica ni calidad de la evidencia. Se crea una búsqueda para el posterior cribado con el modelo.",
     "citJob": "Enriquecimiento por citas",
     "phaseLinking": "Buscando citas: {done} / {total} artículos de partida",
+    "phaseLinkingDepth2": "Explorando citas de segundo nivel (búsqueda limitada)…",
     "citDone": "{found} candidato(s) encontrado(s), {n} añadido(s) al corpus.",
     "citAnalyse": "Analizar los {n} artículos nuevos",
     "qaTitle": "Asistente de consulta (describa su búsqueda, un modelo propone la consulta PubMed)",
