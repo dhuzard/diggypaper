@@ -533,6 +533,18 @@ async def _do_import_citations(
         ranked = rank(links, known, opts.get("min_overlap", 1), opts.get("max_candidates", 300))
         refs = [{**_entry(pmid=pmid), "origin": "citation", "seeds": n} for pmid, n in ranked]
 
+    depth_meta = (
+        {
+            "depth": 2,
+            "ranking": "path_count",
+            "scoring_version": graph.scoring_version,
+            "queried_pmids": len(graph.queried_pmids),
+            "edge_count": len(graph.edges),
+        }
+        if graph is not None
+        else {}
+    )
+
     async def derive() -> dict:
         ids = list(
             (await session.execute(select(Article.id).where(Article.origin_ref == str(job.id))))
@@ -540,7 +552,7 @@ async def _do_import_citations(
             .all()
         )
         if not ids:
-            return {"candidates": candidate_count, "search_id": None}
+            return {"candidates": candidate_count, "search_id": None} | depth_meta
         origin = (
             await session.get(Search, uuid.UUID(opts["search_id"]))
             if opts.get("search_id")
@@ -579,7 +591,7 @@ async def _do_import_citations(
         await session.flush()
         session.add_all(SearchArticle(search_id=search.id, article_id=i) for i in ids)
         await session.commit()
-        return {"candidates": candidate_count, "search_id": str(search.id)}
+        return {"candidates": candidate_count, "search_id": str(search.id)} | depth_meta
 
     if not refs:
         return await _finish_success(
@@ -587,7 +599,8 @@ async def _do_import_citations(
             project,
             job,
             {"imported": 0, "failed": 0, "fulltext": 0, "total_count": 0, "truncated": False}
-            | {"candidates": candidate_count, "search_id": None},
+            | {"candidates": candidate_count, "search_id": None}
+            | depth_meta,
         )
     return await _do_import_refs(session, project, job, refs, client, finish=derive)
 
