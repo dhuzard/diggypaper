@@ -17,6 +17,7 @@ export function CitationExpand({ projectId, onStarted }: { projectId: string; on
   const [searches, setSearches] = useState<SearchInfo[] | null>(null);
   const [selection, setSelection] = useState<Selection>({});
   const [direction, setDirection] = useState<Direction>("both");
+  const [depth, setDepth] = useState<1 | 2>(1);
   const [overlap, setOverlap] = useState(1);
   const [maxCand, setMaxCand] = useState(300);
   const [preview, setPreview] = useState<CitationPreview | null>(null);
@@ -27,12 +28,16 @@ export function CitationExpand({ projectId, onStarted }: { projectId: string; on
     listSearches(projectId).then(setSearches).catch(() => setSearches([]));
   }, [projectId]);
 
-  const body = () => ({ selection: cleanSelection(selection), direction, min_overlap: overlap, max_candidates: maxCand });
+  const body = () => ({
+    selection: cleanSelection(selection), direction, depth,
+    min_overlap: overlap, max_candidates: maxCand,
+  });
   const reset = () => setPreview(null);
 
   async function estimate() {
     setBusy(true);
     setError(null);
+    setPreview(null); // Never offer import after a failed or stale estimation.
     try {
       setPreview(await expandByCitations(projectId, body(), true));
     } catch (e) {
@@ -57,7 +62,8 @@ export function CitationExpand({ projectId, onStarted }: { projectId: string; on
   }
 
   if (!searches) return null;
-  const atLeast = preview?.by_overlap[String(overlap)];
+  const scores = depth === 2 ? preview?.by_score : preview?.by_overlap;
+  const atLeast = scores?.[String(overlap)];
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-muted">{t("citIntro")}</p>
@@ -90,12 +96,28 @@ export function CitationExpand({ projectId, onStarted }: { projectId: string; on
           </Select>
         </label>
         <label className="flex flex-col gap-1">
-          <span className="font-medium text-foreground">{t("citMinOverlap")}</span>
+          <span className="font-medium text-foreground">{t("citDepth")}</span>
+          <Select
+            value={String(depth)}
+            onChange={(e) => {
+              setDepth(Number(e.target.value) as 1 | 2);
+              setOverlap(1);
+              reset();
+            }}
+          >
+            <option value="1">{t("citDepth1")}</option>
+            <option value="2">{t("citDepth2")}</option>
+          </Select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="font-medium text-foreground">
+            {t(depth === 1 ? "citMinOverlap" : "citMinPaths")}
+          </span>
           <Select value={String(overlap)} onChange={(e) => setOverlap(Number(e.target.value))}>
             {[1, 2, 3, 5].map((n) => (
               <option key={n} value={n}>
                 ≥ {n}
-                {preview ? ` (${preview.by_overlap[String(n)] ?? 0})` : ""}
+                {preview ? ` (${scores?.[String(n)] ?? 0})` : ""}
               </option>
             ))}
           </Select>
@@ -112,11 +134,26 @@ export function CitationExpand({ projectId, onStarted }: { projectId: string; on
           />
         </label>
       </div>
-      {preview && (
-        <p className="rounded-lg bg-surface-muted p-3 text-sm text-foreground">
-          {t("citFound", { seeds: preview.seeds, candidates: preview.candidates })}{" "}
-          <strong>{t("citAtLeast", { n: overlap, count: Math.min(atLeast ?? 0, maxCand) })}</strong>
+      {depth === 2 && (
+        <p className="rounded-lg border border-border p-3 text-xs text-muted" role="note">
+          {t("citDepth2Warning")}
         </p>
+      )}
+      {preview && (
+        <div className="rounded-lg bg-surface-muted p-3 text-sm text-foreground">
+          <p>
+            {t("citFound", { seeds: preview.seeds, candidates: preview.candidates })}{" "}
+            <strong>{t("citAtLeast", { n: overlap, count: Math.min(atLeast ?? 0, maxCand) })}</strong>
+          </p>
+          {depth === 2 && preview.queried_pmids !== undefined && (
+            <p className="mt-1 text-xs text-muted">
+              {t("citDepth2Preview", {
+                queried: preview.queried_pmids,
+                edges: preview.edges ?? 0,
+              })}
+            </p>
+          )}
+        </div>
       )}
       <div className="flex flex-wrap gap-2">
         <Button type="button" variant="secondary" loading={busy && !preview} disabled={busy} onClick={estimate}>
@@ -126,7 +163,7 @@ export function CitationExpand({ projectId, onStarted }: { projectId: string; on
           {t("citRun")}
         </Button>
       </div>
-      <p className="text-xs text-muted">{t("citHint")}</p>
+      <p className="text-xs text-muted">{t(depth === 1 ? "citHint" : "citDepth2Hint")}</p>
     </div>
   );
 }
