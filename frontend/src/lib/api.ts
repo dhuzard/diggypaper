@@ -593,13 +593,20 @@ export interface CitationPreview {
   selected: number;
   seeds: number;
   candidates: number;
-  by_overlap: Record<string, number>;
+  by_overlap: Record<string, number>; // direct seed overlap, unchanged at depth 1
+  by_score?: Record<string, number>; // depth-2 citation-path scores
+  depth?: 2;
+  ranking?: "path_count";
+  scoring_version?: string;
+  queried_pmids?: number;
+  edges?: number;
   max: number;
 }
 export interface CitationRequest {
   selection: Selection;
   direction: "backward" | "forward" | "both";
-  min_overlap: number;
+  depth?: 1 | 2; // omitted = existing single-hop behavior
+  min_overlap: number; // depth 1: direct seeds; depth 2: citation paths
   max_candidates: number;
 }
 
