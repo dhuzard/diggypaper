@@ -40,6 +40,7 @@ from sqlalchemy.dialects.sqlite import insert as _sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.celery_app import celery_app
+from app.citation_graph import discover_citation_paths
 from app.citations import fetch_links, rank
 from app.db.base import DATABASE_URL as _IMPORT_TIME_DATABASE_URL
 from app.db.base import make_engine
@@ -479,9 +480,10 @@ async def _do_import_citations(
 ) -> dict:
     """Chaînage de citations : références / citants des articles de départ → corpus.
 
-    ``opts`` : seeds (PMID), direction, min_overlap, max_candidates, search_id (recherche dont la
-    question est reprise). Les candidats les plus liés aux graines entrent d'abord ; une recherche
-    est créée sur les nouveaux articles, prête à être analysée avec le modèle.
+    ``opts`` : seeds (PMID), direction, depth (1 by default), min_overlap,
+    max_candidates, search_id. Depth 1 keeps the historical seed-overlap ranking;
+    opt-in depth 2 ranks by total citation paths, while origin_seeds still means
+    directly connected seeds, never a path score.
     """
     seeds = [str(p) for p in opts["seeds"]]
 
@@ -489,7 +491,21 @@ async def _do_import_citations(
         job.result_json = {"phase": "linking", "done": done, "total": total}
         await session.commit()
 
-    links = await fetch_links(seeds, client, opts.get("direction", "both"), linking)
+    depth = opts.get("depth", 1)
+    if depth not in (1, 2):
+        raise ValueError("unsupported citation depth")
+    graph = None
+    if depth == 2:
+        # Strict failure handling: no partially ranked corpus after an iCite error or budget hit.
+        job.result_json = {"phase": "linking", "depth": 2, "seeds": len(seeds)}
+        await session.commit()
+        graph = await discover_citation_paths(
+            seeds, client, depth=2, direction=opts.get("direction", "both")
+        )
+        candidate_count = len(graph.path_counts)
+    else:
+        links = await fetch_links(seeds, client, opts.get("direction", "both"), linking)
+        candidate_count = len(links)
     known = {
         p
         for p in (
@@ -497,8 +513,25 @@ async def _do_import_citations(
         ).scalars()
         if p
     }
-    ranked = rank(links, known, opts.get("min_overlap", 1), opts.get("max_candidates", 300))
-    refs = [{**_entry(pmid=pmid), "origin": "citation", "seeds": n} for pmid, n in ranked]
+    if graph is not None:
+        ranked = graph.ranked(
+            known=known,
+            min_score=opts.get("min_overlap", 1),
+            limit=opts.get("max_candidates", 300),
+        )
+        # Historical article.origin_seeds counts only directly connected original seeds.
+        # An indirect-only candidate has zero; never substitute its path-count rank.
+        refs = [
+            {
+                **_entry(pmid=pmid),
+                "origin": "citation",
+                "seeds": graph.direct_seed_overlap.get(pmid, 0),
+            }
+            for pmid, _score in ranked
+        ]
+    else:
+        ranked = rank(links, known, opts.get("min_overlap", 1), opts.get("max_candidates", 300))
+        refs = [{**_entry(pmid=pmid), "origin": "citation", "seeds": n} for pmid, n in ranked]
 
     async def derive() -> dict:
         ids = list(
@@ -507,12 +540,30 @@ async def _do_import_citations(
             .all()
         )
         if not ids:
-            return {"candidates": len(links), "search_id": None}
+            return {"candidates": candidate_count, "search_id": None}
         origin = (
             await session.get(Search, uuid.UUID(opts["search_id"]))
             if opts.get("search_id")
             else None
         ) or await default_search(session, project)
+        citation_spec = {
+            "direction": opts.get("direction", "both"),
+            "seeds": len(seeds),
+            "min_overlap": opts.get("min_overlap", 1),
+            "from": origin.name,
+        }
+        if graph is not None:
+            citation_spec.update(
+                {
+                    "depth": 2,
+                    "ranking": "path_count",
+                    "scoring_version": graph.scoring_version,
+                    "queried_pmids": len(graph.queried_pmids),
+                    "edge_count": len(graph.edges),
+                    "ranked_scores": dict(ranked),
+                    "completeness": "provider-responses-only",
+                }
+            )
         search = Search(
             project_id=project.id,
             name=await next_search_name(session, project.id),
@@ -522,20 +573,13 @@ async def _do_import_citations(
             read_windows=origin.read_windows,
             definition_hash=definition_hash(origin.question, origin.fields),
             lot_all=False,
-            parent_spec={
-                "citations": {
-                    "direction": opts.get("direction", "both"),
-                    "seeds": len(seeds),
-                    "min_overlap": opts.get("min_overlap", 1),
-                    "from": origin.name,
-                }
-            },
+            parent_spec={"citations": citation_spec},
         )
         session.add(search)
         await session.flush()
         session.add_all(SearchArticle(search_id=search.id, article_id=i) for i in ids)
         await session.commit()
-        return {"candidates": len(links), "search_id": str(search.id)}
+        return {"candidates": candidate_count, "search_id": str(search.id)}
 
     if not refs:
         return await _finish_success(
@@ -543,7 +587,7 @@ async def _do_import_citations(
             project,
             job,
             {"imported": 0, "failed": 0, "fulltext": 0, "total_count": 0, "truncated": False}
-            | {"candidates": len(links), "search_id": None},
+            | {"candidates": candidate_count, "search_id": None},
         )
     return await _do_import_refs(session, project, job, refs, client, finish=derive)
 
