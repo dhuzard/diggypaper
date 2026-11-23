@@ -83,18 +83,19 @@ def _pmid(value: object) -> str:
     if isinstance(value, bool) or not isinstance(value, (str, int)):
         raise CitationProviderError("invalid PMID type in citation graph")
     s = str(value).strip()
-    if not s.isascii() or not s.isdecimal() or int(s) == 0:
+    if not s.isascii() or not s.isdecimal() or not s.strip("0"):
         raise CitationProviderError("invalid PMID in citation graph")
-    return str(int(s))
+    return s.lstrip("0")
 
 
 async def _fetch_edges(
-    pmids: tuple[str, ...], http: httpx.AsyncClient, direction: Direction
+    pmids: tuple[str, ...], http: httpx.AsyncClient, direction: Direction, edge_budget: int
 ) -> dict[str, set[CitationEdge]]:
     """Strict, batched retrieval; omissions must never masquerade as zero edges."""
     result: dict[str, set[CitationEdge]] = {p: set() for p in pmids}
+    remaining = edge_budget
     for i in range(0, len(pmids), BATCH):
-        batch = pmids[i:i + BATCH]
+        batch = pmids[i : i + BATCH]
         try:
             response = await http.get(ICITE_URL, params={"pmids": ",".join(batch)}, timeout=30.0)
             response.raise_for_status()
@@ -110,19 +111,27 @@ async def _fetch_edges(
             source = _pmid(item.get("pmid"))
             if source not in result or source not in batch:
                 raise CitationProviderError("iCite returned an unrequested publication")
+            if source in returned:
+                raise CitationProviderError("iCite returned a duplicate publication")
             returned.add(source)
             for relation, key in (("backward", "references"), ("forward", "cited_by")):
                 if direction not in (relation, "both"):
                     continue
-                candidates = item.get(key)
-                if candidates is None:
-                    candidates = []
+                if key not in item:
+                    raise CitationProviderError("missing iCite citation list")
+                candidates = item[key]
+                if candidates is None:  # iCite uses explicit null for unobserved adjacency.
+                    continue
                 if not isinstance(candidates, list):
                     raise CitationProviderError("invalid iCite citation list")
                 for candidate in candidates:
                     target = _pmid(candidate)
-                    if target != source:
-                        result[source].add(CitationEdge(source, target, relation))
+                    edge = CitationEdge(source, target, relation)
+                    if target != source and edge not in result[source]:
+                        if remaining == 0:
+                            raise CitationBudgetExceeded("citation edge budget exceeded")
+                        result[source].add(edge)
+                        remaining -= 1
         if returned != set(batch):
             raise CitationProviderError("iCite omitted requested PMIDs; discovery is incomplete")
     return result
@@ -153,7 +162,7 @@ async def discover_citation_paths(
     if len(original) > MAX_SEEDS:
         raise CitationBudgetExceeded("too many seed PMIDs")
 
-    first_edges = await _fetch_edges(original, http, direction)
+    first_edges = await _fetch_edges(original, http, direction, max_edges)
     seed_set = set(original)
     neighbors = {
         source: {edge.target_pmid for edge in edges if edge.target_pmid not in seed_set}
@@ -161,8 +170,6 @@ async def discover_citation_paths(
     }
     first_hop = set().union(*neighbors.values())
     edge_count = sum(len(edges) for edges in first_edges.values())
-    if edge_count > max_edges:
-        raise CitationBudgetExceeded("citation edge budget exceeded at depth 1")
     if depth == 2 and len(first_hop) > max_first_hop:
         raise CitationBudgetExceeded(
             f"depth-2 expansion would query {len(first_hop)} first-hop papers "
@@ -171,21 +178,20 @@ async def discover_citation_paths(
 
     by_source = dict(first_edges)
     if depth == 2 and first_hop:
-        second_edges = await _fetch_edges(tuple(sorted(first_hop)), http, direction)
+        second_edges = await _fetch_edges(
+            tuple(sorted(first_hop)), http, direction, max_edges - edge_count
+        )
         by_source.update(second_edges)
-        edge_count += sum(len(edges) for edges in second_edges.values())
-        if edge_count > max_edges:
-            raise CitationBudgetExceeded("citation edge budget exceeded at depth 2")
 
     level1: Counter[str] = Counter()
     level2: Counter[str] = Counter()
-    for seed in original:
-        for intermediate in neighbors[seed]:
-            level1[intermediate] += 1
-            if depth == 2:
-                next_nodes = {edge.target_pmid for edge in by_source[intermediate]}
-                for candidate in next_nodes - seed_set - {intermediate}:
-                    level2[candidate] += 1
+    for adjacent in neighbors.values():
+        level1.update(adjacent)
+    if depth == 2:
+        for intermediate, seed_count in level1.items():
+            # Each distinct seed reaching the intermediary contributes one path per target.
+            for target in {edge.target_pmid for edge in by_source[intermediate]} - seed_set:
+                level2[target] += seed_count
 
     counts = {1: dict(sorted(level1.items()))}
     if depth == 2:

@@ -108,6 +108,8 @@ async def test_invalid_provider_identifiers_and_malformed_payload():
     for payload in (
         {"data": [{"pmid": 1, "references": ["not-pmid"]}]},
         {"data": None},
+        {"data": [{"pmid": 1, "references": []}]},  # missing cited_by
+        {"data": [{"pmid": 1, **RECORDS["1"]}, {"pmid": 1, **RECORDS["1"]}]},
     ):
         async with httpx.AsyncClient(
             transport=httpx.MockTransport(lambda _, p=payload: httpx.Response(200, json=p))
@@ -124,3 +126,28 @@ async def test_invalid_depth_and_seed_identifiers():
             await discover_citation_paths([], client)
         with pytest.raises(CitationProviderError):
             await discover_citation_paths(["abc"], client)
+
+
+async def test_explicit_null_adjacency_accepts_provider_record():
+    response = {"data": [{"pmid": 1, "references": None, "cited_by": None}]}
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json=response))
+    ) as client:
+        graph = await discover_citation_paths(["1"], client)
+    assert graph.path_counts == {} and graph.queried_pmids == ("1",)
+
+
+async def test_same_graph_in_different_provider_order_has_identical_ranking_and_edges():
+    def shuffled(request):
+        pmids = request.url.params["pmids"].split(",")
+        data = [
+            {"pmid": p, **{key: list(reversed(values)) for key, values in RECORDS[p].items()}}
+            for p in pmids
+        ]
+        return httpx.Response(200, json={"data": data})
+
+    expected = await search()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(shuffled)) as client:
+        actual = await discover_citation_paths(["1", "2"], client)
+    assert actual == expected
+    assert actual.ranked() == expected.ranked()
