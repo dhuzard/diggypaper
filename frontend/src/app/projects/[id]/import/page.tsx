@@ -9,6 +9,7 @@ import {
   triggerImport,
   completeFulltext,
   listJobs,
+  citationRunUrl,
   getProject,
   ImportJob,
   Project,
@@ -46,6 +47,8 @@ function JobProgress({ job, onRetry }: { job: ImportJob; onRetry?: (job: ImportJ
     if (r.phase === "linking" && total > 0) {
       value = (done / total) * 100;
       label = t("phaseLinking", { done, total });
+    } else if (r.phase === "linking" && num(r.depth) === 2) {
+      label = t("phaseLinkingDepth2");
     } else if (r.phase === "importing" && total > 0) {
       value = (done / total) * 100;
       label = t("phaseImporting", { done, total });
@@ -101,6 +104,15 @@ function JobProgress({ job, onRetry }: { job: ImportJob; onRetry?: (job: ImportJ
             </Link>
           )}
         </div>
+      )}
+      {r.citation_run_available === true && (
+        <a
+          href={citationRunUrl(projectId, job.id)}
+          download
+          className="self-start text-sm font-medium text-primary hover:underline"
+        >
+          {t("citDownloadRun")}
+        </a>
       )}
       {job.kind === "references" && job.status === "COMPLETED" && (
         <div className="flex flex-col gap-1 text-xs text-muted">

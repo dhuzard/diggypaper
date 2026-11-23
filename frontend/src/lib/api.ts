@@ -593,14 +593,24 @@ export interface CitationPreview {
   selected: number;
   seeds: number;
   candidates: number;
-  by_overlap: Record<string, number>;
+  by_overlap: Record<string, number>; // direct seed overlap, unchanged at depth 1
+  by_score?: Record<string, number>; // depth-2 citation-path scores
+  depth?: 2;
+  ranking?: "path_count";
+  scoring_version?: string;
+  queried_pmids?: number;
+  edges?: number;
+  ranked_count?: number; // depth-2 candidates within the requested threshold and cap
+  preview_token?: string; // required to import a depth-2 preview
   max: number;
 }
 export interface CitationRequest {
   selection: Selection;
   direction: "backward" | "forward" | "both";
-  min_overlap: number;
+  depth?: 1 | 2; // omitted = existing single-hop behavior
+  min_overlap: number; // depth 1: direct seeds; depth 2: citation paths
   max_candidates: number;
+  preview_token?: string;
 }
 
 /** Chaînage de citations : estimation (dryRun) ou import des candidats les plus liés aux graines. */
@@ -649,6 +659,9 @@ export async function listJobs(projectId: string): Promise<ImportJob[]> {
   const data = await request<{ jobs: ImportJob[] }>(`/projects/${projectId}/jobs`);
   return data.jobs;
 }
+
+export const citationRunUrl = (projectId: string, jobId: string) =>
+  `${API_BASE}/projects/${projectId}/jobs/${jobId}/citation-run.json`;
 
 export async function updateProject(
   projectId: string,

@@ -40,6 +40,7 @@ from sqlalchemy.dialects.sqlite import insert as _sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.celery_app import celery_app
+from app.citation_preview import corpus_state
 from app.citations import fetch_links, rank
 from app.db.base import DATABASE_URL as _IMPORT_TIME_DATABASE_URL
 from app.db.base import make_engine
@@ -224,7 +225,7 @@ async def _import_pubmed(
             raise LookupError(f"invalid project id: {project_id}") from exc
 
         async with factory() as session:
-            project = await session.get(Project, project_uuid)
+            project = await session.get(Project, project_uuid, with_for_update=True)
             if project is None:
                 raise LookupError(f"project not found: {project_id}")
             # M2 : garde d'état — seul un projet DRAFT peut être importé
@@ -243,7 +244,7 @@ async def _import_pubmed(
                 or ("references" if refs is not None else "import"),
             )
             session.add(job)
-            await session.commit()  # PENDING (server_default)
+            # Keep the project row lock until PROCESSING is visible to competing workers.
             job.status = ImportJobStatus.RUNNING
             job.result_json = {"phase": "searching"}
             project.status = ProjectStatus.PROCESSING  # m10
@@ -361,6 +362,7 @@ async def _do_import_refs(
     refs: list[dict],
     client: httpx.AsyncClient,
     finish=None,
+    citation_run: dict | None = None,
 ) -> dict:
     """Liste de références (DOI, PMID, titres…) → articles du corpus.
 
@@ -406,6 +408,7 @@ async def _do_import_refs(
             "total_count": len(refs),
             "duplicates": duplicates,
             "sources": sources,
+            **({"citation_run": citation_run} if citation_run is not None else {}),
         }
         await session.commit()
 
@@ -458,7 +461,10 @@ async def _do_import_refs(
                 failed += 1
                 failed_items.append(label(e))
             done += 1
-            await progress()
+            if citation_run is None:
+                await progress()
+        if citation_run is not None:
+            await progress()  # Persist the bounded preview once per PubMed batch.
     result = {
         "imported": imported,
         "failed": failed,
@@ -479,40 +485,97 @@ async def _do_import_citations(
 ) -> dict:
     """Chaînage de citations : références / citants des articles de départ → corpus.
 
-    ``opts`` : seeds (PMID), direction, min_overlap, max_candidates, search_id (recherche dont la
-    question est reprise). Les candidats les plus liés aux graines entrent d'abord ; une recherche
-    est créée sur les nouveaux articles, prête à être analysée avec le modèle.
+    ``opts`` : seeds (PMID), direction, depth (1 by default), min_overlap,
+    max_candidates, search_id. Depth 1 keeps the historical seed-overlap ranking;
+    opt-in depth 2 ranks by total citation paths, while origin_seeds still means
+    directly connected seeds, never a path score.
     """
-    seeds = [str(p) for p in opts["seeds"]]
-
-    async def linking(done: int, total: int) -> None:
-        job.result_json = {"phase": "linking", "done": done, "total": total}
+    depth = opts.get("depth", 1)
+    if depth not in (1, 2):
+        raise ValueError("unsupported citation depth")
+    run = None
+    depth_meta = {}
+    if depth == 2:
+        run = opts.get("citation_run")
+        if run is None or run.get("project_id") != str(project.id):
+            raise ValueError("depth-2 import requires a project-scoped citation preview")
+        seeds = run["seed_pmids"]
+        direction, min_overlap = run["direction"], run["min_overlap"]
+        search_id = run["source_search_id"]
+        # Persist the exact submitted selection before attempting any corpus changes.
+        job.result_json = {"phase": "checking_preview", "citation_run": run}
         await session.commit()
+        _, current_corpus_sha = await corpus_state(session, project.id)
+        if run["corpus_sha256"] != current_corpus_sha or run["max_candidates"] > _esearch_max():
+            raise ValueError("citation_preview_stale")
+        if search_id:
+            source = await session.get(Search, uuid.UUID(search_id))
+            if source is None or source.project_id != project.id:
+                raise ValueError("citation_preview_stale")
+        candidate_count = run["candidates"]
+        refs = [
+            {**_entry(pmid=row["pmid"]), "origin": "citation", "seeds": row["direct_seed_overlap"]}
+            for row in run["ranked"]
+        ]
+        depth_meta = {
+            "depth": 2,
+            "ranking": run["ranking"],
+            "scoring_version": run["scoring_version"],
+            "queried_pmids": len(run["queried_pmids"]),
+            "edge_count": run["edge_count"],
+        }
+    else:
 
-    links = await fetch_links(seeds, client, opts.get("direction", "both"), linking)
-    known = {
-        p
-        for p in (
-            await session.execute(select(Article.pmid).where(Article.project_id == project.id))
-        ).scalars()
-        if p
-    }
-    ranked = rank(links, known, opts.get("min_overlap", 1), opts.get("max_candidates", 300))
-    refs = [{**_entry(pmid=pmid), "origin": "citation", "seeds": n} for pmid, n in ranked]
+        async def linking(done: int, total: int) -> None:
+            job.result_json = {"phase": "linking", "done": done, "total": total}
+            await session.commit()
+
+        seeds = [str(p) for p in opts["seeds"]]
+        direction, min_overlap = opts.get("direction", "both"), opts.get("min_overlap", 1)
+        search_id = opts.get("search_id")
+        links = await fetch_links(seeds, client, direction, linking)
+        candidate_count = len(links)
+        known = set(
+            await session.scalars(select(Article.pmid).where(Article.project_id == project.id))
+        )
+        ranked = rank(links, known, min_overlap, opts.get("max_candidates", 300))
+        refs = [{**_entry(pmid=pmid), "origin": "citation", "seeds": n} for pmid, n in ranked]
 
     async def derive() -> dict:
-        ids = list(
-            (await session.execute(select(Article.id).where(Article.origin_ref == str(job.id))))
-            .scalars()
-            .all()
-        )
+        articles = (
+            await session.execute(
+                select(Article.id, Article.pmid).where(
+                    Article.project_id == project.id, Article.origin_ref == str(job.id)
+                )
+            )
+        ).all()
+        ids = [article_id for article_id, _ in articles]
+        summary = {"candidates": candidate_count, **depth_meta}
+        if run is not None:
+            imported = {pmid for _, pmid in articles}
+            summary["citation_run"] = {
+                **run,
+                "imported_pmids": [r["pmid"] for r in run["ranked"] if r["pmid"] in imported],
+            }
         if not ids:
-            return {"candidates": len(links), "search_id": None}
+            return {**summary, "search_id": None}
         origin = (
-            await session.get(Search, uuid.UUID(opts["search_id"]))
-            if opts.get("search_id")
-            else None
+            await session.get(Search, uuid.UUID(search_id)) if search_id else None
         ) or await default_search(session, project)
+        citation_spec = {
+            "direction": direction,
+            "seeds": len(seeds),
+            "min_overlap": min_overlap,
+            "from": origin.name,
+        }
+        if run is not None:
+            citation_spec.update(
+                {
+                    **depth_meta,
+                    "ranked_scores": {r["pmid"]: r["path_count"] for r in run["ranked"]},
+                    "completeness": run["completeness"],
+                }
+            )
         search = Search(
             project_id=project.id,
             name=await next_search_name(session, project.id),
@@ -522,20 +585,13 @@ async def _do_import_citations(
             read_windows=origin.read_windows,
             definition_hash=definition_hash(origin.question, origin.fields),
             lot_all=False,
-            parent_spec={
-                "citations": {
-                    "direction": opts.get("direction", "both"),
-                    "seeds": len(seeds),
-                    "min_overlap": opts.get("min_overlap", 1),
-                    "from": origin.name,
-                }
-            },
+            parent_spec={"citations": citation_spec},
         )
         session.add(search)
         await session.flush()
         session.add_all(SearchArticle(search_id=search.id, article_id=i) for i in ids)
         await session.commit()
-        return {"candidates": len(links), "search_id": str(search.id)}
+        return {**summary, "search_id": str(search.id)}
 
     if not refs:
         return await _finish_success(
@@ -543,9 +599,11 @@ async def _do_import_citations(
             project,
             job,
             {"imported": 0, "failed": 0, "fulltext": 0, "total_count": 0, "truncated": False}
-            | {"candidates": len(links), "search_id": None},
+            | await derive(),
         )
-    return await _do_import_refs(session, project, job, refs, client, finish=derive)
+    return await _do_import_refs(
+        session, project, job, refs, client, finish=derive, citation_run=run
+    )
 
 
 async def _file_meta(e: dict, email: str, client: httpx.AsyncClient) -> tuple[dict | None, str]:
