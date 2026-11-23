@@ -600,6 +600,8 @@ export interface CitationPreview {
   scoring_version?: string;
   queried_pmids?: number;
   edges?: number;
+  ranked_count?: number; // depth-2 candidates within the requested threshold and cap
+  preview_token?: string; // required to import a depth-2 preview
   max: number;
 }
 export interface CitationRequest {
@@ -608,6 +610,7 @@ export interface CitationRequest {
   depth?: 1 | 2; // omitted = existing single-hop behavior
   min_overlap: number; // depth 1: direct seeds; depth 2: citation paths
   max_candidates: number;
+  preview_token?: string;
 }
 
 /** Chaînage de citations : estimation (dryRun) ou import des candidats les plus liés aux graines. */
