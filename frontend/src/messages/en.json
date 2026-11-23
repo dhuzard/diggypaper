@@ -243,6 +243,7 @@
     "phaseLinkingDepth2": "Exploring second-level citations (bounded graph search)…",
     "citDone": "{found} candidate(s) found, {n} added to the corpus.",
     "citAnalyse": "Analyse the {n} new articles",
+    "citDownloadRun": "Download citation search log",
     "qaTitle": "Query assistant (describe your search, a model proposes the PubMed query)",
     "qaIntro": "Describe in a few sentences what you are looking for. The model proposes a query that PubMed checks right away: number of results, unknown terms and, if you give expected articles, how many it finds. Refine by chatting.",
     "qaModel": "Model",

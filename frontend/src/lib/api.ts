@@ -657,6 +657,9 @@ export async function listJobs(projectId: string): Promise<ImportJob[]> {
   return data.jobs;
 }
 
+export const citationRunUrl = (projectId: string, jobId: string) =>
+  `${API_BASE}/projects/${projectId}/jobs/${jobId}/citation-run.json`;
+
 export async function updateProject(
   projectId: string,
   patch: {

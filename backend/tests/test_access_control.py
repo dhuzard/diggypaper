@@ -9,6 +9,8 @@ from app.db.models import (
     Article,
     ExportJob,
     HumanAnnotation,
+    ImportJob,
+    ImportJobStatus,
     Invitation,
     ModelRegistry,
     Project,
@@ -61,6 +63,49 @@ async def _names(client, **params):
     return sorted(
         m["name"] for m in (await client.get(f"{API}/models", params=params)).json()["items"]
     )
+
+
+async def test_citation_run_download_is_lead_only_and_project_scoped(client, session, alice, bob):
+    project = await _project(session, alice)
+    other = await _project(session, alice, "Other")
+    session.add(
+        ProjectMember(
+            project_id=project.id, user_id=bob.id, role_in_project=ProjectMemberRole.ANNOTATOR
+        )
+    )
+    run = {"schema_version": "citation-run-v1", "seed_pmids": ["12345"], "ranked": []}
+    job = ImportJob(
+        project_id=project.id,
+        query="citations (both, 1)",
+        kind="citations",
+        status=ImportJobStatus.COMPLETED,
+        result_json={"imported": 0, "citation_run": run},
+    )
+    legacy = ImportJob(project_id=project.id, query="legacy", kind="citations")
+    session.add_all([job, legacy])
+    await session.commit()
+    path = f"{API}/projects/{project.id}/jobs"
+    download = f"{path}/{job.id}/citation-run.json"
+
+    await _login(client, "alice@lab.fr", "alice-pass-123")
+    result = (await client.get(path)).json()["jobs"]
+    assert next(item for item in result if item["id"] == str(job.id))["result"] == {
+        "imported": 0,
+        "citation_run_available": True,
+    }
+    response = await client.get(download)
+    assert response.status_code == 200
+    assert response.json() == run
+    assert response.headers["cache-control"] == "private, no-store"
+    assert "attachment" in response.headers["content-disposition"]
+    assert (await client.get(f"{path}/{legacy.id}/citation-run.json")).status_code == 404
+    other_url = f"{API}/projects/{other.id}/jobs/{job.id}/citation-run.json"
+    assert (await client.get(other_url)).status_code == 404
+
+    await _login(client, "bob@lab.fr", "bob-pass-12345")
+    result = (await client.get(path)).json()["jobs"]
+    assert next(item for item in result if item["id"] == str(job.id))["result"] == {"imported": 0}
+    assert (await client.get(download)).status_code == 403
 
 
 EXT = {"name": "My-GPT", "base_url": "https://api.example.com/v1", "model": "m", "api_key": "k"}

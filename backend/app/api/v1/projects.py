@@ -427,11 +427,15 @@ async def delete_project(project_id: uuid.UUID, db: DbDep, user: UserDep) -> Non
     await db.commit()
 
 
-async def _require_lead_or_admin(db: AsyncSession, project_id: uuid.UUID, user: User) -> None:
+async def _is_lead_or_admin(db: AsyncSession, project_id: uuid.UUID, user: User) -> bool:
     if user.role == UserRole.ADMIN:
-        return
+        return True
     member = await db.get(ProjectMember, (project_id, user.id))
-    if member is None or member.role_in_project != ProjectMemberRole.LEAD:
+    return member is not None and member.role_in_project == ProjectMemberRole.LEAD
+
+
+async def _require_lead_or_admin(db: AsyncSession, project_id: uuid.UUID, user: User) -> None:
+    if not await _is_lead_or_admin(db, project_id, user):
         raise HTTPException(status_code=403, detail="project LEAD required")
 
 
@@ -869,6 +873,30 @@ async def list_articles(
     }
 
 
+def _citation_run(job: ImportJob) -> dict | None:
+    run = (job.result_json or {}).get("citation_run")
+    return run if job.kind == "citations" and isinstance(run, dict) else None
+
+
+def _import_job_payload(job: ImportJob, can_download: bool) -> dict:
+    result = job.result_json
+    if result is not None and "citation_run" in result:
+        result = {key: value for key, value in result.items() if key != "citation_run"}
+        if can_download and _citation_run(job) is not None:
+            result["citation_run_available"] = True
+    return {
+        "id": str(job.id),
+        "task": "import_pubmed",
+        "kind": job.kind or "import",
+        "status": job.status,
+        "query": job.query,
+        "result": result,
+        "error": job.error,
+        "created_at": job.created_at.isoformat() if job.created_at else None,
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+    }
+
+
 @router.get("/{project_id}/jobs")
 async def list_jobs(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
     """Statut des jobs d'import du projet (M3) : lu depuis ``import_jobs``.
@@ -887,19 +915,29 @@ async def list_jobs(project_id: uuid.UUID, db: DbDep, user: UserDep) -> dict:
         .scalars()
         .all()
     )
-    return {
-        "jobs": [
-            {
-                "id": str(j.id),
-                "task": "import_pubmed",
-                "kind": j.kind or "import",
-                "status": j.status,
-                "query": j.query,
-                "result": j.result_json,
-                "error": j.error,
-                "created_at": j.created_at.isoformat() if j.created_at else None,
-                "completed_at": j.completed_at.isoformat() if j.completed_at else None,
-            }
-            for j in jobs
-        ]
-    }
+    can_download = any(_citation_run(job) is not None for job in jobs) and await _is_lead_or_admin(
+        db, project.id, user
+    )
+    return {"jobs": [_import_job_payload(job, can_download) for job in jobs]}
+
+
+@router.get("/{project_id}/jobs/{job_id}/citation-run.json")
+async def download_citation_run(
+    project_id: uuid.UUID, job_id: uuid.UUID, db: DbDep, user: UserDep
+) -> JSONResponse:
+    """Export the recorded citation search for project leads and administrators."""
+    await _require_project_member(db, project_id, user)
+    await _require_lead_or_admin(db, project_id, user)
+    job = await db.scalar(
+        select(ImportJob).where(ImportJob.id == job_id, ImportJob.project_id == project_id)
+    )
+    run = _citation_run(job) if job is not None else None
+    if run is None:
+        raise HTTPException(status_code=404, detail="Citation run not found")
+    return JSONResponse(
+        content=run,
+        headers={
+            "Content-Disposition": f'attachment; filename="citation-run-{job_id}.json"',
+            "Cache-Control": "private, no-store",
+        },
+    )

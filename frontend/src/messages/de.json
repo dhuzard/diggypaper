@@ -243,6 +243,7 @@
     "phaseLinkingDepth2": "Zweistufige Zitationssuche läuft (begrenzt)…",
     "citDone": "{found} Kandidat(en) gefunden, {n} zum Korpus hinzugefügt.",
     "citAnalyse": "Die {n} neuen Artikel analysieren",
+    "citDownloadRun": "Protokoll der Zitationssuche herunterladen",
     "qaTitle": "Abfrage-Assistent (Suche beschreiben, ein Modell schlägt die PubMed-Abfrage vor)",
     "qaIntro": "Beschreiben Sie in wenigen Sätzen, was Sie suchen. Das Modell schlägt eine Abfrage vor, die PubMed sofort prüft: Trefferzahl, unbekannte Begriffe und – wenn Sie erwartete Artikel angeben – wie viele sie findet. Verfeinern Sie im Gespräch.",
     "qaModel": "Modell",

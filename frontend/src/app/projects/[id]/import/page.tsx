@@ -9,6 +9,7 @@ import {
   triggerImport,
   completeFulltext,
   listJobs,
+  citationRunUrl,
   getProject,
   ImportJob,
   Project,
@@ -103,6 +104,15 @@ function JobProgress({ job, onRetry }: { job: ImportJob; onRetry?: (job: ImportJ
             </Link>
           )}
         </div>
+      )}
+      {r.citation_run_available === true && (
+        <a
+          href={citationRunUrl(projectId, job.id)}
+          download
+          className="self-start text-sm font-medium text-primary hover:underline"
+        >
+          {t("citDownloadRun")}
+        </a>
       )}
       {job.kind === "references" && job.status === "COMPLETED" && (
         <div className="flex flex-col gap-1 text-xs text-muted">

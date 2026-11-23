@@ -243,6 +243,7 @@
     "phaseLinkingDepth2": "Explorando citas de segundo nivel (búsqueda limitada)…",
     "citDone": "{found} candidato(s) encontrado(s), {n} añadido(s) al corpus.",
     "citAnalyse": "Analizar los {n} artículos nuevos",
+    "citDownloadRun": "Descargar el registro de búsqueda de citas",
     "qaTitle": "Asistente de consulta (describa su búsqueda, un modelo propone la consulta PubMed)",
     "qaIntro": "Describa en unas frases lo que busca. El modelo propone una consulta que PubMed verifica al instante: número de resultados, términos desconocidos y, si indica artículos esperados, cuántos encuentra. Afine conversando.",
     "qaModel": "Modelo",

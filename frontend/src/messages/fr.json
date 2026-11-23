@@ -243,6 +243,7 @@
     "phaseLinkingDepth2": "Exploration des citations de deuxième niveau (recherche bornée)…",
     "citDone": "{found} candidat(s) trouvé(s), {n} ajouté(s) au corpus.",
     "citAnalyse": "Analyser les {n} nouveaux articles",
+    "citDownloadRun": "Télécharger le journal de recherche par citations",
     "qaTitle": "Assistant de requête (décrivez votre recherche, un modèle propose la requête PubMed)",
     "qaIntro": "Décrivez en quelques phrases ce que vous cherchez. Le modèle propose une requête que PubMed vérifie aussitôt : nombre de résultats, termes inconnus, et — si vous donnez des articles attendus — combien elle en retrouve. Affinez en discutant.",
     "qaModel": "Modèle",
